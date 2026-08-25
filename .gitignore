@@ -1,0 +1,9 @@
+.deps/
+.vs/
+build/
+build-*/
+out/
+dist/
+*.user
+*.suo
+*.VC.db

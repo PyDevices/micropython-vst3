@@ -1,0 +1,764 @@
+#include "public.sdk/source/common/memorystream.h"
+#include "base/source/fstreamer.h"
+#include "public.sdk/source/vst/hosting/eventlist.h"
+#include "public.sdk/source/vst/hosting/hostclasses.h"
+#include "public.sdk/source/vst/hosting/module.h"
+#include "public.sdk/source/vst/hosting/parameterchanges.h"
+
+#include "pluginterfaces/vst/ivstaudioprocessor.h"
+#include "pluginterfaces/vst/ivstcomponent.h"
+#include "pluginterfaces/vst/ivsteditcontroller.h"
+#include "pluginterfaces/base/ustring.h"
+
+#include <array>
+#include <chrono>
+#include <cmath>
+#include <cstring>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <string>
+#include <thread>
+
+namespace {
+
+using namespace Steinberg;
+using namespace Steinberg::Vst;
+using VST3::Hosting::ClassInfo;
+using VST3::Hosting::Module;
+using VST3::Hosting::PluginFactory;
+
+bool ok(tresult result) { return result == kResultOk || result == kResultTrue; }
+
+bool selectBundledEngine(const std::filesystem::path& bundle,
+                         bool expectMicroPython)
+{
+    const auto wanted = expectMicroPython ? "micropython-vst-engine.exe"
+#if defined(_WIN32)
+                                          : "micropython-vst-native-engine.exe";
+#else
+                                          : "micropython-vst-native-engine";
+#endif
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(bundle))
+    {
+        if (entry.is_regular_file() && entry.path().filename() == wanted)
+        {
+#if defined(_WIN32)
+            return _putenv_s("MPVST_ENGINE_PATH", entry.path().string().c_str()) == 0;
+#else
+            return setenv("MPVST_ENGINE_PATH", entry.path().string().c_str(), 1) == 0;
+#endif
+        }
+    }
+    return false;
+}
+
+void setScriptPath(const std::string& path)
+{
+#if defined(_WIN32)
+    (void)_putenv_s("MPVST_SCRIPT_PATH", path.c_str());
+#else
+    if (path.empty())
+        (void)unsetenv("MPVST_SCRIPT_PATH");
+    else
+        (void)setenv("MPVST_SCRIPT_PATH", path.c_str(), 1);
+#endif
+}
+
+IPtr<IComponent> createComponent(const PluginFactory& factory,
+                                 const ClassInfo& classInfo,
+                                 FUnknown* host)
+{
+    auto component = factory.createInstance<IComponent>(classInfo.ID());
+    if (!component || !ok(component->initialize(host)))
+        return nullptr;
+    return component;
+}
+
+IPtr<IAudioProcessor> getProcessor(IComponent* component)
+{
+    IAudioProcessor* raw = nullptr;
+    if (component == nullptr ||
+        !ok(component->queryInterface(IAudioProcessor::iid,
+                                      reinterpret_cast<void**>(&raw))))
+        return nullptr;
+    return owned(raw);
+}
+
+const ClassInfo* findAudioClass(const PluginFactory& factory,
+                                ClassInfo& selected)
+{
+    for (const auto& classInfo : factory.classInfos())
+    {
+        if (classInfo.category() == kVstAudioEffectClass)
+        {
+            selected = classInfo;
+            return &selected;
+        }
+    }
+    return nullptr;
+}
+
+bool stateRoundTrip(const PluginFactory& factory, const ClassInfo& classInfo,
+                    FUnknown* host)
+{
+    auto original = createComponent(factory, classInfo, host);
+    if (!original)
+        return false;
+    MemoryStream snapshot;
+    if (!ok(original->getState(&snapshot)) || snapshot.getSize() == 0U)
+        return false;
+    const auto snapshotSize = snapshot.getSize();
+    std::string expected(snapshot.getData(), snapshot.getData() + snapshotSize);
+    original->terminate();
+    original = nullptr;
+
+    auto restored = createComponent(factory, classInfo, host);
+    if (!restored)
+        return false;
+    snapshot.seek(0, IBStream::kIBSeekSet, nullptr);
+    if (!ok(restored->setState(&snapshot)))
+        return false;
+    MemoryStream verification;
+    if (!ok(restored->getState(&verification)) ||
+        verification.getSize() != snapshotSize ||
+        std::memcmp(expected.data(), verification.getData(),
+                    static_cast<std::size_t>(snapshotSize)) != 0)
+        return false;
+
+    MemoryStream legacyState;
+    IBStreamer legacyWriter(&legacyState, kLittleEndian);
+    if (!legacyWriter.writeInt32(1) || !legacyWriter.writeInt32(0))
+        return false;
+    for (int index = 0; index < 16; ++index)
+    {
+        if (!legacyWriter.writeFloat(0.5F))
+            return false;
+    }
+    legacyState.seek(0, IBStream::kIBSeekSet, nullptr);
+    if (!ok(restored->setState(&legacyState)))
+        return false;
+
+    MemoryStream emptyState;
+    if (ok(restored->setState(&emptyState)))
+        return false;
+
+    const auto writeV2Prefix = [] (MemoryStream& target) {
+        IBStreamer writer(&target, kLittleEndian);
+        if (!writer.writeInt32(2) || !writer.writeInt32(0))
+            return false;
+        for (int index = 0; index < 16; ++index)
+        {
+            if (!writer.writeFloat(0.5F))
+                return false;
+        }
+        return true;
+    };
+    MemoryStream invalidPipeline;
+    if (!writeV2Prefix(invalidPipeline))
+        return false;
+    IBStreamer invalidPipelineWriter(&invalidPipeline, kLittleEndian);
+    invalidPipelineWriter.seek(0, kSeekEnd);
+    if (!invalidPipelineWriter.writeInt32(0) ||
+        !invalidPipelineWriter.writeInt32(0))
+        return false;
+    invalidPipeline.seek(0, IBStream::kIBSeekSet, nullptr);
+    if (ok(restored->setState(&invalidPipeline)))
+        return false;
+
+    MemoryStream oversizedScript;
+    if (!writeV2Prefix(oversizedScript))
+        return false;
+    IBStreamer oversizedWriter(&oversizedScript, kLittleEndian);
+    oversizedWriter.seek(0, kSeekEnd);
+    if (!oversizedWriter.writeInt32(4) ||
+        !oversizedWriter.writeInt32(1024 * 1024 + 1))
+        return false;
+    oversizedScript.seek(0, IBStream::kIBSeekSet, nullptr);
+    if (ok(restored->setState(&oversizedScript)))
+        return false;
+
+    MemoryStream truncatedScript;
+    if (!writeV2Prefix(truncatedScript))
+        return false;
+    IBStreamer truncatedWriter(&truncatedScript, kLittleEndian);
+    truncatedWriter.seek(0, kSeekEnd);
+    if (!truncatedWriter.writeInt32(4) || !truncatedWriter.writeInt32(8) ||
+        truncatedWriter.writeRaw("short", 5) != 5)
+        return false;
+    truncatedScript.seek(0, IBStream::kIBSeekSet, nullptr);
+    if (ok(restored->setState(&truncatedScript)))
+        return false;
+    restored->terminate();
+    return true;
+}
+
+bool processLifecycle(const PluginFactory& factory, const ClassInfo& classInfo,
+                      FUnknown* host, bool expectMicroPython)
+{
+#if defined(_WIN32)
+    (void)_putenv_s("MPVST_NATIVE_TEST_TONE", "");
+    (void)_putenv_s("MPVST_NATIVE_EVENT_GATE", expectMicroPython ? "" : "1");
+#else
+    (void)unsetenv("MPVST_NATIVE_TEST_TONE");
+    if (expectMicroPython)
+        (void)unsetenv("MPVST_NATIVE_EVENT_GATE");
+    else
+        (void)setenv("MPVST_NATIVE_EVENT_GATE", "1", 1);
+#endif
+    auto component = createComponent(factory, classInfo, host);
+    auto processor = getProcessor(component);
+    if (!component || !processor)
+        return false;
+
+    SpeakerArrangement stereo = SpeakerArr::kStereo;
+    ProcessSetup setup {};
+    setup.processMode = kRealtime;
+    setup.symbolicSampleSize = kSample32;
+    setup.maxSamplesPerBlock = 128;
+    setup.sampleRate = 48000.0;
+    const auto require = [](tresult result, const char* step) {
+        if (!ok(result))
+            std::cerr << "HOOK lifecycle." << step << " FAIL: " << result << '\n';
+        return ok(result);
+    };
+    if (!require(processor->setBusArrangements(nullptr, 0, &stereo, 1),
+                 "arrangements") ||
+        !require(component->activateBus(kAudio, kOutput, 0, true), "audio_bus") ||
+        !require(component->activateBus(kEvent, kInput, 0, true), "event_bus") ||
+        !require(processor->setupProcessing(setup), "setup") ||
+        !require(component->setActive(true), "activate") ||
+        !require(processor->setProcessing(true), "start_processing"))
+        return false;
+
+    std::array<float, 128> left {};
+    std::array<float, 128> right {};
+    Sample32* channels[] = {left.data(), right.data()};
+    AudioBusBuffers output {};
+    output.numChannels = 2;
+    output.channelBuffers32 = channels;
+    ProcessData data {};
+    data.processMode = kRealtime;
+    data.symbolicSampleSize = kSample32;
+    data.numSamples = static_cast<int32>(left.size());
+    data.numOutputs = 1;
+    data.outputs = &output;
+    EventList inputEvents;
+    Event noteOn {};
+    Event noteOff {};
+    const auto midiChannel = expectMicroPython ? 0 : 3;
+    noteOn.busIndex = 0;
+    noteOn.sampleOffset = 64;
+    noteOn.type = Event::kNoteOnEvent;
+    noteOn.noteOn.channel = midiChannel;
+    noteOn.noteOn.pitch = 57;
+    noteOn.noteOn.velocity = 1.0F;
+    noteOn.noteOn.noteId = 1;
+    (void)inputEvents.addEvent(noteOn);
+    data.inputEvents = &inputEvents;
+
+    noteOff.busIndex = 0;
+    noteOff.sampleOffset = 32;
+    noteOff.type = Event::kNoteOffEvent;
+    noteOff.noteOff.channel = midiChannel;
+    noteOff.noteOff.pitch = 57;
+    noteOff.noteOff.velocity = 0.0F;
+    noteOff.noteOff.noteId = 1;
+
+    ParameterChanges parameterChanges {1};
+    ParameterChanges outputChanges {2};
+    data.outputParameterChanges = &outputChanges;
+    bool sawEngineReady = false;
+    bool heardTone = false;
+    int firstAudibleSample = -1;
+    bool havePreviousSample = false;
+    float previousSample = 0.0F;
+    int zeroCrossings = 0;
+    int lastAudibleSample = -1;
+    const auto blockCount = expectMicroPython ? 96 : 12;
+    for (int block = 0; block < blockCount; ++block)
+    {
+        if (block == 6)
+        {
+            inputEvents.clear();
+            (void)inputEvents.addEvent(noteOff);
+            data.inputEvents = &inputEvents;
+        }
+        if (!expectMicroPython && block == 2)
+        {
+            constexpr ParamID pitchBendChannel3 = 0x10000U + 3U * 256U + 129U;
+            int32 queueIndex = 0;
+            int32 pointIndex = 0;
+            auto* queue = parameterChanges.addParameterData (pitchBendChannel3,
+                                                              queueIndex);
+            if (queue == nullptr ||
+                queue->addPoint (0, 1.0, pointIndex) != kResultTrue)
+                return false;
+            data.inputParameterChanges = &parameterChanges;
+        }
+        if (!expectMicroPython && block == 4)
+        {
+            constexpr ParamID macro01 = 100U;
+            int32 queueIndex = 0;
+            int32 pointIndex = 0;
+            auto* queue = parameterChanges.addParameterData (macro01, queueIndex);
+            if (queue == nullptr ||
+                queue->addPoint (17, 0.75, pointIndex) != kResultTrue)
+                return false;
+            data.inputParameterChanges = &parameterChanges;
+        }
+        if (!require(processor->process(data), "process"))
+            return false;
+        for (int32 queueIndex = 0;
+             queueIndex < outputChanges.getParameterCount(); ++queueIndex)
+        {
+            auto* queue = outputChanges.getParameterData(queueIndex);
+            if (queue == nullptr || queue->getPointCount() == 0)
+                continue;
+            int32 sampleOffset = 0;
+            ParamValue value = 0.0;
+            if (queue->getParameterId() == 2U &&
+                queue->getPoint(queue->getPointCount() - 1, sampleOffset, value) ==
+                    kResultTrue && value >= 1.0)
+                sawEngineReady = true;
+        }
+        outputChanges.clearQueue();
+        if (block == 0 || block == 6)
+        {
+            inputEvents.clear();
+            data.inputEvents = nullptr;
+        }
+        if (!expectMicroPython && (block == 2 || block == 4))
+        {
+            parameterChanges.clearQueue ();
+            data.inputParameterChanges = nullptr;
+        }
+        for (std::size_t frame = 0; frame < left.size(); ++frame)
+        {
+            const auto sample = left[frame];
+            if (!std::isfinite(sample))
+                return false;
+            if (std::abs(sample) > 0.000001F)
+            {
+                heardTone = true;
+                if (firstAudibleSample < 0)
+                    firstAudibleSample = block * data.numSamples +
+                                         static_cast<int> (frame);
+                lastAudibleSample = block * data.numSamples +
+                                    static_cast<int> (frame);
+            }
+            if (block < 4 && sample != 0.0F)
+            {
+                std::cerr << "HOOK latency.initial_silence FAIL\n";
+                return false;
+            }
+            if (expectMicroPython && block == 4 && frame < 64U && sample != 0.0F)
+            {
+                std::cerr << "HOOK midi.sample_offset FAIL: early sample="
+                          << frame << '\n';
+                return false;
+            }
+            if (!expectMicroPython)
+            {
+                const auto absoluteSample = block * data.numSamples +
+                                            static_cast<int> (frame);
+                const auto expected = absoluteSample < 576 ? 0.0F
+                    : absoluteSample < 768 ? 0.125F
+                    : absoluteSample < 1041 ? 0.25F
+                    : absoluteSample < 1312 ? 0.1875F
+                    : 0.0F;
+                if (std::abs(sample - expected) > 0.000001F)
+                {
+                    std::cerr << "HOOK midi.pitch_bend FAIL: sample="
+                              << absoluteSample << " expected=" << expected
+                              << " actual=" << sample << '\n';
+                    return false;
+                }
+            }
+            const auto absoluteSample = block * data.numSamples +
+                                        static_cast<int> (frame);
+            if (block >= 4 && absoluteSample < 1312 &&
+                std::abs(sample) > 0.000001F)
+            {
+                if (havePreviousSample &&
+                    ((previousSample < 0.0F && sample >= 0.0F) ||
+                     (previousSample > 0.0F && sample <= 0.0F)))
+                    ++zeroCrossings;
+                previousSample = sample;
+                havePreviousSample = true;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(4));
+    }
+
+    if (!heardTone || !sawEngineReady || processor->getLatencySamples() != 512U)
+    {
+        std::cerr << "HOOK latency.fixed_pipeline FAIL: zero_crossings="
+                  << zeroCrossings << '\n';
+        return false;
+    }
+    std::cout << "HOOK latency.fixed_pipeline OK: 512 samples\n";
+    std::cout << "HOOK engine.status_parameter OK: ready=1 error=0\n";
+    if (expectMicroPython)
+    {
+        // The note-on at offset 64 must emerge at 512 + 64 after the fixed
+        // pipeline. A native fallback ignores it, so audible 220 Hz output
+        // also proves the event reached the Python synthio graph.
+        if (zeroCrossings < 5 || zeroCrossings > 9 ||
+            firstAudibleSample < 576 || firstAudibleSample > 580)
+        {
+            std::cerr << "HOOK engine.micropython_synthio FAIL: "
+                      << "zero_crossings=" << zeroCrossings
+                      << " first_audible=" << firstAudibleSample << '\n';
+            return false;
+        }
+        std::cout << "HOOK engine.micropython_synthio OK: zero_crossings="
+                  << zeroCrossings << '\n';
+        std::cout << "HOOK midi.sample_offset OK: first_audible="
+                  << firstAudibleSample << '\n';
+        // Note-off is submitted in block 6 at offset 32, so it reaches Python
+        // at sample 1312 after latency. The default voice's explicit 50 ms
+        // release must continue past that boundary and finish within the run.
+        if (lastAudibleSample <= 1312 || lastAudibleSample >= 5000)
+        {
+            std::cerr << "HOOK midi.note_off_tail FAIL: last_audible="
+                      << lastAudibleSample << '\n';
+            return false;
+        }
+        std::cout << "HOOK midi.note_off_tail OK: event_sample=1312"
+                  << " last_audible=" << lastAudibleSample << '\n';
+    }
+    else
+    {
+        std::cout << "HOOK midi.pitch_bend OK: channel=3 event_sample=768\n";
+        std::cout << "HOOK macro.sample_offset OK: macro=1 event_sample=1041\n";
+    }
+
+    const bool stopped = ok(processor->setProcessing(false)) &&
+                         ok(component->setActive(false));
+    processor = nullptr;
+    const bool terminated = ok(component->terminate());
+    component = nullptr;
+    return stopped && terminated;
+}
+
+bool embeddedStateSurvivesMissingSource(const PluginFactory& factory,
+                                        const ClassInfo& classInfo,
+                                        FUnknown* host)
+{
+    const auto unique = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto sourcePath = std::filesystem::temp_directory_path() /
+        ("mpvst-state-source-" + std::to_string(unique) + ".py");
+    constexpr const char* source =
+        "# mpvst-macro-labels: Gain | Tone\n"
+        "import synthio\n"
+        "import vstaudio\n"
+        "synth = synthio.Synthesizer(sample_rate=vstaudio.sample_rate(), "
+        "channel_count=2)\n"
+        "synth.press(synthio.Note(330.0))\n"
+        "vstaudio.output(synth)\n";
+    {
+        std::ofstream output(sourcePath, std::ios::binary | std::ios::trunc);
+        if (!output || !output.write(source, static_cast<std::streamsize>(
+                                               std::strlen(source))))
+            return false;
+    }
+    setScriptPath(sourcePath.string());
+
+    auto original = createComponent(factory, classInfo, host);
+    MemoryStream snapshot;
+    if (!original || !ok(original->getState(&snapshot)) ||
+        snapshot.getSize() <= static_cast<int64>(std::strlen(source)))
+    {
+        setScriptPath({});
+        std::error_code ignored;
+        (void)std::filesystem::remove(sourcePath, ignored);
+        return false;
+    }
+    (void)original->terminate();
+    original = nullptr;
+
+    std::error_code removeError;
+    const auto removed = std::filesystem::remove(sourcePath, removeError);
+    setScriptPath({});
+    if (!removed || removeError || std::filesystem::exists(sourcePath))
+        return false;
+
+    auto restored = createComponent(factory, classInfo, host);
+    if (!restored)
+        return false;
+    snapshot.seek(0, IBStream::kIBSeekSet, nullptr);
+    if (!ok(restored->setState(&snapshot)))
+        return false;
+
+    TUID controllerCID {};
+    if (!ok(restored->getControllerClassId(controllerCID)))
+        return false;
+    auto controller = factory.createInstance<IEditController>(VST3::UID(controllerCID));
+    if (!controller || !ok(controller->initialize(host)))
+        return false;
+    snapshot.seek(0, IBStream::kIBSeekSet, nullptr);
+    if (!ok(controller->setComponentState(&snapshot)))
+        return false;
+    ParameterInfo macroInfo {};
+    bool foundGain = false;
+    for (int32 index = 0; index < controller->getParameterCount(); ++index)
+    {
+        if (controller->getParameterInfo(index, macroInfo) == kResultTrue &&
+            macroInfo.id == 100U)
+        {
+            std::array<char, 128> title {};
+            UString(macroInfo.title, str16BufferSize(macroInfo.title))
+                .toAscii(title.data(), static_cast<int32>(title.size()));
+            foundGain = std::string {title.data()} == "Gain";
+            break;
+        }
+    }
+    (void)controller->terminate();
+    controller = nullptr;
+    if (!foundGain)
+        return false;
+    auto processor = getProcessor(restored);
+    if (!processor)
+        return false;
+
+    SpeakerArrangement stereo = SpeakerArr::kStereo;
+    ProcessSetup setup {};
+    setup.processMode = kRealtime;
+    setup.symbolicSampleSize = kSample32;
+    setup.maxSamplesPerBlock = 128;
+    setup.sampleRate = 48000.0;
+    if (!ok(processor->setBusArrangements(nullptr, 0, &stereo, 1)) ||
+        !ok(restored->activateBus(kAudio, kOutput, 0, true)) ||
+        !ok(processor->setupProcessing(setup)) ||
+        !ok(restored->setActive(true)) ||
+        !ok(processor->setProcessing(true)))
+        return false;
+
+    std::array<float, 128> left {};
+    std::array<float, 128> right {};
+    Sample32* channels[] = {left.data(), right.data()};
+    AudioBusBuffers output {};
+    output.numChannels = 2;
+    output.channelBuffers32 = channels;
+    ProcessData data {};
+    data.processMode = kRealtime;
+    data.symbolicSampleSize = kSample32;
+    data.numSamples = static_cast<int32>(left.size());
+    data.numOutputs = 1;
+    data.outputs = &output;
+    bool heard = false;
+    for (int block = 0; block < 16; ++block)
+    {
+        if (!ok(processor->process(data)))
+            return false;
+        if (block >= 4)
+        {
+            for (const auto sample : left)
+                heard = heard || std::abs(sample) > 0.000001F;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(4));
+    }
+
+    const bool stopped = ok(processor->setProcessing(false)) &&
+                         ok(restored->setActive(false));
+    processor = nullptr;
+    const bool terminated = ok(restored->terminate());
+    restored = nullptr;
+    return heard && stopped && terminated;
+}
+
+bool reloadFadeLifecycle(const PluginFactory& factory, const ClassInfo& classInfo,
+                         FUnknown* host)
+{
+#if defined(_WIN32)
+    (void)_putenv_s("MPVST_NATIVE_EVENT_GATE", "1");
+#else
+    (void)setenv("MPVST_NATIVE_EVENT_GATE", "1", 1);
+#endif
+    auto component = createComponent(factory, classInfo, host);
+    auto processor = getProcessor(component);
+    if (!component || !processor)
+        return false;
+
+    SpeakerArrangement stereo = SpeakerArr::kStereo;
+    ProcessSetup setup {};
+    setup.processMode = kRealtime;
+    setup.symbolicSampleSize = kSample32;
+    setup.maxSamplesPerBlock = 128;
+    setup.sampleRate = 48000.0;
+    if (!ok(processor->setBusArrangements(nullptr, 0, &stereo, 1)) ||
+        !ok(component->activateBus(kAudio, kOutput, 0, true)) ||
+        !ok(component->activateBus(kEvent, kInput, 0, true)) ||
+        !ok(processor->setupProcessing(setup)) ||
+        !ok(component->setActive(true)) ||
+        !ok(processor->setProcessing(true)))
+        return false;
+
+    std::array<float, 128> left {};
+    std::array<float, 128> right {};
+    Sample32* channels[] = {left.data(), right.data()};
+    AudioBusBuffers output {};
+    output.numChannels = 2;
+    output.channelBuffers32 = channels;
+    ProcessData data {};
+    data.processMode = kRealtime;
+    data.symbolicSampleSize = kSample32;
+    data.numSamples = static_cast<int32>(left.size());
+    data.numOutputs = 1;
+    data.outputs = &output;
+
+    EventList events;
+    Event noteOn {};
+    noteOn.busIndex = 0;
+    noteOn.sampleOffset = 0;
+    noteOn.type = Event::kNoteOnEvent;
+    noteOn.noteOn.channel = 0;
+    noteOn.noteOn.pitch = 60;
+    noteOn.noteOn.velocity = 1.0F;
+    noteOn.noteOn.noteId = 1;
+    (void)events.addEvent(noteOn);
+    data.inputEvents = &events;
+    ParameterChanges reloadChanges {1};
+
+    for (int block = 0; block < 14; ++block)
+    {
+        if (block == 5)
+        {
+            int32 queueIndex = 0;
+            int32 pointIndex = 0;
+            auto* queue = reloadChanges.addParameterData(1U, queueIndex);
+            if (queue == nullptr ||
+                queue->addPoint(0, 1.0, pointIndex) != kResultTrue)
+                return false;
+            data.inputParameterChanges = &reloadChanges;
+        }
+        if (!ok(processor->process(data)))
+            return false;
+        if (block == 0)
+        {
+            events.clear();
+            data.inputEvents = nullptr;
+        }
+        if (block == 5)
+        {
+            reloadChanges.clearQueue();
+            data.inputParameterChanges = nullptr;
+        }
+        for (std::size_t frame = 0; frame < left.size(); ++frame)
+        {
+            const auto sample = block * 128 + static_cast<int>(frame);
+            float expected = 0.0F;
+            if (sample >= 512 && sample < 640)
+                expected = 0.125F;
+            else if (sample >= 640 && sample < 768)
+                expected = 0.125F * static_cast<float>(768 - sample) / 128.0F;
+            else if (sample >= 1408 && sample < 1536)
+                expected = 0.125F * static_cast<float>(sample - 1408) / 128.0F;
+            else if (sample >= 1536)
+                expected = 0.125F;
+            if (std::abs(left[frame] - expected) > 0.000001F)
+            {
+                std::cerr << "HOOK reload.fade FAIL: sample=" << sample
+                          << " expected=" << expected
+                          << " actual=" << left[frame] << '\n';
+                return false;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(4));
+    }
+
+    const bool stopped = ok(processor->setProcessing(false)) &&
+                         ok(component->setActive(false));
+    processor = nullptr;
+    const bool terminated = ok(component->terminate());
+    component = nullptr;
+    return stopped && terminated;
+}
+
+} // namespace
+
+int main(int argc, char** argv)
+{
+    const std::string mode = argc == 3 ? argv[2] : "";
+    if (argc < 2 || argc > 3 ||
+        (!mode.empty() && mode != "--expect-micropython" &&
+         mode != "--expect-embedded-state" && mode != "--expect-reload-fade"))
+    {
+        std::cerr << "usage: mpvst_smoke_host <plugin.vst3> "
+                     "[--expect-micropython|--expect-embedded-state|"
+                     "--expect-reload-fade]\n";
+        return 2;
+    }
+    const bool embeddedState = mode == "--expect-embedded-state";
+    const bool reloadFade = mode == "--expect-reload-fade";
+    const bool expectMicroPython = mode == "--expect-micropython" || embeddedState;
+
+    std::string error;
+    const auto modulePath = std::filesystem::weakly_canonical(argv[1]).string();
+    if (!selectBundledEngine(modulePath, expectMicroPython))
+    {
+        std::cerr << "HOOK engine.select FAIL\n";
+        return 3;
+    }
+    auto module = Module::create(modulePath, error);
+    if (!module)
+    {
+        std::cerr << "HOOK module.load FAIL: " << error << '\n';
+        return 3;
+    }
+    std::cout << "HOOK module.load OK\n";
+
+    {
+        auto host = owned(new HostApplication);
+        const auto factory = module->getFactory();
+        factory.setHostContext(host);
+        ClassInfo classInfo;
+        if (findAudioClass(factory, classInfo) == nullptr)
+        {
+            std::cerr << "HOOK class.scan FAIL\n";
+            return 4;
+        }
+        std::cout << "HOOK class.scan OK: " << classInfo.name() << '\n';
+
+        if (reloadFade)
+        {
+            if (!reloadFadeLifecycle(factory, classInfo, host))
+            {
+                std::cerr << "HOOK reload.fade FAIL\n";
+                return 5;
+            }
+            std::cout << "HOOK reload.fade OK: out=128 hold=640 in=128\n";
+        }
+        else if (embeddedState)
+        {
+            if (!embeddedStateSurvivesMissingSource(factory, classInfo, host))
+            {
+                std::cerr << "HOOK state.embedded_script FAIL\n";
+                return 5;
+            }
+            std::cout << "HOOK state.embedded_script OK: source_removed=1\n";
+        }
+        else if (!stateRoundTrip(factory, classInfo, host))
+        {
+            std::cerr << "HOOK state.roundtrip FAIL\n";
+            return 5;
+        }
+        if (!embeddedState && !reloadFade)
+            std::cout << "HOOK state.roundtrip OK: legacy_v1=1 malformed=4\n";
+
+        if (!embeddedState && !reloadFade &&
+            !processLifecycle(factory, classInfo, host, expectMicroPython))
+        {
+            std::cerr << "HOOK lifecycle.process FAIL\n";
+            return 6;
+        }
+        if (!embeddedState && !reloadFade)
+            std::cout << "HOOK lifecycle.process OK\n";
+    }
+
+    module.reset();
+    std::cout << "HOOK module.unload OK\n";
+    return 0;
+}
