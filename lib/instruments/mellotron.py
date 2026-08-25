@@ -1,0 +1,138 @@
+# mpvst-macro-labels: Volume | Tone | Flutter Rate | Flutter Depth | Attack | Release | Tape Hiss | Master Tune
+
+import array
+import math
+
+import synthio
+import vstaudio
+
+SR = vstaudio.sample_rate()
+TAU = 2.0 * math.pi
+
+def make_table(parts, length=2048, gain=32000):
+    vals = [0.0] * length
+    for mult, amp in parts:
+        step = TAU * mult / length
+        for i in range(length):
+            vals[i] += amp * math.sin(step * i)
+    peak = max(abs(v) for v in vals) if vals else 0.0
+    if peak <= 0.0:
+        peak = 1.0
+    out = array.array("h", bytearray(length * 2))
+    scale = gain / peak
+    for i in range(length):
+        out[i] = int(vals[i] * scale)
+    return out
+
+def noise_table(length=8192, seed=1234):
+    out = array.array("h", bytearray(length * 2))
+    state = seed
+    for i in range(length):
+        state = (state * 1103515245 + 12345) & 0x7FFFFFFF
+        out[i] = ((state >> 15) & 0xFFFF) - 32768
+    return out
+
+WAVE_FLUTE = make_table(((1, 1.0), (2, 0.4), (3, 0.2)))
+NOISE = noise_table()
+NOISE_HZ = SR / 8192.0
+SINE = make_table(((1, 1.0),))
+
+synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
+vstaudio.output(synth)
+
+# Macros
+volume = 0.8
+tone = 2000.0
+flutter_rate = 3.0
+flutter_depth = 0.1
+att = 0.1
+rel = 0.1
+tape_hiss = 0.1
+master_tune = 1.0
+
+voices = {}
+serial = 0
+MAX_VOICES = 8
+hiss_note = None
+
+def key_of(channel, note_id, pitch):
+    return (channel, note_id if note_id >= 0 else pitch)
+
+def release_voice(k):
+    voice = voices.pop(k, None)
+    if voice is not None:
+        for note in voice[0]:
+            synth.release(note)
+
+def steal_oldest():
+    oldest = None
+    for k in voices:
+        if oldest is None or voices[k][1] < voices[oldest][1]:
+            oldest = k
+    if oldest is not None:
+        release_voice(oldest)
+
+def update_hiss():
+    global hiss_note
+    # Tape hiss continues as long as a note is pressed, or constantly.
+    # Often Mellotrons only hiss when tape is engaged.
+    if len(voices) > 0 and tape_hiss > 0.01:
+        if hiss_note is None:
+            env = synthio.Envelope(attack_time=0.1, decay_time=0.1, release_time=0.1, attack_level=1.0, sustain_level=1.0)
+            lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, 4000.0, Q=0.5)
+            hiss_note = synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env, filter=lp, amplitude=volume * tape_hiss * 0.1)
+            synth.press(hiss_note)
+        else:
+            # cannot change amplitude dynamically easily without math node, but it's ok
+            pass
+    else:
+        if hiss_note is not None:
+            synth.release(hiss_note)
+            hiss_note = None
+
+def handle_event(event_type, channel, note_id, data0, value0, value1, sample_position):
+    global volume, tone, flutter_rate, flutter_depth, att, rel, tape_hiss, master_tune
+    global serial
+    
+    k = key_of(channel, note_id, data0)
+    
+    if event_type == vstaudio.EVENT_NOTE_ON and value0 > 0.0:
+        release_voice(k)
+        if len(voices) >= MAX_VOICES:
+            steal_oldest()
+            
+        hz = synthio.midi_to_hz(data0 + value1) * master_tune
+        amp = volume * value0
+        
+        env = synthio.Envelope(attack_time=att, decay_time=0.1, release_time=rel, attack_level=1.0, sustain_level=1.0)
+        
+        # Tape wow/flutter
+        flutter_lfo = synthio.LFO(waveform=SINE, rate=flutter_rate, scale=flutter_depth * 0.02) if flutter_depth > 0.01 else None
+        
+        # Bandpass filter for lo-fi tape sound
+        bp = synthio.Biquad(synthio.FilterMode.BAND_PASS, tone, Q=0.8)
+        
+        n = synthio.Note(hz, waveform=WAVE_FLUTE, envelope=env, filter=bp, amplitude=amp * 0.6, bend=flutter_lfo)
+        
+        serial += 1
+        voices[k] = ((n,), serial)
+        synth.press(n)
+        update_hiss()
+            
+    elif event_type in (vstaudio.EVENT_NOTE_OFF, vstaudio.EVENT_NOTE_ON):
+        release_voice(k)
+        update_hiss()
+        
+    elif event_type == vstaudio.EVENT_PARAMETER:
+        if data0 == 0: volume = value0
+        elif data0 == 1: tone = 500.0 + value0 * 4000.0
+        elif data0 == 2: flutter_rate = 0.1 + value0 * 10.0
+        elif data0 == 3: flutter_depth = value0
+        elif data0 == 4: att = 0.001 + value0 * 2.0
+        elif data0 == 5: rel = 0.01 + value0 * 2.0
+        elif data0 == 6: 
+            tape_hiss = value0
+            update_hiss()
+        elif data0 == 7: master_tune = 0.95 + value0 * 0.1
+
+vstaudio.on_event(handle_event)

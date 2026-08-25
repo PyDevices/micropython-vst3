@@ -65,6 +65,15 @@ if(TARGET mpvst-stage-micropython-engine)
         $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-micropython)
     add_test(NAME mpvst_effect_audio_smoke COMMAND mpvst_smoke_host
         $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-effect-audio)
+    # Every class in the shared effects library, through the real sidecar.
+    find_package(Python3 COMPONENTS Interpreter)
+    if(Python3_FOUND)
+        add_test(NAME mpvst_effects_library COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tools/test-effects-lib.py
+            $<TARGET_FILE:mpvst_smoke_host>
+            $<TARGET_FILE_DIR:MicroPythonVST3>/../..)
+        set_tests_properties(mpvst_effects_library PROPERTIES TIMEOUT 600)
+    endif()
 endif()
 
 add_test(NAME mpvst_lifecycle_smoke COMMAND mpvst_smoke_host

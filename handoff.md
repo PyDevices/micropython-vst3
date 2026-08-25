@@ -33,7 +33,7 @@ platforms.
 `PLAN.md` is the source of truth and records every phase as complete.
 
 - Steinberg validator: 94/94 on Windows and Linux (both classes).
-- Automated tests: 13 of 13 on Linux, 13 of 13 on Windows.
+- Automated tests: 14 of 14 on Linux and on Windows.
 - REAPER matrix: 17 of 17 steps and every PCM check, on both platforms,
   including an instrument-into-effect chain rendered from embedded state
   and a latency-matched effect bypass. Evidence in `docs/evidence/`.
@@ -46,6 +46,16 @@ platforms.
   An effect script reads the host audio through `vstaudio.input()` - an
   audiosample source any audioif chain can consume - and its bypass is a
   latency-matched pass-through. `examples/fx_space.py` shows the shape.
+- `lib/effects` is a shared library of forty-plus effect classes
+  (dynamics, EQ, reverb, delay, modulation, drive, pitch/stereo) staged
+  into the bundle and importable from any script. It rides on two engine
+  DSP nodes - `vstaudio.Dynamics` (envelope-follower gain computer) and
+  `vstaudio.Splitter` (parallel branches) - and compensates for two
+  oracle-faithful CircuitPython biquad quirks: filters in a stereo
+  audiofilters.Filter center at twice the asked frequency (the library
+  halves what it requests), and peaking EQ is broken upstream (bells are
+  built from notch and band-pass sections). `tools/test-effects-lib.py`
+  runs every class through the real sidecar as `mpvst_effects_library`.
 - 20 visible parameters (bypass, reload, ready/error status, 16 macros) plus
   2,080 hidden 16-channel MIDI mapping parameters, 2,100 total. REAPER reports
   2,103 because it appends its own three.

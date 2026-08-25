@@ -1,0 +1,135 @@
+# mpvst-macro-labels: Volume | Male Choir | Female Choir | Chorus Depth | Attack | Release | Formant Shift | Vibrato Rate | Vibrato Depth | Brilliance | Bass | Master Tune
+
+import array
+import math
+
+import synthio
+import vstaudio
+
+SR = vstaudio.sample_rate()
+TAU = 2.0 * math.pi
+
+def make_table(parts, length=2048, gain=32000):
+    vals = [0.0] * length
+    for mult, amp in parts:
+        step = TAU * mult / length
+        for i in range(length):
+            vals[i] += amp * math.sin(step * i)
+    peak = max(abs(v) for v in vals) if vals else 0.0
+    if peak <= 0.0:
+        peak = 1.0
+    out = array.array("h", bytearray(length * 2))
+    scale = gain / peak
+    for i in range(length):
+        out[i] = int(vals[i] * scale)
+    return out
+
+# Vocoders use a rich pulse wave as the carrier
+PULSE = make_table([(n, 1.0 / n if n % 2 != 0 else 0.5 / n) for n in range(1, 40)])
+SINE = make_table(((1, 1.0),))
+
+synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
+vstaudio.output(synth)
+
+# Macros
+volume = 0.8
+male_mix = 0.8
+female_mix = 0.5
+chorus_depth = 1.0
+amp_a = 0.1
+amp_r = 0.5
+formant_shift = 0.0
+vib_rate = 5.0
+vib_depth = 0.0
+brilliance = 0.5
+bass = 0.5
+master_tune = 1.0
+
+voices = {}
+serial = 0
+MAX_VOICES = 4 # Heavy filtering per voice
+
+def key_of(channel, note_id, pitch):
+    return (channel, note_id if note_id >= 0 else pitch)
+
+def release_voice(k):
+    voice = voices.pop(k, None)
+    if voice is not None:
+        for note in voice[0]:
+            synth.release(note)
+
+def steal_oldest():
+    oldest = None
+    for k in voices:
+        if oldest is None or voices[k][1] < voices[oldest][1]:
+            oldest = k
+    if oldest is not None:
+        release_voice(oldest)
+
+def handle_event(event_type, channel, note_id, data0, value0, value1, sample_position):
+    global volume, male_mix, female_mix, chorus_depth, amp_a, amp_r
+    global formant_shift, vib_rate, vib_depth, brilliance, bass, master_tune
+    global serial
+    
+    k = key_of(channel, note_id, data0)
+    
+    if event_type == vstaudio.EVENT_NOTE_ON and value0 > 0.0:
+        release_voice(k)
+        if len(voices) >= MAX_VOICES:
+            steal_oldest()
+            
+        hz = synthio.midi_to_hz(data0 + value1) * master_tune
+        amp = volume * value0
+        
+        env = synthio.Envelope(attack_time=amp_a, decay_time=0.1, release_time=amp_r, attack_level=1.0, sustain_level=1.0)
+        
+        vib_lfo = synthio.LFO(waveform=SINE, rate=vib_rate, scale=vib_depth * 0.02) if vib_depth > 0.01 else None
+        ens_lfo = synthio.LFO(waveform=SINE, rate=0.8, scale=chorus_depth * 0.01) if chorus_depth > 0.01 else None
+        
+        notes = []
+        
+        # Male formants (approx "Ah" / "Oh")
+        if male_mix > 0.01:
+            f1 = 600.0 * (1.0 + formant_shift)
+            f2 = 1200.0 * (1.0 + formant_shift)
+            bp1 = synthio.Biquad(synthio.FilterMode.BAND_PASS, f1, Q=4.0)
+            bp2 = synthio.Biquad(synthio.FilterMode.BAND_PASS, f2, Q=4.0)
+            
+            n1 = synthio.Note(hz, waveform=PULSE, envelope=env, filter=bp1, amplitude=amp * male_mix * 0.4, bend=vib_lfo, panning=-0.3)
+            n2 = synthio.Note(hz * 1.002, waveform=PULSE, envelope=env, filter=bp2, amplitude=amp * male_mix * 0.4, bend=ens_lfo, panning=0.3)
+            notes.extend([n1, n2])
+            
+        # Female formants (approx "Ee" / high "Ah")
+        if female_mix > 0.01:
+            f1 = 900.0 * (1.0 + formant_shift)
+            f2 = 2500.0 * (1.0 + formant_shift)
+            bp1 = synthio.Biquad(synthio.FilterMode.BAND_PASS, f1, Q=5.0)
+            bp2 = synthio.Biquad(synthio.FilterMode.BAND_PASS, f2, Q=3.0)
+            
+            n1 = synthio.Note(hz * 2.0, waveform=PULSE, envelope=env, filter=bp1, amplitude=amp * female_mix * 0.3, bend=vib_lfo, panning=-0.5)
+            n2 = synthio.Note(hz * 1.998, waveform=PULSE, envelope=env, filter=bp2, amplitude=amp * female_mix * 0.3, bend=ens_lfo, panning=0.5)
+            notes.extend([n1, n2])
+            
+        serial += 1
+        voices[k] = (tuple(notes), serial)
+        for n in notes:
+            synth.press(n)
+            
+    elif event_type in (vstaudio.EVENT_NOTE_OFF, vstaudio.EVENT_NOTE_ON):
+        release_voice(k)
+        
+    elif event_type == vstaudio.EVENT_PARAMETER:
+        if data0 == 0: volume = value0
+        elif data0 == 1: male_mix = value0
+        elif data0 == 2: female_mix = value0
+        elif data0 == 3: chorus_depth = value0
+        elif data0 == 4: amp_a = 0.001 + value0 * 2.0
+        elif data0 == 5: amp_r = 0.01 + value0 * 4.0
+        elif data0 == 6: formant_shift = -0.5 + value0
+        elif data0 == 7: vib_rate = 0.1 + value0 * 10.0
+        elif data0 == 8: vib_depth = value0
+        elif data0 == 9: brilliance = value0
+        elif data0 == 10: bass = value0
+        elif data0 == 11: master_tune = 0.95 + value0 * 0.1
+
+vstaudio.on_event(handle_event)

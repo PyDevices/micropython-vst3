@@ -509,6 +509,14 @@ Fx), sharing the instrument's processor with a stereo audio-input bus.
 - The engine no longer resets its output sample on registration:
   audiomixer's reset stops every voice, so `vstaudio.output(mixer)` after
   `voice.play(...)` - the idiomatic order - used to silence the chain.
+- `lib/effects` builds a shared effect library on top: forty-plus
+  classes over the audioif nodes plus two new engine primitives,
+  `vstaudio.Dynamics` and `vstaudio.Splitter`, all verified through the
+  real sidecar by the `mpvst_effects_library` test. Two CircuitPython
+  biquad quirks were characterised against the oracle and compensated in
+  the library rather than fixed in audioif (which is deliberately
+  bug-for-bug faithful): stereo Filter chains center biquads at twice
+  the requested frequency, and peaking EQ's b2 sign is wrong upstream.
 
 ## Deferred extensions
 

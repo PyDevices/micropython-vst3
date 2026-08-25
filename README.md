@@ -6,7 +6,9 @@ MicroPython engine processes. One bundle ships two plug-ins: the
 **MicroPython Effect** (stereo in and out), whose script reads the host
 audio through `vstaudio.input()` and can run it through any audioif
 chain - filters, echoes, chorus, freeverb, mixers - or synthesize
-alongside it.
+alongside it. `lib/effects` ships a library of ready-made effect
+classes (compressors, EQs, reverbs, delays, modulation, drive, pitch
+and stereo tools) importable from any effect script.
 The VST audio callback remains native and real-time safe; Python, garbage
 collection, filesystem access, and engine lifecycle work stay in the sidecar.
 

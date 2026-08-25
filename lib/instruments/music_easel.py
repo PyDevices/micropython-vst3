@@ -1,0 +1,120 @@
+# mpvst-macro-labels: Volume | Timbre Wavefold | FM Index | Mod Osc Freq | LPG Strike | LPG Decay | Amp Attack | Amp Sustain | Amp Release | Master Tune
+
+import array
+import math
+
+import synthio
+import vstaudio
+
+SR = vstaudio.sample_rate()
+TAU = 2.0 * math.pi
+
+def make_table(parts, length=2048, gain=32000):
+    vals = [0.0] * length
+    for mult, amp in parts:
+        step = TAU * mult / length
+        for i in range(length):
+            vals[i] += amp * math.sin(step * i)
+    peak = max(abs(v) for v in vals) if vals else 0.0
+    if peak <= 0.0:
+        peak = 1.0
+    out = array.array("h", bytearray(length * 2))
+    scale = gain / peak
+    for i in range(length):
+        out[i] = int(vals[i] * scale)
+    return out
+
+# Complex wave approximation
+WAVE_COMPLEX = make_table(((1, 1.0), (2, 0.4), (3, 0.8), (4, 0.2)))
+SINE = make_table(((1, 1.0),))
+FALL = array.array("h", (32767, 0))
+
+synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
+vstaudio.output(synth)
+
+# Macros
+volume = 0.8
+timbre = 0.5
+fm_idx = 0.5
+mod_freq = 0.5
+lpg_strike = 0.8
+lpg_decay = 0.5
+amp_a = 0.01
+amp_s = 0.8
+amp_r = 0.5
+master_tune = 1.0
+
+voices = {}
+serial = 0
+MAX_VOICES = 1
+
+def key_of(channel, note_id, pitch):
+    return (channel, note_id if note_id >= 0 else pitch)
+
+def release_voice(k):
+    voice = voices.pop(k, None)
+    if voice is not None:
+        for note in voice[0]:
+            synth.release(note)
+
+def steal_oldest():
+    oldest = None
+    for k in voices:
+        if oldest is None or voices[k][1] < voices[oldest][1]:
+            oldest = k
+    if oldest is not None:
+        release_voice(oldest)
+
+def handle_event(event_type, channel, note_id, data0, value0, value1, sample_position):
+    global volume, timbre, fm_idx, mod_freq, lpg_strike, lpg_decay
+    global amp_a, amp_s, amp_r, master_tune
+    global serial
+    
+    k = key_of(channel, note_id, data0)
+    
+    if event_type == vstaudio.EVENT_NOTE_ON and value0 > 0.0:
+        if len(voices) >= MAX_VOICES:
+            steal_oldest()
+            
+        hz = synthio.midi_to_hz(data0 + value1) * master_tune
+        amp = volume * value0
+        
+        # LPG strike simulates a vactrol snapping open and closing
+        # Both amplitude and filter cutoff follow this
+        actual_decay = lpg_decay if lpg_strike > 0.5 else 0.5
+        
+        env = synthio.Envelope(attack_time=amp_a, decay_time=actual_decay, release_time=amp_r, attack_level=1.0, sustain_level=amp_s if lpg_strike < 0.5 else 0.0)
+        
+        f_sweep = synthio.LFO(waveform=FALL, once=True, rate=1.0/actual_decay, scale=10000.0, interpolate=True)
+        cutoff = synthio.Math(synthio.MathOperation.SUM, 200.0, f_sweep, 0.0)
+        
+        lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=0.5) # LPG has very low Q
+        
+        # FM emulation via vibrato on pitch
+        fm_lfo = synthio.LFO(waveform=SINE, rate=1.0 + mod_freq * 1000.0, scale=fm_idx * 0.1) if fm_idx > 0.01 else None
+        
+        # We blend a sine with the complex wave depending on timbre
+        n1 = synthio.Note(hz, waveform=SINE, envelope=env, filter=lp, amplitude=amp * (1.0 - timbre), bend=fm_lfo)
+        n2 = synthio.Note(hz, waveform=WAVE_COMPLEX, envelope=env, filter=lp, amplitude=amp * timbre, bend=fm_lfo)
+        
+        serial += 1
+        voices[k] = ((n1, n2), serial)
+        synth.press(n1)
+        synth.press(n2)
+            
+    elif event_type in (vstaudio.EVENT_NOTE_OFF, vstaudio.EVENT_NOTE_ON):
+        release_voice(k)
+        
+    elif event_type == vstaudio.EVENT_PARAMETER:
+        if data0 == 0: volume = value0
+        elif data0 == 1: timbre = value0
+        elif data0 == 2: fm_idx = value0
+        elif data0 == 3: mod_freq = value0
+        elif data0 == 4: lpg_strike = value0
+        elif data0 == 5: lpg_decay = 0.05 + value0 * 2.0
+        elif data0 == 6: amp_a = 0.001 + value0 * 2.0
+        elif data0 == 7: amp_s = value0
+        elif data0 == 8: amp_r = 0.01 + value0 * 4.0
+        elif data0 == 9: master_tune = 0.95 + value0 * 0.1
+
+vstaudio.on_event(handle_event)

@@ -7,3 +7,4 @@ dist/
 *.user
 *.suo
 *.VC.db
+__pycache__/

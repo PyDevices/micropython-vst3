@@ -1,0 +1,127 @@
+# mpvst-macro-labels: Volume | VCF Cutoff | Resonance | FM Amount | Reverb Mix | Osc 2 Detune | Osc 3 Detune | Env 1 Attack | Env 1 Release | Env 2 Attack | Env 2 Decay | Env 2 Sustain | Env 2 Release | VCA Attack | VCA Release | Master Tune
+
+import array
+import math
+
+import synthio
+import vstaudio
+
+SR = vstaudio.sample_rate()
+TAU = 2.0 * math.pi
+
+def make_table(parts, length=2048, gain=32000):
+    vals = [0.0] * length
+    for mult, amp in parts:
+        step = TAU * mult / length
+        for i in range(length):
+            vals[i] += amp * math.sin(step * i)
+    peak = max(abs(v) for v in vals) if vals else 0.0
+    if peak <= 0.0:
+        peak = 1.0
+    out = array.array("h", bytearray(length * 2))
+    scale = gain / peak
+    for i in range(length):
+        out[i] = int(vals[i] * scale)
+    return out
+
+SAW = make_table([(n, 1.0 / n) for n in range(1, 40)])
+SQUARE = make_table([(n, 1.0 / n) for n in range(1, 40, 2)])
+TRIANGLE = make_table([(n, (1.0 / (n*n)) * (-1)**((n-1)//2)) for n in range(1, 11, 2)])
+FALL = array.array("h", (32767, 0))
+
+synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
+vstaudio.output(synth)
+
+# Macros
+volume = 0.8
+cutoff_base = 2000.0
+resonance = 1.0
+fm_amt = 0.0
+reverb_mix = 0.0
+osc2_detune = 1.0
+osc3_detune = 0.5
+
+e1_a = 0.01
+e1_r = 0.5
+e2_a = 0.01
+e2_d = 0.3
+e2_s = 0.5
+e2_r = 0.3
+vca_a = 0.01
+vca_r = 0.3
+master_tune = 1.0
+
+voices = {}
+serial = 0
+MAX_VOICES = 1
+
+def key_of(channel, note_id, pitch):
+    return (channel, note_id if note_id >= 0 else pitch)
+
+def release_voice(k):
+    voice = voices.pop(k, None)
+    if voice is not None:
+        for note in voice[0]:
+            synth.release(note)
+
+def steal_oldest():
+    oldest = None
+    for k in voices:
+        if oldest is None or voices[k][1] < voices[oldest][1]:
+            oldest = k
+    if oldest is not None:
+        release_voice(oldest)
+
+def handle_event(event_type, channel, note_id, data0, value0, value1, sample_position):
+    global volume, cutoff_base, resonance, fm_amt, reverb_mix, osc2_detune, osc3_detune
+    global e1_a, e1_r, e2_a, e2_d, e2_s, e2_r, vca_a, vca_r, master_tune
+    global serial
+    
+    k = key_of(channel, note_id, data0)
+    
+    if event_type == vstaudio.EVENT_NOTE_ON and value0 > 0.0:
+        if len(voices) >= MAX_VOICES:
+            steal_oldest()
+            
+        hz = synthio.midi_to_hz(data0 + value1) * master_tune
+        amp = volume * value0
+        
+        env = synthio.Envelope(attack_time=vca_a, decay_time=e2_d, release_time=vca_r, attack_level=1.0, sustain_level=1.0)
+        
+        f_sweep = synthio.LFO(waveform=FALL, once=True, rate=1.0/e2_d, scale=4000.0, interpolate=True)
+        cutoff = synthio.Math(synthio.MathOperation.SUM, cutoff_base, f_sweep, 0.0)
+        
+        lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=resonance)
+        
+        o1 = synthio.Note(hz, waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.4)
+        o2 = synthio.Note(hz * osc2_detune, waveform=SQUARE, envelope=env, filter=lp, amplitude=amp * 0.3)
+        o3 = synthio.Note(hz * osc3_detune, waveform=TRIANGLE, envelope=env, filter=lp, amplitude=amp * 0.3)
+        
+        serial += 1
+        voices[k] = ((o1, o2, o3), serial)
+        synth.press(o1)
+        synth.press(o2)
+        synth.press(o3)
+            
+    elif event_type in (vstaudio.EVENT_NOTE_OFF, vstaudio.EVENT_NOTE_ON):
+        release_voice(k)
+        
+    elif event_type == vstaudio.EVENT_PARAMETER:
+        if data0 == 0: volume = value0
+        elif data0 == 1: cutoff_base = 50.0 * (100.0 ** value0)
+        elif data0 == 2: resonance = 0.5 + value0 * 3.5
+        elif data0 == 3: fm_amt = value0
+        elif data0 == 4: reverb_mix = value0
+        elif data0 == 5: osc2_detune = 0.5 + value0
+        elif data0 == 6: osc3_detune = 0.25 + value0
+        elif data0 == 7: e1_a = 0.001 + value0 * 2.0
+        elif data0 == 8: e1_r = 0.01 + value0 * 4.0
+        elif data0 == 9: e2_a = 0.001 + value0 * 2.0
+        elif data0 == 10: e2_d = 0.05 + value0 * 3.0
+        elif data0 == 11: e2_s = value0
+        elif data0 == 12: e2_r = 0.01 + value0 * 4.0
+        elif data0 == 13: vca_a = 0.001 + value0 * 2.0
+        elif data0 == 14: vca_r = 0.01 + value0 * 4.0
+        elif data0 == 15: master_tune = 0.95 + value0 * 0.1
+
+vstaudio.on_event(handle_event)
