@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <atomic>
 #include <string>
+#include <chrono>
 #include <thread>
 
 namespace PyDevices::MicroPythonVST3 {
@@ -42,11 +43,24 @@ public:
     bool start();
     void stop() noexcept;
 
+    // What the host says about its timeline for the current block. Defaults
+    // describe a stopped transport at the start of the project.
+    struct TransportInfo
+    {
+        std::int64_t projectSample = 0;
+        std::uint64_t tempoMicroBpm = UINT64_C(120000000);
+        std::uint16_t timeSignatureNumerator = 4U;
+        std::uint16_t timeSignatureDenominator = 4U;
+        bool playing = false;
+        bool discontinuity = false;
+    };
+
     // Audio-thread entry point: bounded, lock-free, and allocation-free.
     bool process(float* left, float* right, std::uint32_t frames,
                  bool bypassed, const mpvst_event* events = nullptr,
                  std::uint32_t eventCount = 0U,
-                 bool offline = false) noexcept;
+                 bool offline = false,
+                 const TransportInfo* transport = nullptr) noexcept;
 
     // A point-in-time view of how the sidecar is coping. Every field is
     // gathered from counters the audio thread only ever adds to, so reading it
@@ -90,7 +104,8 @@ private:
     mpvst_output_slot* outputAt(std::uint64_t position) const noexcept;
     void submitWork(std::int64_t startSample, std::uint32_t frames,
                     const mpvst_event* events,
-                    std::uint32_t eventCount) noexcept;
+                    std::uint32_t eventCount,
+                    const TransportInfo* transport) noexcept;
     bool consumeOutput(float* left, float* right, std::int64_t startSample,
                        std::uint32_t frames, bool countUnderrun = true) noexcept;
 
@@ -122,6 +137,9 @@ private:
     std::atomic<bool> supervisorStop_ {false};
     std::atomic<std::uint32_t> activeCallbacks_ {0U};
     std::atomic<std::uint64_t> restartCount_ {0U};
+    // steady_clock ticks at the last process() call, so the supervisor can tell
+    // an engine that has stopped working from a host that has stopped asking.
+    std::atomic<std::chrono::steady_clock::rep> lastCallbackTicks_ {0};
     std::atomic<std::uint64_t> renderTimeLastNs_ {0U};
     std::atomic<std::uint64_t> renderTimeHighWaterNs_ {0U};
     std::atomic<std::uint32_t> queueDepth_ {0U};

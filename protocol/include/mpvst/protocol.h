@@ -22,6 +22,12 @@
 #define MPVST_DIAGNOSTIC_BYTES UINT32_C(56)
 #define MPVST_CHANNEL_COUNT UINT32_C(2)
 #define MPVST_WORK_FLAG_TEST_TONE UINT32_C(1)
+/* The host transport was rolling when this block was submitted. */
+#define MPVST_WORK_FLAG_PLAYING UINT32_C(2)
+/* The host timeline jumped before this block: a locate, a loop wrap, or a
+   change of play state. The block carries a transport event at the sample the
+   jump takes effect so a script can release voices and reset. */
+#define MPVST_WORK_FLAG_DISCONTINUITY UINT32_C(4)
 #define MPVST_OUTPUT_FLAG_SILENT UINT32_C(1)
 
 typedef enum mpvst_lifecycle
@@ -44,7 +50,10 @@ typedef enum mpvst_event_type
     MPVST_EVENT_PITCH_BEND = 4,
     MPVST_EVENT_CONTROL_CHANGE = 5,
     MPVST_EVENT_PARAMETER = 6,
-    MPVST_EVENT_CHANNEL_PRESSURE = 7
+    MPVST_EVENT_CHANNEL_PRESSURE = 7,
+    /* Transport discontinuity. data0 is non-zero while the host is playing,
+       value0 carries the new project position in seconds. */
+    MPVST_EVENT_TRANSPORT = 8
 } mpvst_event_type;
 
 typedef enum mpvst_command_type

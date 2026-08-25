@@ -31,7 +31,8 @@ void clearEnvironment(const char* name)
 #endif
 }
 
-bool hasSignal(const std::array<float, 64>& samples)
+template <std::size_t N>
+bool hasSignal(const std::array<float, N>& samples)
 {
     for (const auto sample : samples)
     {
@@ -259,6 +260,120 @@ bool offlineRenderingWaitsForOutput()
     return true;
 }
 
+bool bypassDoesNotStrandThePipeline()
+{
+    // Bypassed blocks still submit work. If their output is never consumed the
+    // ring fills, the engine cannot publish, and the supervisor restarts what
+    // looks like a hung engine. Far more bypassed blocks than there are slots
+    // must pass without a single restart, and audio must return afterwards.
+    SidecarTransport transport;
+    transport.configure(48000.0, 128U, 512U);
+    if (!transport.start())
+        return false;
+
+    std::array<float, 128> left {};
+    std::array<float, 128> right {};
+    const auto frames = static_cast<std::uint32_t>(left.size());
+
+    for (std::uint32_t block = 0; block < 8U; ++block)
+    {
+        (void)transport.process(left.data(), right.data(), frames, false);
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    for (std::uint32_t block = 0; block < 64U; ++block)
+    {
+        (void)transport.process(left.data(), right.data(), frames, true);
+        for (const auto sample : left)
+        {
+            if (sample != 0.0F)
+            {
+                transport.stop();
+                return false;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+
+    bool heardAfterBypass = false;
+    for (std::uint32_t block = 0; block < 48U; ++block)
+    {
+        (void)transport.process(left.data(), right.data(), frames, false);
+        heardAfterBypass = heardAfterBypass || hasSignal(left);
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+
+    const auto snapshot = transport.telemetry();
+    transport.stop();
+    return heardAfterBypass && snapshot.restarts == 0U && snapshot.ready;
+}
+
+bool telemetryReportsPipelineHealth()
+{
+    SidecarTransport transport;
+    transport.configure(48000.0, 128U, 512U);
+    if (!transport.start())
+        return false;
+
+    std::array<float, 128> left {};
+    std::array<float, 128> right {};
+    for (std::uint32_t block = 0; block < 64U; ++block)
+    {
+        (void)transport.process(left.data(), right.data(),
+                                static_cast<std::uint32_t>(left.size()), false);
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+
+    const auto snapshot = transport.telemetry();
+    transport.stop();
+
+    if (!snapshot.ready || snapshot.blocksRequested == 0U ||
+        snapshot.blocksRendered == 0U)
+        return false;
+    // The engine timed every block it retired, so a high-water mark of zero
+    // would mean the render clock never ran.
+    if (snapshot.renderTimeHighWaterNs == 0U)
+        return false;
+    if (snapshot.renderTimeLastNs > snapshot.renderTimeHighWaterNs)
+        return false;
+    // Blocks are handed over before they come back, so the pipeline is never
+    // empty in steady state and its peak cannot exceed the ring.
+    if (snapshot.queueDepthHighWater == 0U || snapshot.queueDepthHighWater > 8U)
+        return false;
+    if (snapshot.queueDepth > snapshot.queueDepthHighWater)
+        return false;
+    if (snapshot.restarts != 0U || snapshot.lastExitWasUnexpected)
+        return false;
+    return snapshot.blocksRendered <= snapshot.blocksRequested;
+}
+
+bool telemetryRecordsCrashReason()
+{
+    setEnvironment("MPVST_NATIVE_EXIT_AFTER_BLOCKS", "8");
+    SidecarTransport transport;
+    transport.configure(48000.0, 128U, 512U);
+    if (!transport.start())
+    {
+        clearEnvironment("MPVST_NATIVE_EXIT_AFTER_BLOCKS");
+        return false;
+    }
+
+    std::array<float, 128> left {};
+    std::array<float, 128> right {};
+    for (std::uint32_t block = 0; block < 200U; ++block)
+    {
+        (void)transport.process(left.data(), right.data(),
+                                static_cast<std::uint32_t>(left.size()), false);
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    const auto snapshot = transport.telemetry();
+    transport.stop();
+    clearEnvironment("MPVST_NATIVE_EXIT_AFTER_BLOCKS");
+
+    // The engine was told to exit early, so the supervisor must have replaced
+    // it and telemetry must be able to say that it went away unexpectedly.
+    return snapshot.restarts > 0U && snapshot.lastExitWasUnexpected;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -298,6 +413,22 @@ int main(int argc, char** argv)
         std::cerr << "offline render was outrun by host\n";
         return 8;
     }
-    std::cout << "eight instances, recovery, fixed/variable events, and offline render passed\n";
+    if (!bypassDoesNotStrandThePipeline())
+    {
+        std::cerr << "bypass stranded the sidecar pipeline\n";
+        return 11;
+    }
+    if (!telemetryReportsPipelineHealth())
+    {
+        std::cerr << "telemetry snapshot was not plausible\n";
+        return 9;
+    }
+    if (!telemetryRecordsCrashReason())
+    {
+        std::cerr << "telemetry did not record an unexpected engine exit\n";
+        return 10;
+    }
+    std::cout << "eight instances, recovery, fixed/variable events, offline render, "
+                 "and telemetry passed\n";
     return 0;
 }

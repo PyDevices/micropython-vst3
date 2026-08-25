@@ -101,6 +101,10 @@ int main(int argc, char** argv)
                         gateOpen = true;
                     else if (event.type == MPVST_EVENT_NOTE_OFF)
                         gateOpen = false;
+                    else if (event.type == MPVST_EVENT_TRANSPORT)
+                        // A locate invalidates held voices; the host timeline
+                        // moved out from under them.
+                        gateOpen = false;
                     else if (event.type == MPVST_EVENT_PITCH_BEND &&
                              event.channel == 3U && event.data0 == 129)
                         gateLevel = 0.125F + 0.125F * event.value0;

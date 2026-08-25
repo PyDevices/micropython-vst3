@@ -569,6 +569,131 @@ bool embeddedStateSurvivesMissingSource(const PluginFactory& factory,
     return heard && stopped && terminated;
 }
 
+bool transportDiscontinuityGatesVoices(const PluginFactory& factory,
+                                       const ClassInfo& classInfo,
+                                       FUnknown* host)
+{
+    // The native engine closes its gate on a transport discontinuity, so a
+    // locate while a note is held must silence the instrument even though no
+    // note-off was sent. Without discontinuity detection the note would sustain
+    // straight through the jump.
+#if defined(_WIN32)
+    (void)_putenv_s("MPVST_NATIVE_EVENT_GATE", "1");
+#else
+    (void)setenv("MPVST_NATIVE_EVENT_GATE", "1", 1);
+#endif
+    auto component = createComponent(factory, classInfo, host);
+    auto processor = getProcessor(component);
+    if (!component || !processor)
+        return false;
+
+    SpeakerArrangement stereo = SpeakerArr::kStereo;
+    ProcessSetup setup {};
+    setup.processMode = kRealtime;
+    setup.symbolicSampleSize = kSample32;
+    setup.maxSamplesPerBlock = 128;
+    setup.sampleRate = 48000.0;
+    if (!ok(processor->setBusArrangements(nullptr, 0, &stereo, 1)) ||
+        !ok(component->activateBus(kAudio, kOutput, 0, true)) ||
+        !ok(component->activateBus(kEvent, kInput, 0, true)) ||
+        !ok(processor->setupProcessing(setup)) ||
+        !ok(component->setActive(true)) ||
+        !ok(processor->setProcessing(true)))
+        return false;
+
+    std::array<float, 128> left {};
+    std::array<float, 128> right {};
+    Sample32* channels[] = {left.data(), right.data()};
+    AudioBusBuffers output {};
+    output.numChannels = 2;
+    output.channelBuffers32 = channels;
+
+    ProcessContext context {};
+    context.state = ProcessContext::kPlaying | ProcessContext::kTempoValid;
+    context.sampleRate = 48000.0;
+    context.tempo = 120.0;
+    context.projectTimeSamples = 0;
+
+    ProcessData data {};
+    data.processMode = kRealtime;
+    data.symbolicSampleSize = kSample32;
+    data.numSamples = static_cast<int32>(left.size());
+    data.numOutputs = 1;
+    data.outputs = &output;
+    data.processContext = &context;
+
+    constexpr int kNoteBlock = 8;
+    constexpr int kJumpBlock = 20;
+    constexpr int kBlockCount = 32;
+    constexpr int kLatency = 512;
+    const int blockFrames = static_cast<int>(left.size());
+
+    EventList events;
+    bool heardBeforeJump = false;
+    bool silentAfterJump = true;
+    for (int block = 0; block < kBlockCount; ++block)
+    {
+        if (block == kNoteBlock)
+        {
+            Event noteOn {};
+            noteOn.busIndex = 0;
+            noteOn.sampleOffset = 0;
+            noteOn.type = Event::kNoteOnEvent;
+            noteOn.noteOn.channel = 0;
+            noteOn.noteOn.pitch = 60;
+            noteOn.noteOn.velocity = 1.0F;
+            noteOn.noteOn.noteId = 1;
+            (void)events.addEvent(noteOn);
+            data.inputEvents = &events;
+        }
+        if (block == kJumpBlock)
+        {
+            // Locate backwards, the way a loop wrap or a rewind looks.
+            context.projectTimeSamples = 0;
+        }
+        if (!ok(processor->process(data)))
+            return false;
+        if (block == kNoteBlock)
+        {
+            events.clear();
+            data.inputEvents = nullptr;
+        }
+        if (block != kJumpBlock)
+            context.projectTimeSamples += blockFrames;
+
+        const int firstSample = block * blockFrames;
+        for (std::size_t frame = 0; frame < left.size(); ++frame)
+        {
+            const auto sample = firstSample + static_cast<int>(frame);
+            const bool audible = std::abs(left[frame]) > 0.000001F;
+            if (sample >= kNoteBlock * blockFrames + kLatency &&
+                sample < kJumpBlock * blockFrames + kLatency)
+                heardBeforeJump = heardBeforeJump || audible;
+            // Allow the pipeline that was already in flight to drain.
+            if (sample >= (kJumpBlock + 1) * blockFrames + kLatency && audible)
+                silentAfterJump = false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(4));
+    }
+
+    const bool stopped = ok(processor->setProcessing(false)) &&
+                         ok(component->setActive(false));
+    processor = nullptr;
+    const bool terminated = ok(component->terminate());
+    component = nullptr;
+    if (!heardBeforeJump)
+    {
+        std::cerr << "HOOK transport.discontinuity FAIL: note never sounded\n";
+        return false;
+    }
+    if (!silentAfterJump)
+    {
+        std::cerr << "HOOK transport.discontinuity FAIL: note survived the jump\n";
+        return false;
+    }
+    return stopped && terminated;
+}
+
 bool macroResyncAppliesRestoredState(const PluginFactory& factory,
                                      const ClassInfo& classInfo, FUnknown* host)
 {
@@ -806,16 +931,18 @@ int main(int argc, char** argv)
     if (argc < 2 || argc > 3 ||
         (!mode.empty() && mode != "--expect-micropython" &&
          mode != "--expect-embedded-state" && mode != "--expect-reload-fade" &&
-         mode != "--expect-macro-resync"))
+         mode != "--expect-macro-resync" && mode != "--expect-transport"))
     {
         std::cerr << "usage: mpvst_smoke_host <plugin.vst3> "
                      "[--expect-micropython|--expect-embedded-state|"
-                     "--expect-reload-fade|--expect-macro-resync]\n";
+                     "--expect-reload-fade|--expect-macro-resync|"
+                     "--expect-transport]\n";
         return 2;
     }
     const bool embeddedState = mode == "--expect-embedded-state";
     const bool reloadFade = mode == "--expect-reload-fade";
     const bool macroResync = mode == "--expect-macro-resync";
+    const bool transportMode = mode == "--expect-transport";
     const bool expectMicroPython = mode == "--expect-micropython" || embeddedState;
 
     std::string error;
@@ -845,7 +972,16 @@ int main(int argc, char** argv)
         }
         std::cout << "HOOK class.scan OK: " << classInfo.name() << '\n';
 
-        if (macroResync)
+        if (transportMode)
+        {
+            if (!transportDiscontinuityGatesVoices(factory, classInfo, host))
+            {
+                std::cerr << "HOOK transport.discontinuity FAIL\n";
+                return 5;
+            }
+            std::cout << "HOOK transport.discontinuity OK: locate closed the gate\n";
+        }
+        else if (macroResync)
         {
             if (!macroResyncAppliesRestoredState(factory, classInfo, host))
             {
@@ -877,7 +1013,8 @@ int main(int argc, char** argv)
             std::cerr << "HOOK state.roundtrip FAIL\n";
             return 5;
         }
-        const bool defaultSuite = !embeddedState && !reloadFade && !macroResync;
+        const bool defaultSuite = !embeddedState && !reloadFade &&
+                                  !macroResync && !transportMode;
         if (defaultSuite)
             std::cout << "HOOK state.roundtrip OK: legacy_v1=1 malformed=4\n";
 

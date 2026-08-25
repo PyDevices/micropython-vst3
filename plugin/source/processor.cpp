@@ -8,6 +8,7 @@
 #include "pluginterfaces/vst/ivstparameterchanges.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace PyDevices::MicroPythonVST3 {
 
@@ -64,6 +65,7 @@ tresult PLUGIN_API Processor::setupProcessing (ProcessSetup& setup)
 
     const auto maxFrames = static_cast<uint32> (setup.maxSamplesPerBlock);
     configuredMaxFrames_ = maxFrames;
+    sampleRate_ = setup.sampleRate;
     sidecar_.configure (setup.sampleRate, maxFrames,
                         maxFrames * static_cast<uint32> (pipelineBlocks_));
     return AudioEffect::setupProcessing (setup);
@@ -297,6 +299,66 @@ void Processor::sortEvents (std::uint32_t count) noexcept
     }
 }
 
+SidecarTransport::TransportInfo Processor::readTransport (
+    ProcessData& data) noexcept
+{
+    SidecarTransport::TransportInfo info;
+    const auto* context = data.processContext;
+    if (context == nullptr)
+    {
+        // Hosts are allowed to omit the context. Treat that as a stopped
+        // transport that never jumps rather than inventing a timeline.
+        haveTransport_ = false;
+        return info;
+    }
+
+    info.playing = (context->state & ProcessContext::kPlaying) != 0U;
+    if ((context->state & ProcessContext::kProjectTimeMusicValid) != 0U ||
+        (context->state & ProcessContext::kTempoValid) != 0U)
+        info.tempoMicroBpm = static_cast<std::uint64_t> (
+            std::llround (context->tempo * 1000000.0));
+    if ((context->state & ProcessContext::kTimeSigValid) != 0U)
+    {
+        info.timeSignatureNumerator =
+            static_cast<std::uint16_t> (std::max<int32> (context->timeSigNumerator, 1));
+        info.timeSignatureDenominator =
+            static_cast<std::uint16_t> (std::max<int32> (context->timeSigDenominator, 1));
+    }
+    info.projectSample = context->projectTimeSamples;
+
+    // A block is continuous with the last one when it starts exactly where the
+    // last one ended and the play state has not changed. Anything else is a
+    // locate, a loop wrap, or a start/stop, and the script needs to know.
+    const bool continuous = haveTransport_ &&
+        info.projectSample == expectedProjectSample_ &&
+        info.playing == lastPlaying_;
+    info.discontinuity = !continuous;
+
+    haveTransport_ = true;
+    lastPlaying_ = info.playing;
+    expectedProjectSample_ = info.projectSample +
+        static_cast<std::int64_t> (data.numSamples);
+    return info;
+}
+
+std::uint32_t Processor::emitTransportEvent (
+    const SidecarTransport::TransportInfo& transport, int32 frameCount,
+    std::uint32_t count) noexcept
+{
+    if (frameCount <= 0 || count >= events_.size ())
+        return count;
+    mpvst_event event {};
+    event.sample_position = 0;
+    event.type = MPVST_EVENT_TRANSPORT;
+    event.data0 = transport.playing ? 1 : 0;
+    event.value0 = sampleRate_ > 0.0
+        ? static_cast<float> (static_cast<double> (transport.projectSample) /
+                              sampleRate_)
+        : 0.0F;
+    events_[count++] = event;
+    return count;
+}
+
 std::uint32_t Processor::emitMacroResync (int32 frameCount,
                                           std::uint32_t count) noexcept
 {
@@ -401,7 +463,10 @@ tresult PLUGIN_API Processor::process (ProcessData& data)
         return kResultFalse;
 
     clearOutput (data);
+    const auto transport = readTransport (data);
     std::uint32_t eventCount = 0U;
+    if (transport.discontinuity)
+        eventCount = emitTransportEvent (transport, data.numSamples, eventCount);
     if (macroResyncPending_.load (std::memory_order_relaxed) != 0U &&
         sidecar_.ready () && data.numSamples > 0)
     {
@@ -422,7 +487,8 @@ tresult PLUGIN_API Processor::process (ProcessData& data)
             data.outputs[0].channelBuffers32[1],
             static_cast<uint32> (data.numSamples),
             bypass_.load (std::memory_order_relaxed) != 0U,
-            events_.data (), eventCount, data.processMode == kOffline);
+            events_.data (), eventCount, data.processMode == kOffline,
+            &transport);
         applyReloadFade (data.outputs[0].channelBuffers32[0],
                          data.outputs[0].channelBuffers32[1],
                          static_cast<uint32> (data.numSamples));

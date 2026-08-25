@@ -261,9 +261,17 @@ bool SidecarTransport::launchEngine()
                 ? (directory / "default_instrument.py").string()
                 : scriptOverride;
         }
-        arguments = {(directory / "micropython_vst_bootstrap.py").string(),
-                     mappingName_, std::to_string(mappingBytes_),
-                     selectedScript};
+        // MPVST_HEAP_BYTES constrains the MicroPython heap. A script that
+        // allocates without bound should fail inside its own sidecar with a
+        // MemoryError the host reports as a script error, never by growing
+        // until it disturbs the DAW.
+        const auto heapBytes = environmentValue("MPVST_HEAP_BYTES");
+        if (!heapBytes.empty())
+            arguments = {"-X", "heapsize=" + heapBytes};
+        arguments.push_back((directory / "micropython_vst_bootstrap.py").string());
+        arguments.push_back(mappingName_);
+        arguments.push_back(std::to_string(mappingBytes_));
+        arguments.push_back(selectedScript);
     }
     else
     {
@@ -398,6 +406,9 @@ bool SidecarTransport::requestReload() noexcept
 {
     if (!available_.load() || header_ == nullptr || commands_ == nullptr)
         return false;
+    lastCallbackTicks_.store(
+        std::chrono::steady_clock::now().time_since_epoch().count(),
+        std::memory_order_relaxed);
     activeCallbacks_.fetch_add(1U);
     if (!available_.load())
     {
@@ -474,27 +485,35 @@ void SidecarTransport::supervise() noexcept
             lastHeartbeat = heartbeat;
             lastProgress = std::chrono::steady_clock::now();
         }
-        const bool stalled = requested > rendered &&
-            std::chrono::steady_clock::now() - lastProgress >
-                std::chrono::milliseconds(500);
+        // An engine that stops draining work looks exactly like an engine whose
+        // host stopped calling it: once the host stops consuming output the
+        // ring fills, the engine has nowhere to publish, and rendered stops
+        // advancing while work is still outstanding. Blaming the engine for
+        // that restarts a healthy sidecar and throws away the script's state
+        // every time a user pauses the transport. Only count it as a stall
+        // while the host is actually calling back.
+        const auto now = std::chrono::steady_clock::now();
+        const auto sinceCallback = now -
+            std::chrono::steady_clock::time_point(
+                std::chrono::steady_clock::duration(
+                    lastCallbackTicks_.load(std::memory_order_relaxed)));
+        const bool hostIsActive = sinceCallback < std::chrono::milliseconds(250);
+        const bool stalled = requested > rendered && hostIsActive &&
+            now - lastProgress > std::chrono::milliseconds(500);
         if (child_.running() && !stalled)
             continue;
 
-        // Record why the engine went away before replacing it: a stall is a
-        // hang the supervisor is breaking, otherwise the child exited on its
-        // own and its status is the closest thing to a crash reason we have.
+        // Reaching here always means the engine went away while it was still
+        // wanted, so the departure is unexpected whatever status it carried.
+        // A stall is recorded distinctly because the supervisor is breaking a
+        // hang rather than finding a process that ended on its own.
         int exitCode = 0;
+        lastExitWasUnexpected_.store(true, std::memory_order_relaxed);
         if (stalled)
-        {
-            lastExitWasUnexpected_.store(true, std::memory_order_relaxed);
             lastExitCode_.store(kStalledExitCode, std::memory_order_relaxed);
-        }
         else if (child_.wait(0U, &exitCode))
-        {
-            lastExitWasUnexpected_.store(exitCode != 0, std::memory_order_relaxed);
             lastExitCode_.store(static_cast<std::int32_t>(exitCode),
                                 std::memory_order_relaxed);
-        }
 
         available_.store(false);
         waitForCallbacks();
@@ -527,7 +546,8 @@ mpvst_output_slot* SidecarTransport::outputAt(std::uint64_t position) const noex
 void SidecarTransport::submitWork(std::int64_t startSample,
                                   std::uint32_t frames,
                                   const mpvst_event* events,
-                                  std::uint32_t eventCount) noexcept
+                                  std::uint32_t eventCount,
+                                  const TransportInfo* transport) noexcept
 {
     auto* slot = mpvst::try_acquire_producer(work_, header_->work_slot_count,
                                              workPosition_);
@@ -549,7 +569,8 @@ void SidecarTransport::submitWork(std::int64_t startSample,
     slot->frame_count = frames;
     slot->start_sample = startSample;
     slot->sample_rate_millihz = sampleRateMillihz_;
-    slot->transport_sample = streamPosition_;
+    slot->transport_sample = transport != nullptr ? transport->projectSample
+                                                  : streamPosition_;
     const auto consumed = mpvst::acquire_load_u64(&status_->events_consumed);
     const auto used = eventPosition_ - consumed;
     const auto availableEvents = used < header_->event_capacity
@@ -570,9 +591,22 @@ void SidecarTransport::submitWork(std::int64_t startSample,
         (void)mpvst::relaxed_fetch_add_u64(
             &status_->event_drops, eventCount - accepted);
     slot->flags = testTone_ ? MPVST_WORK_FLAG_TEST_TONE : 0U;
-    slot->time_signature_numerator = 4U;
-    slot->time_signature_denominator = 4U;
-    slot->tempo_micro_bpm = UINT64_C(120000000);
+    if (transport != nullptr)
+    {
+        if (transport->playing)
+            slot->flags |= MPVST_WORK_FLAG_PLAYING;
+        if (transport->discontinuity)
+            slot->flags |= MPVST_WORK_FLAG_DISCONTINUITY;
+        slot->time_signature_numerator = transport->timeSignatureNumerator;
+        slot->time_signature_denominator = transport->timeSignatureDenominator;
+        slot->tempo_micro_bpm = transport->tempoMicroBpm;
+    }
+    else
+    {
+        slot->time_signature_numerator = 4U;
+        slot->time_signature_denominator = 4U;
+        slot->tempo_micro_bpm = UINT64_C(120000000);
+    }
     mpvst::publish_producer(slot, workPosition_);
     ++workPosition_;
     (void)mpvst::relaxed_fetch_add_u64(&status_->blocks_requested, 1U);
@@ -645,7 +679,8 @@ bool SidecarTransport::consumeOutput(float* left, float* right,
 
 bool SidecarTransport::process(float* left, float* right, std::uint32_t frames,
                                bool bypassed, const mpvst_event* events,
-                               std::uint32_t eventCount, bool offline) noexcept
+                               std::uint32_t eventCount, bool offline,
+                               const TransportInfo* transport) noexcept
 {
     if (left == nullptr || right == nullptr || frames == 0U || frames > maxFrames_)
         return false;
@@ -654,15 +689,32 @@ bool SidecarTransport::process(float* left, float* right, std::uint32_t frames,
         streamPosition_ += frames;
         return false;
     }
+    lastCallbackTicks_.store(
+        std::chrono::steady_clock::now().time_since_epoch().count(),
+        std::memory_order_relaxed);
     activeCallbacks_.fetch_add(1U);
     if (!available_.load())
     {
         activeCallbacks_.fetch_sub(1U);
         return false;
     }
-    submitWork(streamPosition_ + latencySamples_, frames, events, eventCount);
+    submitWork(streamPosition_ + latencySamples_, frames, events, eventCount,
+               transport);
     bool wroteNonSilent = false;
-    if (!bypassed)
+    if (bypassed)
+    {
+        // Bypass still has to drain the pipeline. Work was submitted for this
+        // block, so leaving its output in the ring leaks a slot every time;
+        // after a handful of bypassed blocks the ring is full, the engine can
+        // no longer publish, and the supervisor mistakes the jam for a hung
+        // engine and restarts it, losing the script's state. Consume the audio
+        // and throw it away instead. Underruns are not counted because falling
+        // behind while muted has no audible meaning.
+        (void)consumeOutput(left, right, streamPosition_, frames, false);
+        std::fill_n(left, frames, 0.0F);
+        std::fill_n(right, frames, 0.0F);
+    }
+    else
     {
         if (offline && streamPosition_ >= latencySamples_)
         {

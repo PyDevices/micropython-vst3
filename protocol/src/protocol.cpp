@@ -150,7 +150,13 @@ extern "C" int mpvst_validate_mapping(const void* mapping, uint64_t mapping_byte
            expected.commands_offset == header->commands_offset &&
            expected.events_offset == header->events_offset &&
            expected.work_offset == header->work_offset &&
-           expected.outputs_offset == header->outputs_offset;
+           expected.outputs_offset == header->outputs_offset &&
+           // The optional region is derived like every other offset, so it has
+           // to be checked like every other offset. Blessing a mapping while
+           // leaving this pointer unverified would hand any future consumer an
+           // attacker-chosen offset into the shared block.
+           expected.optional_offset == header->optional_offset &&
+           expected.optional_bytes == header->optional_bytes;
 }
 
 extern "C" void* mpvst_region(void* mapping, uint64_t offset)

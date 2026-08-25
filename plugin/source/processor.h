@@ -52,6 +52,11 @@ private:
                                  std::uint32_t count) noexcept;
     std::uint32_t emitMacroResync (Steinberg::int32 frameCount,
                                    std::uint32_t count) noexcept;
+    SidecarTransport::TransportInfo readTransport (
+        Steinberg::Vst::ProcessData& data) noexcept;
+    std::uint32_t emitTransportEvent (
+        const SidecarTransport::TransportInfo& transport,
+        Steinberg::int32 frameCount, std::uint32_t count) noexcept;
     void sortEvents (std::uint32_t count) noexcept;
     void publishEngineStatus (
         Steinberg::Vst::IParameterChanges* changes) noexcept;
@@ -69,6 +74,10 @@ private:
     float publishedReady_ {-1.0F};
     float publishedError_ {-1.0F};
     std::uint32_t configuredMaxFrames_ {0U};
+    double sampleRate_ {48000.0};
+    std::int64_t expectedProjectSample_ {0};
+    bool haveTransport_ {false};
+    bool lastPlaying_ {false};
     std::uint32_t fadeSamplesRemaining_ {0U};
     std::uint32_t holdSamplesRemaining_ {0U};
     ReloadFadeState reloadFadeState_ {ReloadFadeState::Idle};

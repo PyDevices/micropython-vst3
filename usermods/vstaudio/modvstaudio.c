@@ -195,6 +195,34 @@ static mp_obj_t vstaudio_clear_output(void) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(vstaudio_clear_output_obj, vstaudio_clear_output);
 
+// The work slot being rendered right now, so a script can ask where the host
+// transport is without the engine having to copy the fields out every block.
+static const mpvst_work_slot *vstaudio_current_work;
+
+static mp_obj_t vstaudio_transport(void) {
+    const mpvst_work_slot *work = vstaudio_current_work;
+    mp_obj_t items[5];
+    if (work == NULL) {
+        items[0] = mp_const_false;
+        items[1] = mp_obj_new_float(0.0f);
+        items[2] = mp_obj_new_float(120.0f);
+        items[3] = MP_OBJ_NEW_SMALL_INT(4);
+        items[4] = MP_OBJ_NEW_SMALL_INT(4);
+        return mp_obj_new_tuple(5, items);
+    }
+    const uint64_t rate = work->sample_rate_millihz / 1000u;
+    items[0] = (work->flags & MPVST_WORK_FLAG_PLAYING) != 0u
+        ? mp_const_true : mp_const_false;
+    items[1] = mp_obj_new_float(rate != 0u
+        ? (mp_float_t)work->transport_sample / (mp_float_t)rate
+        : (mp_float_t)0.0);
+    items[2] = mp_obj_new_float((mp_float_t)work->tempo_micro_bpm / (mp_float_t)1000000.0);
+    items[3] = MP_OBJ_NEW_SMALL_INT(work->time_signature_numerator);
+    items[4] = MP_OBJ_NEW_SMALL_INT(work->time_signature_denominator);
+    return mp_obj_new_tuple(5, items);
+}
+static MP_DEFINE_CONST_FUN_OBJ_0(vstaudio_transport_obj, vstaudio_transport);
+
 static mp_obj_t vstaudio_on_event(mp_obj_t callback) {
     if (callback != mp_const_none && !mp_obj_is_callable(callback)) {
         mp_raise_TypeError(MP_ERROR_TEXT("event callback must be callable or None"));
@@ -340,6 +368,7 @@ static mp_obj_t vstaudio_run(mp_obj_t reload_callback) {
         output->channel_count = 2u;
         output->flags = MPVST_OUTPUT_FLAG_SILENT;
         const uint64_t render_started_ns = monotonic_ns();
+        vstaudio_current_work = work;
         bool rendered = false;
         nlr_buf_t nlr;
         if (nlr_push(&nlr) == 0) {
@@ -389,6 +418,7 @@ static mp_obj_t vstaudio_run(mp_obj_t reload_callback) {
         atomic_store_u64(&vstaudio_status->events_consumed,
             atomic_load_u64(&vstaudio_status->events_consumed) + work->event_count);
         atomic_store_u64(&work->sequence, work_position + vstaudio_header->work_slot_count);
+        vstaudio_current_work = NULL;
         output->render_time_ns = monotonic_ns() - render_started_ns;
         atomic_store_u64(&output->sequence, output_position + 1u);
         ++work_position;
@@ -420,6 +450,8 @@ static const mp_rom_map_elem_t vstaudio_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_EVENT_CONTROL_CHANGE), MP_ROM_INT(MPVST_EVENT_CONTROL_CHANGE) },
     { MP_ROM_QSTR(MP_QSTR_EVENT_PARAMETER), MP_ROM_INT(MPVST_EVENT_PARAMETER) },
     { MP_ROM_QSTR(MP_QSTR_EVENT_CHANNEL_PRESSURE), MP_ROM_INT(MPVST_EVENT_CHANNEL_PRESSURE) },
+    { MP_ROM_QSTR(MP_QSTR_EVENT_TRANSPORT), MP_ROM_INT(MPVST_EVENT_TRANSPORT) },
+    { MP_ROM_QSTR(MP_QSTR_transport), MP_ROM_PTR(&vstaudio_transport_obj) },
 };
 static MP_DEFINE_CONST_DICT(vstaudio_module_globals, vstaudio_module_globals_table);
 
