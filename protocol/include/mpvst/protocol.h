@@ -16,7 +16,13 @@
 
 #define MPVST_PROTOCOL_MAGIC UINT32_C(0x3356504d)
 #define MPVST_PROTOCOL_MAJOR UINT16_C(1)
-#define MPVST_PROTOCOL_MINOR UINT16_C(0)
+/* Minor 1 defines the optional region: when optional_bytes is non-zero it
+   holds one input-audio block per work slot (planar float32, stereo,
+   max_frames per channel, each block aligned to a cache line). The block for
+   a work slot is written before the slot's sequence is published, so the
+   consumer's acquire on the sequence covers the audio. A mapping with
+   optional_bytes of zero is exactly a minor-0 mapping. */
+#define MPVST_PROTOCOL_MINOR UINT16_C(1)
 #define MPVST_ENDIAN_MARKER UINT32_C(0x01020304)
 #define MPVST_CACHE_LINE_BYTES UINT32_C(64)
 #define MPVST_DIAGNOSTIC_BYTES UINT32_C(56)
@@ -167,6 +173,11 @@ typedef struct mpvst_layout_request
     uint32_t output_slot_count;
     uint32_t event_capacity;
     uint32_t command_capacity;
+    /* Zero for an instrument. For an effect it must equal work_slot_count:
+       every work slot then owns one input-audio block in the optional
+       region. Aggregate initializers that omit it get zero, so existing
+       instrument call sites are unchanged. */
+    uint32_t input_slot_count;
 } mpvst_layout_request;
 
 MPVST_STATIC_ASSERT(sizeof(mpvst_shared_header) == 128, "shared header ABI");
@@ -198,6 +209,15 @@ float* mpvst_output_channel(mpvst_output_slot* slot, uint32_t max_frames,
                             uint32_t channel);
 const float* mpvst_const_output_channel(const mpvst_output_slot* slot,
                                         uint32_t max_frames, uint32_t channel);
+/* Input-audio region accessors. The region exists when optional_bytes is
+   non-zero; slot_index addresses the block owned by the work slot at the
+   same ring position. Returns null when the mapping has no input region. */
+uint64_t mpvst_input_stride_bytes(const mpvst_shared_header* header);
+float* mpvst_input_channel(void* mapping, const mpvst_shared_header* header,
+                           uint32_t slot_index, uint32_t channel);
+const float* mpvst_const_input_channel(const void* mapping,
+                                       const mpvst_shared_header* header,
+                                       uint32_t slot_index, uint32_t channel);
 
 #if defined(__cplusplus)
 }

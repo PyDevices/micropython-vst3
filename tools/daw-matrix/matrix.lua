@@ -25,7 +25,9 @@ local WORKDIR = os.getenv("MPVST_MATRIX_WORKDIR")
 local SCRIPT = os.getenv("MPVST_SCRIPT_PATH") or ""
 local BAD_SCRIPT = os.getenv("MPVST_BAD_SCRIPT_PATH") or ""
 local EDITED_SCRIPT = os.getenv("MPVST_EDITED_SCRIPT_PATH") or ""
+local EFFECT_SCRIPT = os.getenv("MPVST_EFFECT_SCRIPT_PATH") or ""
 local FX_NAME = "MicroPython Instrument"
+local EFFECT_FX_NAME = "MicroPython Effect"
 -- package.config's first line is the platform path separator, so the same
 -- script drives REAPER on Windows and on Linux.
 local SEP = package.config:sub(1, 1)
@@ -472,6 +474,89 @@ step(function()
     else
         fail("remove_instance", "fx count " .. remaining)
     end
+end)
+
+-- Audio-input effect: a generated project embeds the gate instrument and a
+-- halving effect in per-instance state - the way a user's project carries
+-- scripts - so the shared MPVST_SCRIPT_PATH developer file plays no part.
+-- Bypassing the effect through its own Bypass parameter must pass the gate
+-- through unchanged (via the latency-matched dry path); un-bypassed it must
+-- render exactly half the gate level.
+step(function()
+    reaper.Main_openProject("noprompt:" .. WORKDIR .. SEP ..
+        "effect_project.RPP")
+    sleep_ms(8000)
+end)
+
+step(function()
+    local track = reaper.GetTrack(0, 0)
+    if not track or reaper.TrackFX_GetCount(track) ~= 2 then
+        fail("effect_setup", "expected 2 FX after open, got " ..
+            (track and reaper.TrackFX_GetCount(track) or -1))
+        return "abort"
+    end
+    bind(track, 0)
+    S.effect_fx = 1
+    local _, fxname = reaper.TrackFX_GetFXName(track, S.effect_fx, "")
+    info("effect_fx_name", fxname)
+    S.effect_bypass_idx = nil
+    S.effect_ready_idx = nil
+    S.effect_error_idx = nil
+    local count = reaper.TrackFX_GetNumParams(track, S.effect_fx)
+    for i = 0, count - 1 do
+        local ok, name = reaper.TrackFX_GetParamName(track, S.effect_fx, i, "")
+        if ok and name == "Bypass" then S.effect_bypass_idx = i end
+        if ok and name == "Engine Ready" then S.effect_ready_idx = i end
+        if ok and name == "Engine Error" then S.effect_error_idx = i end
+    end
+    if not (S.effect_bypass_idx and S.effect_ready_idx and
+            S.effect_error_idx) then
+        fail("effect_setup", "missing effect parameters")
+        return "abort"
+    end
+    pass("effect_setup", fxname)
+    sleep_ms(4000)
+end)
+
+step(function()
+    -- publish both sidecars' status
+    render("effect_status", 0.5)
+    sleep_ms(700)
+end)
+
+step(function()
+    local track = reaper.GetTrack(0, 0)
+    local ready = reaper.TrackFX_GetParamNormalized(track, S.effect_fx,
+        S.effect_ready_idx)
+    local err = math.floor(reaper.TrackFX_GetParamNormalized(track,
+        S.effect_fx, S.effect_error_idx) * 255.0 + 0.5)
+    local iready = ready_value()
+    info("effect_ready", ready)
+    info("effect_error", err)
+    info("effect_source_ready", iready)
+    if ready > 0.5 and err == 0 and iready > 0.5 then
+        pass("effect_engine", string.format("ready=%.3f error=%d", ready, err))
+    else
+        fail("effect_engine", string.format("ready=%.3f error=%d source=%.3f",
+            ready, err, iready))
+    end
+end)
+
+step(function()
+    local track = reaper.GetTrack(0, 0)
+    reaper.TrackFX_SetParamNormalized(track, S.effect_fx,
+        S.effect_bypass_idx, 1.0)
+    render("effect_dry", 3.0)
+    sleep_ms(700)
+end)
+
+step(function()
+    local track = reaper.GetTrack(0, 0)
+    reaper.TrackFX_SetParamNormalized(track, S.effect_fx,
+        S.effect_bypass_idx, 0.0)
+    render("effected", 3.0)
+    sleep_ms(700)
+    pass("effect_renders", "rendered effect_dry.wav and effected.wav")
 end)
 
 local function driver()

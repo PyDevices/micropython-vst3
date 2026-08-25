@@ -29,4 +29,11 @@ INFO extra_ready 3
 PASS multiple_instances 4 concurrent sidecars ready
 INFO fx_after_delete 0
 PASS remove_instance fx count 0
+INFO effect_fx_name VST3: MicroPython Effect (PyDevices)
+PASS effect_setup VST3: MicroPython Effect (PyDevices)
+INFO effect_ready 1.0
+INFO effect_error 0
+INFO effect_source_ready 1.0
+PASS effect_engine ready=1.000 error=0
+PASS effect_renders rendered effect_dry.wav and effected.wav
 DONE

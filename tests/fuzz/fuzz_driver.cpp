@@ -28,7 +28,7 @@ namespace {
 
 std::vector<std::uint8_t> validMapping()
 {
-    const mpvst_layout_request request {128U, 8U, 8U, 256U, 8U};
+    const mpvst_layout_request request {128U, 8U, 8U, 256U, 8U, 0U};
     const auto bytes = mpvst_compute_mapping_bytes(&request);
     std::vector<std::uint64_t> storage((bytes + 7U) / 8U);
     if (mpvst_initialize_mapping(storage.data(), bytes, &request,

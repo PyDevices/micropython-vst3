@@ -146,11 +146,24 @@ extern "C" int mpvst_fuzz_mapping(const std::uint8_t* data, std::size_t size)
         if (mpvst_const_region(storage.data(), offset) == nullptr)
             MPVST_FUZZ_FAIL();
     }
-    // The optional region is allowed to be empty, in which case it starts
-    // exactly at the end of the mapping and owns no bytes.
+    // The optional region either owns no bytes or is exactly one input-audio
+    // block per work slot (protocol minor 1); validation enforces that, so a
+    // blessed mapping must satisfy it here too.
     if (header->optional_offset > size ||
         header->optional_bytes > size - header->optional_offset)
         MPVST_FUZZ_FAIL();
+    if (header->optional_bytes != 0U)
+    {
+        const auto inputStride = mpvst_input_stride_bytes(header);
+        if (inputStride == 0U ||
+            header->optional_bytes !=
+                inputStride * header->work_slot_count)
+            MPVST_FUZZ_FAIL();
+        if (mpvst_const_input_channel(storage.data(), header,
+                                      header->work_slot_count - 1U, 1U) ==
+            nullptr)
+            MPVST_FUZZ_FAIL();
+    }
     const auto stride = mpvst_output_stride_bytes(header);
     if (stride == 0U ||
         header->outputs_offset + stride * header->output_slot_count > size)

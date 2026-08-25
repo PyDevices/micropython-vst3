@@ -467,9 +467,52 @@ Evidence recorded 2026-08-25:
   `process()`, so the matrix forces a render before reading one. Real-time
   playback on Linux audio hardware has not been exercised.
 
+## Extension - audio-input effect
+
+Status: **Complete** (2026-08-25)
+
+The bundle now registers a second class, **MicroPython Effect** (category
+Fx), sharing the instrument's processor with a stereo audio-input bus.
+
+- Protocol minor 1: the shared mapping's optional region carries one
+  input-audio block per work slot (planar float32, cache-line strides),
+  written before the slot's sequence publish so the existing acquire
+  covers it. Instrument mappings are byte-identical to minor 0.
+- The engine converts each block to interleaved int16 symmetrically
+  (x32768 with clamp, so int16-sourced audio round-trips exactly) into a
+  ring the script reads through `vstaudio.input()`, an audiosample
+  source. Any audioif chain - filters, echo, chorus, freeverb, mixer -
+  can therefore process live host audio; when a chain's internal
+  buffering pulls ahead it receives silence once, self-priming to its
+  own depth. `examples/fx_space.py` is a scripted filter/echo/hall send.
+- Bypass on the effect is a pass-through delayed by the reported
+  pipeline latency, so toggling it never shifts time under host delay
+  compensation.
+- Evidence: protocol layout/validation tests cover the input region and
+  reject partial coverage; the fuzz harness asserts the region's
+  invariants; `effectCarriesHostAudio` proves the native engine halves
+  host audio sample-exactly through the pipeline latency;
+  `mpvst_effect_audio_smoke` drives the real MicroPython engine through
+  the VST3 effect class with a pass-through script and matches input to
+  output within int16 quantisation at exactly 512 samples; the Steinberg
+  validator passes both classes (94 checks); and the REAPER matrix loads
+  a generated project that embeds the gate instrument and the halving
+  effect in per-instance state, then measures the gate passing unchanged
+  through the bypassed effect and at exactly half level through the
+  active one, on both platforms.
+- A limitation surfaced by the matrix is now documented behaviour: two
+  developer-file instances cannot follow different scripts, because
+  MPVST_SCRIPT_PATH is process-wide and instances re-read it on restart
+  and on save. Instrument-plus-effect projects embed per-instance state
+  instead, which `tools/daw-matrix/build_effect_project.py` demonstrates
+  by synthesizing the chunks directly.
+- The engine no longer resets its output sample on registration:
+  audiomixer's reset stops every voice, so `vstaudio.output(mixer)` after
+  `voice.play(...)` - the idiomatic order - used to silence the chain.
+
 ## Deferred extensions
 
 - LVGL editor and shared framebuffer/input protocol.
-- Audio-input effect component, wet/dry bypass, tails, and sidechains.
+- Effect extras: wet/dry mix parameter and sidechain input buses.
 - Float64 host processing and a native floating-point audioif graph.
 - macOS bundles, signing, notarization, and universal binaries.

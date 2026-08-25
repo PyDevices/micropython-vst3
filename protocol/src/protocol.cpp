@@ -23,7 +23,16 @@ bool validRequest(const mpvst_layout_request* request) noexcept
 {
     return request != nullptr && request->max_frames > 0U &&
            request->work_slot_count >= 2U && request->output_slot_count >= 2U &&
-           request->event_capacity > 0U && request->command_capacity >= 2U;
+           request->event_capacity > 0U && request->command_capacity >= 2U &&
+           (request->input_slot_count == 0U ||
+            request->input_slot_count == request->work_slot_count);
+}
+
+std::uint64_t inputStrideBytes(std::uint32_t maxFrames) noexcept
+{
+    return alignUp(static_cast<std::uint64_t>(maxFrames) * MPVST_CHANNEL_COUNT *
+                       sizeof(float),
+                   MPVST_CACHE_LINE_BYTES);
 }
 
 bool computeOffsets(const mpvst_layout_request* request, mpvst_shared_header& header) noexcept
@@ -66,8 +75,12 @@ bool computeOffsets(const mpvst_layout_request* request, mpvst_shared_header& he
         return false;
 
     header.optional_offset = alignUp(cursor, MPVST_CACHE_LINE_BYTES);
-    header.optional_bytes = 0U;
-    header.mapping_bytes = header.optional_offset;
+    header.optional_bytes = static_cast<std::uint64_t>(request->input_slot_count) *
+                            inputStrideBytes(request->max_frames);
+    cursor = header.optional_offset;
+    if (!checkedAdd(cursor, header.optional_bytes))
+        return false;
+    header.mapping_bytes = cursor;
     return true;
 }
 
@@ -140,9 +153,19 @@ extern "C" int mpvst_validate_mapping(const void* mapping, uint64_t mapping_byte
         header->channel_count != MPVST_CHANNEL_COUNT)
         return 0;
 
+    // The input-slot count is not stored directly; it is implied by the
+    // optional region's size, which must be empty or exactly one input block
+    // per work slot.
+    const auto stride = inputStrideBytes(header->max_frames);
+    const auto wholeInputRegion = stride != 0U &&
+        header->optional_bytes ==
+            static_cast<std::uint64_t>(header->work_slot_count) * stride;
+    if (header->optional_bytes != 0U && !wholeInputRegion)
+        return 0;
     const mpvst_layout_request request {header->max_frames, header->work_slot_count,
                                         header->output_slot_count, header->event_capacity,
-                                        header->command_capacity};
+                                        header->command_capacity,
+                                        wholeInputRegion ? header->work_slot_count : 0U};
     mpvst_shared_header expected {};
     return computeOffsets(&request, expected) &&
            expected.mapping_bytes == mapping_bytes &&
@@ -194,4 +217,31 @@ extern "C" const float* mpvst_const_output_channel(const mpvst_output_slot* slot
     const auto* samples = reinterpret_cast<const float*>(
         reinterpret_cast<const std::uint8_t*>(slot) + sizeof(mpvst_output_slot));
     return samples + static_cast<std::uint64_t>(max_frames) * channel;
+}
+
+extern "C" uint64_t mpvst_input_stride_bytes(const mpvst_shared_header* header)
+{
+    return header == nullptr ? 0U : inputStrideBytes(header->max_frames);
+}
+
+extern "C" float* mpvst_input_channel(void* mapping,
+                                      const mpvst_shared_header* header,
+                                      uint32_t slot_index, uint32_t channel)
+{
+    if (mapping == nullptr || header == nullptr || header->optional_bytes == 0U)
+        return nullptr;
+    auto* block = static_cast<std::uint8_t*>(mapping) + header->optional_offset +
+                  static_cast<std::uint64_t>(slot_index % header->work_slot_count) *
+                      inputStrideBytes(header->max_frames);
+    return reinterpret_cast<float*>(block) +
+           static_cast<std::uint64_t>(header->max_frames) * channel;
+}
+
+extern "C" const float* mpvst_const_input_channel(const void* mapping,
+                                                   const mpvst_shared_header* header,
+                                                   uint32_t slot_index,
+                                                   uint32_t channel)
+{
+    return mpvst_input_channel(const_cast<void*>(mapping), header, slot_index,
+                               channel);
 }

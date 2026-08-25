@@ -30,7 +30,7 @@ mpvst_output_slot* outputAt(void* mapping, const mpvst_shared_header& header,
 
 void testLayoutAndValidation()
 {
-    const mpvst_layout_request request {512U, 8U, 8U, 256U, 8U};
+    const mpvst_layout_request request {512U, 8U, 8U, 256U, 8U, 0U};
     const auto bytes = mpvst_compute_mapping_bytes(&request);
     check(bytes > 0U && bytes % MPVST_CACHE_LINE_BYTES == 0U,
           "mapping is non-empty and cache-line aligned");
@@ -125,7 +125,7 @@ void testBoundedWorkRing()
 
 void testOutputAndGeneration()
 {
-    const mpvst_layout_request request {64U, 4U, 4U, 32U, 4U};
+    const mpvst_layout_request request {64U, 4U, 4U, 32U, 4U, 0U};
     const auto bytes = mpvst_compute_mapping_bytes(&request);
     std::vector<std::uint64_t> storage((bytes + 7U) / 8U);
     check(mpvst_initialize_mapping(storage.data(), bytes, &request, 9U) == 1,
@@ -161,6 +161,54 @@ void testOutputAndGeneration()
           "stale generation is detectable before playback");
 }
 
+void testInputRegionLayout()
+{
+    const mpvst_layout_request instrument {512U, 8U, 8U, 256U, 8U, 0U};
+    const mpvst_layout_request effect {512U, 8U, 8U, 256U, 8U, 8U};
+    const auto instrumentBytes = mpvst_compute_mapping_bytes(&instrument);
+    const auto effectBytes = mpvst_compute_mapping_bytes(&effect);
+    check(effectBytes > instrumentBytes,
+          "input region grows the mapping");
+
+    const mpvst_layout_request mismatched {512U, 8U, 8U, 256U, 8U, 4U};
+    check(mpvst_compute_mapping_bytes(&mismatched) == 0U,
+          "partial input coverage is rejected");
+
+    std::vector<std::uint64_t> storage((effectBytes + 7U) / 8U);
+    check(mpvst_initialize_mapping(storage.data(), effectBytes, &effect, 5U) == 1,
+          "effect mapping initializes");
+    check(mpvst_validate_mapping(storage.data(), effectBytes) == 1,
+          "effect mapping validates");
+
+    auto* header = reinterpret_cast<mpvst_shared_header*>(storage.data());
+    const auto stride = mpvst_input_stride_bytes(header);
+    check(stride % MPVST_CACHE_LINE_BYTES == 0U, "input stride is aligned");
+    check(header->optional_bytes == stride * header->work_slot_count,
+          "optional region holds one input block per work slot");
+
+    auto* left0 = mpvst_input_channel(storage.data(), header, 0U, 0U);
+    auto* right0 = mpvst_input_channel(storage.data(), header, 0U, 1U);
+    auto* left1 = mpvst_input_channel(storage.data(), header, 1U, 0U);
+    check(left0 != nullptr && right0 == left0 + header->max_frames,
+          "input channels are planar");
+    check(reinterpret_cast<std::uint8_t*>(left1) ==
+              reinterpret_cast<std::uint8_t*>(left0) + stride,
+          "input slots advance by the stride");
+    left0[0] = 0.25F;
+    check(mpvst_const_input_channel(storage.data(), header, 8U, 0U)[0] == 0.25F,
+          "slot index wraps at the work ring size");
+
+    const auto validHeader = *header;
+    header->optional_bytes -= 64U;
+    check(mpvst_validate_mapping(storage.data(), effectBytes) == 0,
+          "corrupt input-region size is rejected");
+    *header = validHeader;
+
+    const mpvst_layout_request none {512U, 8U, 8U, 256U, 8U, 0U};
+    check(mpvst_compute_mapping_bytes(&none) == instrumentBytes,
+          "zero input slots matches the instrument layout exactly");
+}
+
 } // namespace
 
 int main()
@@ -168,6 +216,7 @@ int main()
     testLayoutAndValidation();
     testBoundedWorkRing();
     testOutputAndGeneration();
+    testInputRegionLayout();
     if (failures != 0)
         return 1;
     std::cout << "mpvst protocol layout and bounded-ring tests passed\n";

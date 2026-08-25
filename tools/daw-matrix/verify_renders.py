@@ -109,7 +109,8 @@ def main() -> int:
     # observe a Reload Script transition; they carry no note to measure.
     files = [p for p in sorted(directory.glob("*.wav"))
              if not p.name.startswith("edge_")
-             and p.stem not in ("extra_status", "startup_status")]
+             and p.stem not in ("extra_status", "startup_status",
+                            "effect_status")]
     if not files:
         print("VERIFY FAIL: no rendered WAV files in %s" % directory)
         return 1
@@ -206,6 +207,12 @@ def main() -> int:
 
     # After recovery the matrix sets Macro 01 back to zero.
     plateau("recovered", 0.125)
+
+    # The source instrument alone, before the effect joins its chain.
+    plateau("effect_dry", 0.125)
+
+    # The audio-input effect halves the gate: 0.125 in, 0.0625 out.
+    plateau("effected", 0.0625)
 
     print()
     if failures:

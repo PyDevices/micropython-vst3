@@ -40,6 +40,11 @@ public:
 
     void configure(double sampleRate, std::uint32_t maxFrames,
                    std::uint32_t latencySamples) noexcept;
+    // An effect instance carries host audio to the engine: the shared mapping
+    // gains one input block per work slot and process() forwards the bus.
+    // Must be set before start().
+    void setInputEnabled(bool enabled) noexcept { inputEnabled_ = enabled; }
+    bool inputEnabled() const noexcept { return inputEnabled_; }
     bool start();
     void stop() noexcept;
 
@@ -56,11 +61,16 @@ public:
     };
 
     // Audio-thread entry point: bounded, lock-free, and allocation-free.
+    // inputLeft/inputRight carry the host's audio-input bus for effect
+    // instances; they are copied into the block's input region before the
+    // work slot is published and may alias the output pointers.
     bool process(float* left, float* right, std::uint32_t frames,
                  bool bypassed, const mpvst_event* events = nullptr,
                  std::uint32_t eventCount = 0U,
                  bool offline = false,
-                 const TransportInfo* transport = nullptr) noexcept;
+                 const TransportInfo* transport = nullptr,
+                 const float* inputLeft = nullptr,
+                 const float* inputRight = nullptr) noexcept;
 
     // A point-in-time view of how the sidecar is coping. Every field is
     // gathered from counters the audio thread only ever adds to, so reading it
@@ -105,7 +115,9 @@ private:
     void submitWork(std::int64_t startSample, std::uint32_t frames,
                     const mpvst_event* events,
                     std::uint32_t eventCount,
-                    const TransportInfo* transport) noexcept;
+                    const TransportInfo* transport,
+                    const float* inputLeft,
+                    const float* inputRight) noexcept;
     bool consumeOutput(float* left, float* right, std::int64_t startSample,
                        std::uint32_t frames, bool countUnderrun = true) noexcept;
 
@@ -133,6 +145,7 @@ private:
     std::uint32_t outputOffset_ = 0U;
     std::int64_t streamPosition_ = 0;
     bool testTone_ = false;
+    bool inputEnabled_ = false;
     std::atomic<bool> available_ {false};
     std::atomic<bool> supervisorStop_ {false};
     std::atomic<std::uint32_t> activeCallbacks_ {0U};

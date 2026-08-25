@@ -101,6 +101,22 @@ const ClassInfo* findAudioClass(const PluginFactory& factory,
     return nullptr;
 }
 
+const ClassInfo* findAudioClassNamed(const PluginFactory& factory,
+                                     const std::string& name,
+                                     ClassInfo& selected)
+{
+    for (const auto& classInfo : factory.classInfos())
+    {
+        if (classInfo.category() == kVstAudioEffectClass &&
+            classInfo.name() == name)
+        {
+            selected = classInfo;
+            return &selected;
+        }
+    }
+    return nullptr;
+}
+
 bool stateRoundTrip(const PluginFactory& factory, const ClassInfo& classInfo,
                     FUnknown* host)
 {
@@ -712,6 +728,169 @@ bool renderReference(const PluginFactory& factory, const ClassInfo& classInfo,
     return stopped && terminated;
 }
 
+// Runs the effect class with the real MicroPython engine and a script that
+// simply plays the host input back: vstaudio.output(vstaudio.input()). Every
+// output sample must equal the input sample from one pipeline latency
+// earlier, to within the int16 quantisation the script-side audio path uses.
+bool effectCase(const PluginFactory& factory, const ClassInfo& classInfo,
+                FUnknown* host, const char* source, int32 blockFrames,
+                float gain, float tolerance)
+{
+    const auto sourcePath = std::filesystem::temp_directory_path() /
+        "mpvst-effect-case.py";
+    {
+        std::ofstream out(sourcePath, std::ios::binary | std::ios::trunc);
+        if (!out || !out.write(source, static_cast<std::streamsize>(
+                                           std::strlen(source))))
+            return false;
+    }
+    setScriptPath(sourcePath.string());
+
+    auto component = createComponent(factory, classInfo, host);
+    auto processor = getProcessor(component);
+    if (!component || !processor)
+        return false;
+
+    SpeakerArrangement stereo = SpeakerArr::kStereo;
+    ProcessSetup setup {};
+    setup.processMode = kOffline;
+    setup.symbolicSampleSize = kSample32;
+    setup.maxSamplesPerBlock = blockFrames;
+    setup.sampleRate = 48000.0;
+    if (!ok(processor->setBusArrangements(&stereo, 1, &stereo, 1)) ||
+        !ok(component->activateBus(kAudio, kInput, 0, true)) ||
+        !ok(component->activateBus(kAudio, kOutput, 0, true)) ||
+        !ok(component->activateBus(kEvent, kInput, 0, true)) ||
+        !ok(processor->setupProcessing(setup)) ||
+        !ok(component->setActive(true)) ||
+        !ok(processor->setProcessing(true)))
+        return false;
+
+    const auto kFrames = static_cast<std::uint32_t>(blockFrames);
+    const std::uint32_t kLatency = kFrames * 4U;
+    const int kBlockCount = static_cast<int>(8192U / kFrames) + 8;
+    std::vector<float> sentLeft;
+    std::vector<float> sentRight;
+    std::vector<float> heardLeft;
+    std::vector<float> heardRight;
+
+    std::vector<float> inLeft(kFrames);
+    std::vector<float> inRight(kFrames);
+    std::vector<float> outLeft(kFrames);
+    std::vector<float> outRight(kFrames);
+    Sample32* inChannels[] = {inLeft.data(), inRight.data()};
+    Sample32* outChannels[] = {outLeft.data(), outRight.data()};
+    AudioBusBuffers inputBus {};
+    inputBus.numChannels = 2;
+    inputBus.channelBuffers32 = inChannels;
+    AudioBusBuffers outputBus {};
+    outputBus.numChannels = 2;
+    outputBus.channelBuffers32 = outChannels;
+    ProcessData data {};
+    data.processMode = kOffline;
+    data.symbolicSampleSize = kSample32;
+    data.numSamples = static_cast<int32>(kFrames);
+    data.numInputs = 1;
+    data.inputs = &inputBus;
+    data.numOutputs = 1;
+    data.outputs = &outputBus;
+
+    for (int block = 0; block < kBlockCount; ++block)
+    {
+        for (std::uint32_t frame = 0U; frame < kFrames; ++frame)
+        {
+            const auto sample =
+                static_cast<std::uint32_t>(block) * kFrames + frame;
+            const auto value = (static_cast<float>((sample * 7U) % 256U) -
+                                128.0F) / 512.0F;
+            inLeft[frame] = value;
+            inRight[frame] = -0.5F * value;
+            sentLeft.push_back(inLeft[frame]);
+            sentRight.push_back(inRight[frame]);
+        }
+        if (!ok(processor->process(data)))
+            return false;
+        heardLeft.insert(heardLeft.end(), outLeft.begin(), outLeft.end());
+        heardRight.insert(heardRight.end(), outRight.begin(), outRight.end());
+    }
+
+    const bool stopped = ok(processor->setProcessing(false)) &&
+                         ok(component->setActive(false));
+    processor = nullptr;
+    const bool terminated = ok(component->terminate());
+    component = nullptr;
+    setScriptPath({});
+    std::error_code ignored;
+    (void)std::filesystem::remove(sourcePath, ignored);
+    if (!stopped || !terminated)
+        return false;
+
+    // A script chain may buffer internally (an audiomixer voice prefetches a
+    // silent chunk before the first host block arrives), so the stream can
+    // lag the pipeline latency by a bounded extra amount. Find the actual
+    // alignment, then require a full match at that shift.
+    const std::uint32_t kMaxExtra = 2048U;
+    for (std::uint32_t shift = kLatency; shift <= kLatency + kMaxExtra;
+         ++shift)
+    {
+        bool matched = true;
+        for (std::size_t sample = shift; sample < heardLeft.size(); ++sample)
+        {
+            const auto expectedLeft = sentLeft[sample - shift] * gain;
+            const auto expectedRight = sentRight[sample - shift] * gain;
+            if (std::abs(heardLeft[sample] - expectedLeft) > tolerance ||
+                std::abs(heardRight[sample] - expectedRight) > tolerance)
+            {
+                matched = false;
+                break;
+            }
+        }
+        if (matched)
+        {
+            std::cerr << "effect aligned at shift " << shift << " (block="
+                      << blockFrames << " gain=" << gain << ")\n";
+            return true;
+        }
+    }
+    std::cerr << "effect audio never aligned (block=" << blockFrames
+              << " gain=" << gain << ")\n";
+    return false;
+}
+
+bool effectProcessesHostAudio(const PluginFactory& factory,
+                              const ClassInfo& classInfo, FUnknown* host)
+{
+    // Direct pass-through at a small block size, then an audiomixer chain at
+    // a DAW-typical 512-frame block: the second shape is exactly what the
+    // REAPER matrix runs.
+    constexpr const char* passthrough =
+        "import vstaudio\n"
+        "vstaudio.output(vstaudio.input())\n";
+    constexpr const char* mixerHalf =
+        "import audiomixer\n"
+        "import vstaudio\n"
+        "mixer = audiomixer.Mixer(voice_count=1,\n"
+        "                         sample_rate=vstaudio.sample_rate(),\n"
+        "                         channel_count=2, bits_per_sample=16,\n"
+        "                         samples_signed=True, buffer_size=1024)\n"
+        "mixer.voice[0].play(vstaudio.input())\n"
+        "mixer.voice[0].level = 0.5\n"
+        "vstaudio.output(mixer)\n";
+    if (!effectCase(factory, classInfo, host, passthrough, 128, 1.0F,
+                    0.0001F))
+        return false;
+    std::cerr << "case passthrough@128 ok\n";
+    if (!effectCase(factory, classInfo, host, passthrough, 512, 1.0F,
+                    0.0001F))
+        return false;
+    std::cerr << "case passthrough@512 ok\n";
+    if (!effectCase(factory, classInfo, host, mixerHalf, 128, 0.5F, 0.002F))
+        return false;
+    std::cerr << "case mixer@128 ok\n";
+    return effectCase(factory, classInfo, host, mixerHalf, 512, 0.5F,
+                      0.002F);
+}
+
 bool transportDiscontinuityGatesVoices(const PluginFactory& factory,
                                        const ClassInfo& classInfo,
                                        FUnknown* host)
@@ -1078,20 +1257,22 @@ int main(int argc, char** argv)
         (!mode.empty() && mode != "--expect-micropython" &&
          mode != "--expect-embedded-state" && mode != "--expect-reload-fade" &&
          mode != "--expect-macro-resync" && mode != "--expect-transport" &&
-         !renderMode))
+         mode != "--expect-effect-audio" && !renderMode))
     {
         std::cerr << "usage: mpvst_smoke_host <plugin.vst3> "
                      "[--expect-micropython|--expect-embedded-state|"
                      "--expect-reload-fade|--expect-macro-resync|"
-                     "--expect-transport|--render-reference <out.pcm>]\n";
+                     "--expect-transport|--expect-effect-audio|"
+                     "--render-reference <out.pcm>]\n";
         return 2;
     }
     const bool embeddedState = mode == "--expect-embedded-state";
     const bool reloadFade = mode == "--expect-reload-fade";
     const bool macroResync = mode == "--expect-macro-resync";
     const bool transportMode = mode == "--expect-transport";
+    const bool effectMode = mode == "--expect-effect-audio";
     const bool expectMicroPython = mode == "--expect-micropython" ||
-                                   embeddedState || renderMode;
+                                   embeddedState || renderMode || effectMode;
 
     std::string error;
     const auto modulePath = std::filesystem::weakly_canonical(argv[1]).string();
@@ -1128,6 +1309,22 @@ int main(int argc, char** argv)
                 return 5;
             }
             std::cout << "HOOK render.reference OK: " << modeArgument << '\n';
+        }
+        else if (effectMode)
+        {
+            ClassInfo effectInfo;
+            if (findAudioClassNamed(factory, "MicroPython Effect",
+                                    effectInfo) == nullptr)
+            {
+                std::cerr << "HOOK effect.scan FAIL\n";
+                return 5;
+            }
+            if (!effectProcessesHostAudio(factory, effectInfo, host))
+            {
+                std::cerr << "HOOK effect.audio FAIL\n";
+                return 5;
+            }
+            std::cout << "HOOK effect.audio OK: 4 script/block cases aligned\n";
         }
         else if (transportMode)
         {
@@ -1171,7 +1368,8 @@ int main(int argc, char** argv)
             return 5;
         }
         const bool defaultSuite = !embeddedState && !reloadFade &&
-                                  !macroResync && !transportMode && !renderMode;
+                                  !macroResync && !transportMode &&
+                                  !renderMode && !effectMode;
         if (defaultSuite)
             std::cout << "HOOK state.roundtrip OK: legacy_v1=1 malformed=4\n";
 

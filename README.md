@@ -1,6 +1,12 @@
 # MicroPython VST3
 
-Programmable VST3 instrument backed by a dedicated MicroPython engine process.
+Programmable VST3 instrument and audio effect backed by dedicated
+MicroPython engine processes. One bundle ships two plug-ins: the
+**MicroPython Instrument** (event input, stereo out) and the
+**MicroPython Effect** (stereo in and out), whose script reads the host
+audio through `vstaudio.input()` and can run it through any audioif
+chain - filters, echoes, chorus, freeverb, mixers - or synthesize
+alongside it.
 The VST audio callback remains native and real-time safe; Python, garbage
 collection, filesystem access, and engine lifecycle work stay in the sidecar.
 

@@ -41,7 +41,7 @@ int main(int argc, char** argv)
 {
     if (argc != 2)
         return 2;
-    const mpvst_layout_request request {128U, 8U, 8U, 256U, 8U};
+    const mpvst_layout_request request {128U, 8U, 8U, 256U, 8U, 0U};
     const auto bytes = mpvst_compute_mapping_bytes(&request);
     const auto name = mpvst::uniqueMappingName();
     mpvst::SharedMemory mapping;

@@ -15,12 +15,14 @@ namespace PyDevices::MicroPythonVST3 {
 using namespace Steinberg;
 using namespace Steinberg::Vst;
 
-Processor::Processor ()
+Processor::Processor (bool effectMode)
     : scriptSource_ (SidecarTransport::initialScriptSource ())
+    , effectMode_ (effectMode)
 {
-    setControllerClass (kControllerUID);
+    setControllerClass (effectMode_ ? kEffectControllerUID : kControllerUID);
     for (auto& value : macros_)
         value.store (0.5f, std::memory_order_relaxed);
+    sidecar_.setInputEnabled (effectMode_);
     sidecar_.setScriptSource (scriptSource_,
                               SidecarTransport::ScriptOrigin::DeveloperFile);
 }
@@ -30,25 +32,39 @@ FUnknown* Processor::createInstance (void*)
     return static_cast<IAudioProcessor*> (new Processor ());
 }
 
+FUnknown* Processor::createEffectInstance (void*)
+{
+    return static_cast<IAudioProcessor*> (new Processor (true));
+}
+
 tresult PLUGIN_API Processor::initialize (FUnknown* context)
 {
     const auto result = AudioEffect::initialize (context);
     if (result != kResultOk)
         return result;
 
+    if (effectMode_)
+        addAudioInput (STR16 ("Stereo In"), SpeakerArr::kStereo);
     addAudioOutput (STR16 ("Stereo Out"), SpeakerArr::kStereo);
     addEventInput (STR16 ("Event In"), static_cast<int32> (kMidiChannelCount));
     return kResultOk;
 }
 
 tresult PLUGIN_API Processor::setBusArrangements (
-    SpeakerArrangement*, int32 numInputs,
+    SpeakerArrangement* inputs, int32 numInputs,
     SpeakerArrangement* outputs, int32 numOutputs)
 {
-    if (numInputs != 0 || numOutputs != 1 || outputs == nullptr ||
-        outputs[0] != SpeakerArr::kStereo)
+    if (numOutputs != 1 || outputs == nullptr || outputs[0] != SpeakerArr::kStereo)
         return kResultFalse;
-
+    if (effectMode_)
+    {
+        if (numInputs != 1 || inputs == nullptr || inputs[0] != SpeakerArr::kStereo)
+            return kResultFalse;
+        return AudioEffect::setBusArrangements (inputs, numInputs, outputs,
+                                                numOutputs);
+    }
+    if (numInputs != 0)
+        return kResultFalse;
     return AudioEffect::setBusArrangements (nullptr, 0, outputs, numOutputs);
 }
 
@@ -68,6 +84,18 @@ tresult PLUGIN_API Processor::setupProcessing (ProcessSetup& setup)
     sampleRate_ = setup.sampleRate;
     sidecar_.configure (setup.sampleRate, maxFrames,
                         maxFrames * static_cast<uint32> (pipelineBlocks_));
+    if (effectMode_)
+    {
+        inputStagingLeft_.assign (maxFrames, 0.0F);
+        inputStagingRight_.assign (maxFrames, 0.0F);
+        // Sized for the largest latency any pipeline depth can report, so a
+        // depth restored from project state never needs a resize here.
+        const auto delayFrames = static_cast<std::size_t> (maxFrames) *
+                                 static_cast<std::size_t> (kMaximumPipelineBlocks);
+        bypassDelayLeft_.assign (delayFrames, 0.0F);
+        bypassDelayRight_.assign (delayFrames, 0.0F);
+        bypassDelayIndex_ = 0U;
+    }
     return AudioEffect::setupProcessing (setup);
 }
 
@@ -462,6 +490,24 @@ tresult PLUGIN_API Processor::process (ProcessData& data)
     if (data.symbolicSampleSize != kSample32)
         return kResultFalse;
 
+    // Hosts may process in place, so the input bus has to be captured before
+    // the output buffers are cleared.
+    const float* stagedInputLeft = nullptr;
+    const float* stagedInputRight = nullptr;
+    if (effectMode_ && data.numSamples > 0 && data.numInputs > 0 &&
+        data.inputs != nullptr && data.inputs[0].numChannels >= 2 &&
+        data.inputs[0].channelBuffers32[0] != nullptr &&
+        data.inputs[0].channelBuffers32[1] != nullptr &&
+        static_cast<std::size_t> (data.numSamples) <= inputStagingLeft_.size ())
+    {
+        std::copy_n (data.inputs[0].channelBuffers32[0], data.numSamples,
+                     inputStagingLeft_.data ());
+        std::copy_n (data.inputs[0].channelBuffers32[1], data.numSamples,
+                     inputStagingRight_.data ());
+        stagedInputLeft = inputStagingLeft_.data ();
+        stagedInputRight = inputStagingRight_.data ();
+    }
+
     clearOutput (data);
     const auto transport = readTransport (data);
     std::uint32_t eventCount = 0U;
@@ -482,13 +528,54 @@ tresult PLUGIN_API Processor::process (ProcessData& data)
         data.outputs[0].channelBuffers32[0] != nullptr &&
         data.outputs[0].channelBuffers32[1] != nullptr)
     {
+        const auto bypassed = bypass_.load (std::memory_order_relaxed) != 0U;
         const auto wroteNonSilent = sidecar_.process (
             data.outputs[0].channelBuffers32[0],
             data.outputs[0].channelBuffers32[1],
             static_cast<uint32> (data.numSamples),
-            bypass_.load (std::memory_order_relaxed) != 0U,
+            bypassed,
             events_.data (), eventCount, data.processMode == kOffline,
-            &transport);
+            &transport, stagedInputLeft, stagedInputRight);
+        if (effectMode_ && !bypassDelayLeft_.empty ())
+        {
+            // The dry signal runs through a delay matched to the reported
+            // pipeline latency at all times, so engaging bypass swaps to a
+            // time-aligned pass-through instead of jumping the audio earlier
+            // by the plug-in's own latency.
+            const auto latency = std::min<std::uint32_t> (
+                sidecar_.latencySamples (),
+                static_cast<std::uint32_t> (bypassDelayLeft_.size ()));
+            auto* outLeft = data.outputs[0].channelBuffers32[0];
+            auto* outRight = data.outputs[0].channelBuffers32[1];
+            bool bypassWroteNonSilent = false;
+            for (int32 frame = 0; frame < data.numSamples; ++frame)
+            {
+                const float dryLeft = stagedInputLeft != nullptr
+                    ? stagedInputLeft[frame] : 0.0F;
+                const float dryRight = stagedInputRight != nullptr
+                    ? stagedInputRight[frame] : 0.0F;
+                float delayedLeft = dryLeft;
+                float delayedRight = dryRight;
+                if (latency != 0U)
+                {
+                    delayedLeft = bypassDelayLeft_[bypassDelayIndex_];
+                    delayedRight = bypassDelayRight_[bypassDelayIndex_];
+                    bypassDelayLeft_[bypassDelayIndex_] = dryLeft;
+                    bypassDelayRight_[bypassDelayIndex_] = dryRight;
+                    bypassDelayIndex_ = bypassDelayIndex_ + 1U == latency
+                        ? 0U : bypassDelayIndex_ + 1U;
+                }
+                if (bypassed)
+                {
+                    outLeft[frame] = delayedLeft;
+                    outRight[frame] = delayedRight;
+                    bypassWroteNonSilent = bypassWroteNonSilent ||
+                        delayedLeft != 0.0F || delayedRight != 0.0F;
+                }
+            }
+            if (bypassWroteNonSilent)
+                data.outputs[0].silenceFlags = 0U;
+        }
         applyReloadFade (data.outputs[0].channelBuffers32[0],
                          data.outputs[0].channelBuffers32[1],
                          static_cast<uint32> (data.numSamples));

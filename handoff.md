@@ -32,14 +32,20 @@ platforms.
 
 `PLAN.md` is the source of truth and records every phase as complete.
 
-- Steinberg validator: 47/47 on Windows and Linux.
-- Automated tests: 11 of 11 on Windows, 12 of 12 on Linux.
-- REAPER matrix: 14 of 14 steps and every PCM check, on both platforms.
-  Evidence in `docs/evidence/`.
+- Steinberg validator: 94/94 on Windows and Linux (both classes).
+- Automated tests: 13 of 13 on Linux, 13 of 13 on Windows.
+- REAPER matrix: 17 of 17 steps and every PCM check, on both platforms,
+  including an instrument-into-effect chain rendered from embedded state
+  and a latency-matched effect bypass. Evidence in `docs/evidence/`.
 - Cross-platform parity: identical SHA-256 over the reference render.
 
 ## Implemented behaviour
 
+- Two plug-in classes ship in one bundle: the **MicroPython Instrument**
+  and the **MicroPython Effect**, which adds a stereo audio-input bus.
+  An effect script reads the host audio through `vstaudio.input()` - an
+  audiosample source any audioif chain can consume - and its bypass is a
+  latency-matched pass-through. `examples/fx_space.py` shows the shape.
 - 20 visible parameters (bypass, reload, ready/error status, 16 macros) plus
   2,080 hidden 16-channel MIDI mapping parameters, 2,100 total. REAPER reports
   2,103 because it appends its own three.

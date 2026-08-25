@@ -48,6 +48,10 @@ work_native=$(to_native "$work_unix")
 cp "$matrix_dir/matrix_instrument.py" "$work_unix/script.py"
 cp "$matrix_dir/matrix_instrument.py" "$work_unix/good_backup.py"
 cp "$matrix_dir/matrix_instrument_edited.py" "$work_unix/edited_script.py"
+cp "$matrix_dir/matrix_effect.py" "$work_unix/effect_script.py"
+python3 "$matrix_dir/build_effect_project.py" \
+    "$work_unix/effect_project.RPP" \
+    "$matrix_dir/matrix_instrument.py" "$matrix_dir/matrix_effect.py"
 cat > "$work_unix/bad_script.py" <<'PY'
 import vstaudio
 
@@ -87,6 +91,7 @@ if [[ "$platform" == windows ]]; then
 \$env:MPVST_SCRIPT_PATH = "$work_native${sep}script.py"
 \$env:MPVST_BAD_SCRIPT_PATH = "$work_native${sep}bad_script.py"
 \$env:MPVST_EDITED_SCRIPT_PATH = "$work_native${sep}edited_script.py"
+\$env:MPVST_EFFECT_SCRIPT_PATH = "$work_native${sep}effect_script.py"
 \$env:MPVST_MATRIX_REPORT = "$work_native${sep}report.txt"
 \$env:MPVST_MATRIX_WORKDIR = "$work_native"
 \$env:MPVST_TEST_LOG = "$work_native${sep}script_log.txt"
@@ -98,6 +103,7 @@ else
     MPVST_SCRIPT_PATH="$work_unix/script.py" \
     MPVST_BAD_SCRIPT_PATH="$work_unix/bad_script.py" \
     MPVST_EDITED_SCRIPT_PATH="$work_unix/edited_script.py" \
+    MPVST_EFFECT_SCRIPT_PATH="$work_unix/effect_script.py" \
     MPVST_MATRIX_REPORT="$report_unix" \
     MPVST_MATRIX_WORKDIR="$work_unix" \
     MPVST_TEST_LOG="$work_unix/script_log.txt" \

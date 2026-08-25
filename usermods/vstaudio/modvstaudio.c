@@ -40,9 +40,28 @@ static mpvst_command *vstaudio_commands;
 static mpvst_event *vstaudio_events;
 static mpvst_work_slot *vstaudio_work;
 static uint8_t *vstaudio_outputs;
+static uint8_t *vstaudio_inputs;
 static const int16_t *vstaudio_source_samples;
 static uint32_t vstaudio_source_frames;
 static uint32_t vstaudio_source_offset;
+
+// Host input audio, effect instances only. The run loop converts each work
+// slot's float32 block to interleaved int16 into this ring, and the script
+// reads it through the audiosample object vstaudio.input() returns, so the
+// whole audioif effect library can chain from the host bus. When a chain's
+// internal buffering pulls ahead of what the host has delivered, the source
+// hands out silence instead - self-priming to exactly the chain's depth.
+#define VSTAUDIO_INPUT_FIFO_FRAMES 8192u
+#define VSTAUDIO_INPUT_CHUNK_FRAMES 256u
+static int16_t vstaudio_input_fifo[VSTAUDIO_INPUT_FIFO_FRAMES * 2u];
+static int16_t vstaudio_input_silence[VSTAUDIO_INPUT_CHUNK_FRAMES * 2u];
+static uint32_t vstaudio_input_read;
+static uint32_t vstaudio_input_write;
+static uint64_t vstaudio_input_underflows;
+
+typedef struct vstaudio_input_obj {
+    audiosample_base_t base;
+} vstaudio_input_obj_t;
 
 #if defined(_WIN32)
 
@@ -117,6 +136,9 @@ static void close_mapping(void) {
     vstaudio_events = NULL;
     vstaudio_work = NULL;
     vstaudio_outputs = NULL;
+    vstaudio_inputs = NULL;
+    vstaudio_input_read = 0u;
+    vstaudio_input_write = 0u;
 }
 
 static uint64_t output_stride(void) {
@@ -133,6 +155,45 @@ static mpvst_output_slot *output_at(uint64_t position) {
 static float *output_channel(mpvst_output_slot *slot, uint32_t channel) {
     float *samples = (float *)((uint8_t *)slot + sizeof(mpvst_output_slot));
     return samples + (uint64_t)vstaudio_header->max_frames * channel;
+}
+
+static uint64_t input_stride(void) {
+    uint64_t bytes = (uint64_t)vstaudio_header->max_frames *
+        vstaudio_header->channel_count * sizeof(float);
+    return (bytes + MPVST_CACHE_LINE_BYTES - 1u) & ~(uint64_t)(MPVST_CACHE_LINE_BYTES - 1u);
+}
+
+static const float *input_channel(uint32_t slot_index, uint32_t channel) {
+    const uint8_t *block = vstaudio_inputs +
+        (uint64_t)(slot_index % vstaudio_header->work_slot_count) * input_stride();
+    return (const float *)block + (uint64_t)vstaudio_header->max_frames * channel;
+}
+
+static void deposit_input(const mpvst_work_slot *work, uint64_t work_position) {
+    if (vstaudio_inputs == NULL) {
+        return;
+    }
+    const uint32_t slot_index =
+        (uint32_t)(work_position % vstaudio_header->work_slot_count);
+    const float *left = input_channel(slot_index, 0u);
+    const float *right = input_channel(slot_index, 1u);
+    for (uint32_t frame = 0; frame < work->frame_count; ++frame) {
+        if (vstaudio_input_write - vstaudio_input_read >=
+            VSTAUDIO_INPUT_FIFO_FRAMES) {
+            ++vstaudio_input_read;  // drop the oldest; the script is not reading
+        }
+        const uint32_t at = (vstaudio_input_write % VSTAUDIO_INPUT_FIFO_FRAMES) * 2u;
+        // Symmetric conversion so int16-sourced audio round-trips exactly:
+        // the output path divides by 32768, so scaling by 32768 here makes a
+        // pass-through effect bit-transparent.
+        float l = left[frame] * 32768.0f;
+        float r = right[frame] * 32768.0f;
+        if (l > 32767.0f) { l = 32767.0f; } else if (l < -32768.0f) { l = -32768.0f; }
+        if (r > 32767.0f) { r = 32767.0f; } else if (r < -32768.0f) { r = -32768.0f; }
+        vstaudio_input_fifo[at] = (int16_t)lrintf(l);
+        vstaudio_input_fifo[at + 1u] = (int16_t)lrintf(r);
+        ++vstaudio_input_write;
+    }
 }
 
 // Monotonic nanoseconds for per-block render timing. The division is split so
@@ -240,6 +301,19 @@ static mp_obj_t vstaudio_configure(mp_obj_t name_obj, mp_obj_t bytes_obj) {
 #endif
         mp_raise_ValueError(MP_ERROR_TEXT("invalid MPVST mapping"));
     }
+    const uint64_t expected_input_bytes = (uint64_t)header->work_slot_count *
+        (((uint64_t)header->max_frames * header->channel_count * sizeof(float) +
+          MPVST_CACHE_LINE_BYTES - 1u) & ~(uint64_t)(MPVST_CACHE_LINE_BYTES - 1u));
+    if (header->optional_bytes != 0u &&
+        header->optional_bytes != expected_input_bytes) {
+#if defined(_WIN32)
+        UnmapViewOfFile(mapping);
+        CloseHandle(handle);
+#else
+        (void)munmap(mapping, (size_t)bytes);
+#endif
+        mp_raise_ValueError(MP_ERROR_TEXT("invalid MPVST input region"));
+    }
 
 #if defined(_WIN32)
     vstaudio_mapping_handle = handle;
@@ -252,6 +326,11 @@ static mp_obj_t vstaudio_configure(mp_obj_t name_obj, mp_obj_t bytes_obj) {
     vstaudio_events = (mpvst_event *)((uint8_t *)mapping + header->events_offset);
     vstaudio_work = (mpvst_work_slot *)((uint8_t *)mapping + header->work_offset);
     vstaudio_outputs = (uint8_t *)mapping + header->outputs_offset;
+    vstaudio_inputs = header->optional_bytes != 0u
+        ? (uint8_t *)mapping + header->optional_offset : NULL;
+    vstaudio_input_read = 0u;
+    vstaudio_input_write = 0u;
+    vstaudio_input_underflows = 0u;
     MP_STATE_VM(vstaudio_output) = MP_OBJ_NULL;
     MP_STATE_VM(vstaudio_event_callback) = MP_OBJ_NULL;
     return mp_const_none;
@@ -276,7 +355,10 @@ static mp_obj_t vstaudio_output(mp_obj_t sample_obj) {
     vstaudio_source_samples = NULL;
     vstaudio_source_frames = 0u;
     vstaudio_source_offset = 0u;
-    audiosample_reset_buffer(sample_obj, false, 0);
+    // Deliberately no audiosample_reset_buffer here: audiomixer's reset stops
+    // every voice, so resetting on registration would silence the idiomatic
+    // "start voices, then output(mixer)" script. A reload builds a fresh
+    // interpreter, so there is no stale playback state to clear anyway.
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(vstaudio_output_obj, vstaudio_output);
@@ -290,6 +372,89 @@ static mp_obj_t vstaudio_clear_output(void) {
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(vstaudio_clear_output_obj, vstaudio_clear_output);
+
+static void vstaudio_input_reset_buffer(mp_obj_t self_in,
+    bool single_channel_output, uint8_t audio_channel) {
+    (void)self_in;
+    (void)single_channel_output;
+    (void)audio_channel;
+    vstaudio_input_read = vstaudio_input_write;
+}
+
+static audioio_get_buffer_result_t vstaudio_input_get_buffer(mp_obj_t self_in,
+    bool single_channel_output, uint8_t channel, uint8_t **buffer,
+    uint32_t *buffer_length) {
+    (void)self_in;
+    (void)single_channel_output;
+    (void)channel;
+    const uint32_t available = vstaudio_input_write - vstaudio_input_read;
+    if (available == 0u) {
+        // The chain wants audio the host has not delivered yet. Handing out a
+        // silent chunk instead of blocking lets an effect's internal buffering
+        // prime itself with exactly as much lead as it needs, once.
+        ++vstaudio_input_underflows;
+        *buffer = (uint8_t *)vstaudio_input_silence;
+        *buffer_length = (uint32_t)sizeof(vstaudio_input_silence);
+        return GET_BUFFER_MORE_DATA;
+    }
+    const uint32_t start = vstaudio_input_read % VSTAUDIO_INPUT_FIFO_FRAMES;
+    uint32_t run = VSTAUDIO_INPUT_FIFO_FRAMES - start;
+    if (run > available) {
+        run = available;
+    }
+    if (run > VSTAUDIO_INPUT_CHUNK_FRAMES) {
+        run = VSTAUDIO_INPUT_CHUNK_FRAMES;
+    }
+    *buffer = (uint8_t *)&vstaudio_input_fifo[start * 2u];
+    *buffer_length = run * 2u * (uint32_t)sizeof(int16_t);
+    vstaudio_input_read += run;
+    return GET_BUFFER_MORE_DATA;
+}
+
+static const audiosample_p_t vstaudio_input_proto = {
+    MP_PROTO_IMPLEMENT(MP_QSTR_protocol_audiosample)
+    .reset_buffer = vstaudio_input_reset_buffer,
+    .get_buffer = vstaudio_input_get_buffer,
+};
+
+MP_DEFINE_CONST_OBJ_TYPE(
+    vstaudio_input_type,
+    MP_QSTR_InputStream,
+    MP_TYPE_FLAG_NONE,
+    protocol, &vstaudio_input_proto
+    );
+
+static vstaudio_input_obj_t vstaudio_input_singleton;
+
+static mp_obj_t vstaudio_input(void) {
+    if (vstaudio_header == NULL) {
+        mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("vstaudio is not configured"));
+    }
+    vstaudio_input_singleton.base.self.type = &vstaudio_input_type;
+    vstaudio_input_singleton.base.sample_rate =
+        (uint32_t)(vstaudio_header->sample_rate_millihz / 1000u);
+    vstaudio_input_singleton.base.max_buffer_length =
+        VSTAUDIO_INPUT_CHUNK_FRAMES * 2u * (uint32_t)sizeof(int16_t);
+    vstaudio_input_singleton.base.bits_per_sample = 16u;
+    vstaudio_input_singleton.base.channel_count = 2u;
+    vstaudio_input_singleton.base.samples_signed = 1u;
+    vstaudio_input_singleton.base.single_buffer = false;
+    return MP_OBJ_FROM_PTR(&vstaudio_input_singleton);
+}
+static MP_DEFINE_CONST_FUN_OBJ_0(vstaudio_input_obj_fun, vstaudio_input);
+
+// (frames_written, frames_read, underflow_chunks, region_present) - how the
+// input stream is flowing, for effect scripts that want to report on it.
+static mp_obj_t vstaudio_input_stats(void) {
+    mp_obj_t items[4] = {
+        mp_obj_new_int_from_ull(vstaudio_input_write),
+        mp_obj_new_int_from_ull(vstaudio_input_read),
+        mp_obj_new_int_from_ull(vstaudio_input_underflows),
+        vstaudio_inputs != NULL ? mp_const_true : mp_const_false,
+    };
+    return mp_obj_new_tuple(4, items);
+}
+static MP_DEFINE_CONST_FUN_OBJ_0(vstaudio_input_stats_obj, vstaudio_input_stats);
 
 // The work slot being rendered right now, so a script can ask where the host
 // transport is without the engine having to copy the fields out every block.
@@ -464,6 +629,7 @@ static mp_obj_t vstaudio_run(mp_obj_t reload_callback) {
         output->channel_count = 2u;
         output->flags = MPVST_OUTPUT_FLAG_SILENT;
         const uint64_t render_started_ns = monotonic_ns();
+        deposit_input(work, work_position);
         vstaudio_current_work = work;
         bool rendered = false;
         nlr_buf_t nlr;
@@ -535,6 +701,8 @@ static const mp_rom_map_elem_t vstaudio_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_configure), MP_ROM_PTR(&vstaudio_configure_obj) },
     { MP_ROM_QSTR(MP_QSTR_sample_rate), MP_ROM_PTR(&vstaudio_sample_rate_obj) },
     { MP_ROM_QSTR(MP_QSTR_output), MP_ROM_PTR(&vstaudio_output_obj) },
+    { MP_ROM_QSTR(MP_QSTR_input), MP_ROM_PTR(&vstaudio_input_obj_fun) },
+    { MP_ROM_QSTR(MP_QSTR_input_stats), MP_ROM_PTR(&vstaudio_input_stats_obj) },
     { MP_ROM_QSTR(MP_QSTR_clear_output), MP_ROM_PTR(&vstaudio_clear_output_obj) },
     { MP_ROM_QSTR(MP_QSTR_on_event), MP_ROM_PTR(&vstaudio_on_event_obj) },
     { MP_ROM_QSTR(MP_QSTR_error), MP_ROM_PTR(&vstaudio_error_obj) },

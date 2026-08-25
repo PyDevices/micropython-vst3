@@ -51,6 +51,9 @@ int main(int argc, char** argv)
     const auto forcedExitBlock = exitAfterBlocks();
     const auto forcedStallBlock = stallAfterBlocks();
     const bool eventGate = std::getenv("MPVST_NATIVE_EVENT_GATE") != nullptr;
+    // A mapping with an input region makes this engine an effect: it halves
+    // the host audio, an exact transform tests can assert sample-for-sample.
+    const bool hasInput = header.optional_bytes != 0U;
     bool gateOpen = false;
     float gateLevel = 0.125F;
     mpvst::release_store_u32(&header.lifecycle, MPVST_LIFECYCLE_ENGINE_READY);
@@ -81,7 +84,7 @@ int main(int argc, char** argv)
         output->start_sample = request->start_sample;
         output->channel_count = header.channel_count;
         const auto renderStarted = std::chrono::steady_clock::now();
-        output->flags = eventGate ||
+        output->flags = eventGate || hasInput ||
                                 (request->flags & MPVST_WORK_FLAG_TEST_TONE) != 0U
                             ? 0U
                             : MPVST_OUTPUT_FLAG_SILENT;
@@ -112,6 +115,20 @@ int main(int argc, char** argv)
                              event.data0 == 0)
                         gateLevel = 0.25F * event.value0;
                 }
+            }
+            if (hasInput)
+            {
+                const auto slotIndex =
+                    static_cast<std::uint32_t>(workPosition % header.work_slot_count);
+                const auto* inLeft = mpvst_const_input_channel(
+                    mapping.data(), &header, slotIndex, 0U);
+                const auto* inRight = mpvst_const_input_channel(
+                    mapping.data(), &header, slotIndex, 1U);
+                mpvst_output_channel(output, header.max_frames, 0U)[frame] =
+                    inLeft[frame] * 0.5F;
+                mpvst_output_channel(output, header.max_frames, 1U)[frame] =
+                    inRight[frame] * 0.5F;
+                continue;
             }
             const auto sample = eventGate
                                     ? (gateOpen ? gateLevel : 0.0F)

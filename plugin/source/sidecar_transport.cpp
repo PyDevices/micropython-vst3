@@ -171,7 +171,8 @@ bool SidecarTransport::start()
         return false;
 
     const mpvst_layout_request request {maxFrames_, kSlotCount, kSlotCount,
-                                        kEventCapacity, kCommandCapacity};
+                                        kEventCapacity, kCommandCapacity,
+                                        inputEnabled_ ? kSlotCount : 0U};
     mappingBytes_ = mpvst_compute_mapping_bytes(&request);
     mappingName_ = mpvst::uniqueMappingName();
     instanceNonce_ = static_cast<std::uint64_t>(
@@ -438,7 +439,8 @@ bool SidecarTransport::resetMappingForRestart() noexcept
         mpvst::acquire_load_u32(&header_->generation);
     const auto nextRestart = restartCount_.load() + 1U;
     const mpvst_layout_request request {maxFrames_, kSlotCount, kSlotCount,
-                                        kEventCapacity, kCommandCapacity};
+                                        kEventCapacity, kCommandCapacity,
+                                        inputEnabled_ ? kSlotCount : 0U};
     if (!mpvst_initialize_mapping(mapping_.data(), mappingBytes_, &request,
                                   instanceNonce_))
         return false;
@@ -547,7 +549,9 @@ void SidecarTransport::submitWork(std::int64_t startSample,
                                   std::uint32_t frames,
                                   const mpvst_event* events,
                                   std::uint32_t eventCount,
-                                  const TransportInfo* transport) noexcept
+                                  const TransportInfo* transport,
+                                  const float* inputLeft,
+                                  const float* inputRight) noexcept
 {
     auto* slot = mpvst::try_acquire_producer(work_, header_->work_slot_count,
                                              workPosition_);
@@ -590,6 +594,23 @@ void SidecarTransport::submitWork(std::int64_t startSample,
     if (accepted != eventCount)
         (void)mpvst::relaxed_fetch_add_u64(
             &status_->event_drops, eventCount - accepted);
+    if (header_->optional_bytes != 0U)
+    {
+        // The block's input audio has to land before the slot's sequence is
+        // published; the engine's acquire on the sequence then covers it.
+        const auto slotIndex =
+            static_cast<std::uint32_t>(workPosition_ % header_->work_slot_count);
+        auto* left = mpvst_input_channel(mapping_.data(), header_, slotIndex, 0U);
+        auto* right = mpvst_input_channel(mapping_.data(), header_, slotIndex, 1U);
+        if (inputLeft != nullptr)
+            std::copy_n(inputLeft, frames, left);
+        else
+            std::fill_n(left, frames, 0.0F);
+        if (inputRight != nullptr)
+            std::copy_n(inputRight, frames, right);
+        else
+            std::fill_n(right, frames, 0.0F);
+    }
     slot->flags = testTone_ ? MPVST_WORK_FLAG_TEST_TONE : 0U;
     if (transport != nullptr)
     {
@@ -680,7 +701,9 @@ bool SidecarTransport::consumeOutput(float* left, float* right,
 bool SidecarTransport::process(float* left, float* right, std::uint32_t frames,
                                bool bypassed, const mpvst_event* events,
                                std::uint32_t eventCount, bool offline,
-                               const TransportInfo* transport) noexcept
+                               const TransportInfo* transport,
+                               const float* inputLeft,
+                               const float* inputRight) noexcept
 {
     if (left == nullptr || right == nullptr || frames == 0U || frames > maxFrames_)
         return false;
@@ -699,7 +722,7 @@ bool SidecarTransport::process(float* left, float* right, std::uint32_t frames,
         return false;
     }
     submitWork(streamPosition_ + latencySamples_, frames, events, eventCount,
-               transport);
+               transport, inputLeft, inputRight);
     bool wroteNonSilent = false;
     if (bypassed)
     {

@@ -16,8 +16,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$port" in
-    windows) engine_name=micropython-vst-engine.exe; variant=dev ;;
-    unix)    engine_name=micropython-vst-engine; variant=standard ;;
+    # mkrules.mk appends .exe itself for mingw targets, so PROG must be the
+    # bare name; the installed artifact still carries the extension.
+    windows) prog_name=micropython-vst-engine; engine_name=micropython-vst-engine.exe; variant=dev ;;
+    unix)    prog_name=micropython-vst-engine; engine_name=micropython-vst-engine; variant=standard ;;
     *) echo "error: unsupported port '$port'" >&2; exit 2 ;;
 esac
 
@@ -49,7 +51,7 @@ cleanup() {
 trap cleanup EXIT
 
 BUILD=build-vst-engine \
-PROG="$engine_name" \
+PROG="$prog_name" \
     "$cmods_dir/build_mp.sh" --port "$port" --variant "$variant"
 
 install -m 755 \

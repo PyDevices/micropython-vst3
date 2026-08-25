@@ -8,15 +8,19 @@
 #include <array>
 #include <atomic>
 #include <string>
+#include <vector>
 
 namespace PyDevices::MicroPythonVST3 {
 
 class Processor final : public Steinberg::Vst::AudioEffect
 {
 public:
-    Processor ();
+    // effectMode adds a stereo audio-input bus whose blocks travel to the
+    // sidecar alongside the events, and gives bypass pass-through semantics.
+    explicit Processor (bool effectMode = false);
 
     static Steinberg::FUnknown* createInstance (void*);
+    static Steinberg::FUnknown* createEffectInstance (void*);
 
     Steinberg::tresult PLUGIN_API initialize (Steinberg::FUnknown* context) override;
     Steinberg::tresult PLUGIN_API setBusArrangements (
@@ -82,6 +86,15 @@ private:
     std::uint32_t holdSamplesRemaining_ {0U};
     ReloadFadeState reloadFadeState_ {ReloadFadeState::Idle};
     std::array<mpvst_event, 256> events_ {};
+    const bool effectMode_ {false};
+    // Host input is staged before the output buffers are cleared because
+    // hosts may process in place, and the bypass path replays it through a
+    // latency-matched delay so toggling bypass never shifts time.
+    std::vector<float> inputStagingLeft_;
+    std::vector<float> inputStagingRight_;
+    std::vector<float> bypassDelayLeft_;
+    std::vector<float> bypassDelayRight_;
+    std::uint32_t bypassDelayIndex_ {0U};
     SidecarTransport sidecar_;
 };
 

@@ -4,7 +4,7 @@
 #include "projectversion.h"
 
 #define stringOriginalFilename "MicroPythonVST3.vst3"
-#define stringFileDescription "MicroPython programmable VST3 instrument"
+#define stringFileDescription "MicroPython programmable VST3 instrument and effect"
 #define stringCompanyWeb "https://pydevices.github.io/"
 #define stringCompanyEmail ""
 #define stringCompanyName "PyDevices"

@@ -374,6 +374,59 @@ bool telemetryRecordsCrashReason()
     return snapshot.restarts > 0U && snapshot.lastExitWasUnexpected;
 }
 
+bool effectCarriesHostAudio()
+{
+    // An input-enabled transport must deliver the host bus to the engine and
+    // return the processed audio on the same latency contract as an
+    // instrument. The native engine halves its input exactly, so every output
+    // sample must equal the input from one pipeline-latency earlier times 0.5,
+    // on both channels independently.
+    SidecarTransport instance;
+    instance.setInputEnabled(true);
+    instance.configure(48000.0, 64U, 256U);
+    if (!instance.start())
+        return false;
+
+    std::array<float, 512> capturedLeft {};
+    std::array<float, 512> capturedRight {};
+    std::array<float, 512> sent {};
+    for (std::uint32_t block = 0U; block < 8U; ++block)
+    {
+        std::array<float, 64> inputLeft {};
+        std::array<float, 64> inputRight {};
+        for (std::uint32_t frame = 0U; frame < 64U; ++frame)
+        {
+            const auto sample = block * 64U + frame;
+            const auto value =
+                static_cast<float>(sample % 97U) / 128.0F - 0.35F;
+            inputLeft[frame] = value;
+            inputRight[frame] = -0.5F * value;
+            sent[sample] = value;
+        }
+        (void)instance.process(capturedLeft.data() + block * 64U,
+                               capturedRight.data() + block * 64U, 64U,
+                               false, nullptr, 0U, true, nullptr,
+                               inputLeft.data(), inputRight.data());
+    }
+    instance.stop();
+
+    for (std::size_t sample = 0U; sample < capturedLeft.size(); ++sample)
+    {
+        const auto expectedLeft = sample >= 256U ? sent[sample - 256U] * 0.5F
+                                                 : 0.0F;
+        const auto expectedRight = -0.5F * expectedLeft;
+        if (std::abs(capturedLeft[sample] - expectedLeft) > 0.000001F ||
+            std::abs(capturedRight[sample] - expectedRight) > 0.000001F)
+        {
+            std::cerr << "effect audio mismatch at sample " << sample
+                      << ": expected=" << expectedLeft
+                      << " actual=" << capturedLeft[sample] << '\n';
+            return false;
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -427,6 +480,11 @@ int main(int argc, char** argv)
     {
         std::cerr << "telemetry did not record an unexpected engine exit\n";
         return 10;
+    }
+    if (!effectCarriesHostAudio())
+    {
+        std::cerr << "effect input pipeline failed\n";
+        return 12;
     }
     std::cout << "eight instances, recovery, fixed/variable events, offline render, "
                  "and telemetry passed\n";
