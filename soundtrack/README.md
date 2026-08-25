@@ -4,24 +4,25 @@ Example audio performed entirely by the MicroPython VST3 instrument - no
 third-party plug-ins, no samples. Every sound is a MicroPython script
 running synthio and the audioif effects inside its own sidecar process.
 
-Each piece is a subdirectory holding its own `composition.py` and
-`instruments/`; nothing else here is checked in - this directory is
-example content, not infrastructure, and might be renamed, restructured,
-or replaced independently of the tooling that generates, renders, and
-verifies a piece. That tooling lives in `../tools/piece/` instead, documented in
-[`../tools/README.md`](../tools/README.md).
+Each piece is a subdirectory holding its own `composition.py`. Historical
+pieces also own private `instruments/`; newer compositions can opt into the
+shared `../lib/instruments/` collection and put shared `../lib/effects/`
+processors after any instrument. Nothing else here is infrastructure, and the
+directory might be renamed, restructured, or replaced independently of the
+tooling that generates, renders, and verifies a piece. That tooling lives in
+`../tools/piece/`, documented in [`../tools/README.md`](../tools/README.md).
 
-## Why instruments are per piece, not shared
+## Frozen patches and the shared library
 
-The instrument scripts are the patches, and the generated REAPER
-projects embed them byte-for-byte. With a shared library, tweaking a
-sound for a new piece would silently change how an older piece renders
-the next time its project is regenerated. So finished pieces own their
-instruments outright, the way a finished mix owns its patches. Starting
-a new piece means copying the closest existing instrument in and letting
-it diverge - Automata's `strings.py`, `choir.py`, and `glass.py` began
-as copies from Perihelion, and its `riser.py` and `brass_stabs.py` are
-deliberate mutations of Perihelion patches.
+Instrument scripts are patches, and generated REAPER projects embed them
+byte-for-byte. Perihelion and Automata therefore keep the private patches they
+were written against: Automata's `strings.py`, `choir.py`, and `glass.py`
+began as copies from Perihelion, while its `riser.py` and `brass_stabs.py` are
+deliberate mutations. Velvet Circuit is the first shared-library piece. Its
+composition declares `INSTRUMENTS_DIR = "../../lib/instruments"`, and each of
+its effect racks instantiates only public classes from `lib/effects`. The
+generated project still embeds every chosen script, so the playable `.RPP`
+remains self-contained.
 
 ## The pieces
 
@@ -48,12 +49,36 @@ itself to the host tempo through `vstaudio.transport()`); a meter change,
 three tempos, a key modulation, twenty-seven automation envelopes, and a
 closing tape stop.
 
+**Velvet Circuit** - 4:28 of retro-future jazz/prog written as the main title
+to an imaginary 1978 crime series discovered on a satellite in 2049. Its
+seven scenes move from an F-minor 5/4 horn hook through a lyrical Ab-major 6/8
+middle, an E-Dorian 7/8 rooftop chase, a contrapuntal title reprise, and an
+ambiguous lounge-credits cadence. Eleven shared hardware emulations perform
+6,480 notes: LinnDrum, Minimoog, Rhodes, Clavinet, B3, Karplus guitar, VL1,
+OB-Xa, CS-80, Solina, and Mellotron. Every track has a real MicroPython Effect
+insert built only from the shared library—saturation, overdrive, chorus,
+phaser, tape/slap delays, spring/plate/hall reverbs, and subtle vibrato.
+
+**Aurelia Overture** - 5:16 of tonal concert drama in D minor and common time,
+written in response to Beethoven, Vivaldi, Bach, and Puccini rather than to a
+modern genre. One four-note idea governs a Grave invocation, sonata Allegro,
+F-major cantabile, four-entry fugato, recapitulation, and coda. Its 5,913
+notes are arranged as an orchestral hierarchy—contrabasses, pizzicato and
+sustained strings, orchestral body, solo violin and flute, horns, organ,
+piano, choir, and structural timpani/cymbal. Eleven restrained hall/chamber
+inserts place the shared instruments in depth without turning the piece into
+an effects showcase.
+
 ## Listening
 
 ```bash
 ../tools/piece/launch.sh                      # play Perihelion through the speakers
 ../tools/piece/launch.sh --piece automata     # play Automata
+../tools/piece/launch.sh --piece velvetcircuit # play Velvet Circuit
+../tools/piece/launch.sh --piece aureliaoverture # play Aurelia Overture
 ../tools/piece/launch.sh --render --piece automata   # headless verified bounce
+../tools/piece/launch.sh --render --piece velvetcircuit # render/verify it
+../tools/piece/launch.sh --render --piece aureliaoverture # render/verify it
 ```
 
 Play mode regenerates the project under `C:\Users\bradb\Music\<Title>\`,

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Render a piece offline through the audioif CPython wheel.
 
-Every track's instrument script runs against the vstaudio shim - the same
-DSP the sidecar uses - while this harness delivers the composition's note
-and macro events and mixes the tracks with the same gains, swells, and pans
-the REAPER project uses. Writes a stereo master WAV plus an analysis report
-(peaks, RMS per section, simultaneous-track counts).
+Every track's instrument and effect scripts run against the vstaudio shim -
+the same DSP the sidecar uses - while this harness delivers the composition's
+note and macro events and mixes the tracks with the same gains, swells, and
+pans the REAPER project uses. Writes a stereo master WAV plus an analysis
+report (peaks, RMS per section, simultaneous-track counts).
 
 Usage: render_preview.py [--piece NAME] [out.wav] [--stems DIR]
 """
@@ -23,7 +23,7 @@ sys.path.insert(0, str(SCRIPT_DIR.parent / "preview"))
 import numpy as np  # noqa: E402
 
 from piece import load_piece, piece_arg  # noqa: E402
-from harness import InstrumentRun  # noqa: E402
+from harness import EffectRun, InstrumentRun  # noqa: E402
 import vstaudio as shim  # noqa: E402
 
 PIECE, ARGV = piece_arg(sys.argv[1:])
@@ -122,6 +122,23 @@ def render_track(track, total_frames):
         block = block.reshape(-1, 2) / 32768.0
         data[cursor:cursor + frames] = block
         cursor += frames
+    for effect in track.get("effects", ()):
+        pcm = (np.clip(data, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
+        run = EffectRun(effect["source"], pcm, SR,
+                        "<%s: %s>" % (track["name"], effect["name"]))
+        # Pull in engine-sized blocks.  Asking EffectRun for the entire song
+        # in one call would repeatedly concatenate a growing bytes object and
+        # turn a linear render into quadratic work for long effect tails.
+        processed = np.zeros((total_frames, 2), dtype=np.float32)
+        effect_cursor = 0
+        while effect_cursor < total_frames:
+            effect_frames = min(BLOCK, total_frames - effect_cursor)
+            block = run.pull_frames(effect_frames)
+            values = np.frombuffer(block, dtype=np.int16).astype(np.float32)
+            processed[effect_cursor:effect_cursor + effect_frames] = (
+                values.reshape(-1, 2) / 32768.0)
+            effect_cursor += effect_frames
+        data = processed
     return data
 
 
@@ -172,8 +189,10 @@ def main():
             float(np.sqrt((data[s0:s1] ** 2).mean())) for s0, s1 in bounds]
         master += data
         elapsed = time.time() - t0
-        print("  %-14s raw_peak=%.3f mixed_peak=%.3f (%.1fs)"
-              % (track["name"], raw_peak, mixed_peak, elapsed))
+        effect_names = ", ".join(e["name"] for e in track.get("effects", ()))
+        suffix = " fx=" + effect_names if effect_names else ""
+        print("  %-14s raw_peak=%.3f mixed_peak=%.3f (%.1fs)%s"
+              % (track["name"], raw_peak, mixed_peak, elapsed, suffix))
         if stems_dir is not None:
             write_wav(stems_dir / (track["script"][:-3] + ".wav"), data)
 

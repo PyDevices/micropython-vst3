@@ -25,6 +25,7 @@ AUDIOIF_DIR = REPO_DIR.parent / "audioif"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(AUDIOIF_DIR))
+sys.path.insert(0, str(REPO_DIR / "lib"))
 
 import audiocore  # noqa: E402
 import vstaudio  # noqa: E402
@@ -53,6 +54,41 @@ class InstrumentRun:
 
     def pull_frames(self, frames):
         """Return `frames` stereo frames as interleaved int16 bytes."""
+        need = frames * 4
+        while len(self._pending) < need:
+            _, view = audiocore.get_buffer(self.output)
+            chunk = bytes(view)
+            if not chunk:
+                chunk = b"\x00" * 1024
+            self._pending += chunk
+        out = self._pending[:need]
+        self._pending = self._pending[need:]
+        return out
+
+
+class EffectRun:
+    """One effect script fed by a finite stereo int16 host stream."""
+
+    def __init__(self, script_source, input_pcm, sample_rate=48000,
+                 name="<effect>"):
+        self.sample_rate = sample_rate
+        vstaudio._reset(sample_rate)
+        vstaudio._set_input(input_pcm)
+        namespace = {"__name__": "__main__", "__file__": name}
+        exec(compile(script_source, name, "exec"), namespace, namespace)
+        self.handler = vstaudio._handler
+        self.output = vstaudio._current_output()
+        if self.output is None:
+            raise RuntimeError("%s registered no output" % name)
+        self._pending = b""
+
+    def deliver(self, event_type, channel, note_id, data0, value0, value1,
+                sample_position):
+        if self.handler is not None:
+            self.handler(event_type, channel, note_id, data0, value0, value1,
+                         sample_position)
+
+    def pull_frames(self, frames):
         need = frames * 4
         while len(self._pending) < need:
             _, view = audiocore.get_buffer(self.output)

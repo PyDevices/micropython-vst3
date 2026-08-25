@@ -9,6 +9,10 @@ Each piece lives in its own subdirectory of soundtrack/:
   soundtrack/<Piece>/composition.py
   soundtrack/<Piece>/instruments/*.py
 
+A composition may set INSTRUMENTS_DIR to a path relative to its piece
+directory.  That lets new pieces opt into the shared lib/instruments
+library while historical pieces keep their frozen private patches.
+
 Piece names are matched case-insensitively, so `--piece automata` finds
 `Automata/`. Instruments are owned per piece on purpose: the scripts are
 the patches, and the generated projects embed them byte-for-byte, so a
@@ -21,7 +25,9 @@ TEMPO_MAP (rows of (beat, bpm) or (beat, bpm, ts_num, ts_den)),
 TOTAL_BEATS, SONG_SECONDS, RENDER_SECONDS, SECTIONS (name, start_beat,
 end_beat), TRACKS, beats_to_seconds(), track_gain(), macro_value(),
 active_track_count(), and optionally ACTIVE_LIMIT (None for no limit)
-and CLIMAX_SECTION.
+and CLIMAX_SECTION. A track may also carry an effects list; each entry embeds
+one MicroPython Effect script after the instrument and uses the same macros /
+macro_env shape as an instrument.
 """
 
 import importlib.util
@@ -50,7 +56,11 @@ def load_piece(name="perihelion"):
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
-    return module, piece_dir / "instruments"
+    instruments = getattr(module, "INSTRUMENTS_DIR", "instruments")
+    instruments = Path(instruments)
+    if not instruments.is_absolute():
+        instruments = (piece_dir / instruments).resolve()
+    return module, instruments
 
 
 def piece_arg(argv):

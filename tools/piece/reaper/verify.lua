@@ -2,8 +2,9 @@
 Headless verification and bounce for the Perihelion project.
 
 Runs as Scripts/__startup.lua with the project given on the command line.
-Confirms all sixteen MicroPython instances come up ready, that the macro
-automation envelopes are present, renders the full piece to WAV, and quits.
+Confirms every declared MicroPython instrument/effect instance comes up ready,
+that the macro automation envelopes are present, renders the full piece to
+WAV, and quits.
 Report lines go to MPVST_SCORE_REPORT.
 
 A host with no live audio device only processes while rendering, so every
@@ -16,6 +17,7 @@ local RENDER_SECONDS = tonumber(os.getenv("MPVST_SCORE_SECONDS") or "238.1")
 -- Base name for the rendered file; launch.sh looks for <name>.wav.
 local BOUNCE = os.getenv("MPVST_SCORE_BOUNCE") or "perihelion_bounce"
 local TRACKS = tonumber(os.getenv("MPVST_SCORE_TRACKS") or "16")
+local INSTANCES = tonumber(os.getenv("MPVST_SCORE_INSTANCES") or tostring(TRACKS))
 local MIN_ENVS = tonumber(os.getenv("MPVST_SCORE_MIN_ENVS") or "19")
 local DEADLINE = os.time() + tonumber(os.getenv("MPVST_SCORE_DEADLINE")
                                       or "2400")
@@ -77,19 +79,18 @@ step(function()
         emit("FAIL track_count expected " .. TRACKS .. " got " .. tracks)
         return "abort"
     end
-    local with_fx = 0
+    local instances = 0
     for t = 0, tracks - 1 do
         local track = reaper.GetTrack(0, t)
-        if reaper.TrackFX_GetCount(track) == 1 then
-            with_fx = with_fx + 1
-        end
+        instances = instances + reaper.TrackFX_GetCount(track)
     end
-    emit("INFO tracks_with_fx " .. with_fx)
-    if with_fx ~= TRACKS then
-        emit("FAIL fx_count expected " .. TRACKS .. " got " .. with_fx)
+    emit("INFO instances " .. instances)
+    if instances ~= INSTANCES then
+        emit("FAIL fx_count expected " .. INSTANCES .. " got " .. instances)
         return "abort"
     end
-    emit("PASS project_loaded " .. TRACKS .. " tracks and instances")
+    emit("PASS project_loaded " .. TRACKS .. " tracks, " .. INSTANCES ..
+         " instances")
     sleep_ms(12000)
 end)
 
@@ -104,24 +105,26 @@ step(function()
     local errors = {}
     for t = 0, TRACKS - 1 do
         local track = reaper.GetTrack(0, t)
-        local ridx = param_index(track, 0, "Engine Ready")
-        local eidx = param_index(track, 0, "Engine Error")
-        local ready = ridx and
-            reaper.TrackFX_GetParamNormalized(track, 0, ridx) or 0
-        local err = eidx and math.floor(
-            reaper.TrackFX_GetParamNormalized(track, 0, eidx) * 255 + 0.5)
-            or -1
         local _, name = reaper.GetTrackName(track)
-        if ready > 0.5 and err == 0 then
-            ready_count = ready_count + 1
-        else
-            errors[#errors + 1] = string.format("%s ready=%.2f err=%d",
-                                                name, ready, err)
+        for fx = 0, reaper.TrackFX_GetCount(track) - 1 do
+            local ridx = param_index(track, fx, "Engine Ready")
+            local eidx = param_index(track, fx, "Engine Error")
+            local ready = ridx and
+                reaper.TrackFX_GetParamNormalized(track, fx, ridx) or 0
+            local err = eidx and math.floor(
+                reaper.TrackFX_GetParamNormalized(track, fx, eidx) * 255 + 0.5)
+                or -1
+            if ready > 0.5 and err == 0 then
+                ready_count = ready_count + 1
+            else
+                errors[#errors + 1] = string.format(
+                    "%s/fx%d ready=%.2f err=%d", name, fx, ready, err)
+            end
         end
     end
     emit("INFO engines_ready " .. ready_count)
-    if ready_count == TRACKS then
-        emit("PASS engines_ready " .. ready_count .. " of " .. TRACKS)
+    if ready_count == INSTANCES then
+        emit("PASS engines_ready " .. ready_count .. " of " .. INSTANCES)
     else
         emit("FAIL engines_ready " .. table.concat(errors, "; "))
         return "abort"
@@ -133,10 +136,12 @@ step(function()
     local envs = 0
     for t = 0, TRACKS - 1 do
         local track = reaper.GetTrack(0, t)
-        for p = 4, 19 do
-            local env = reaper.GetFXEnvelope(track, 0, p, false)
-            if env ~= nil and reaper.CountEnvelopePointsEx(env, -1) > 1 then
-                envs = envs + 1
+        for fx = 0, reaper.TrackFX_GetCount(track) - 1 do
+            for p = 4, 19 do
+                local env = reaper.GetFXEnvelope(track, fx, p, false)
+                if env ~= nil and reaper.CountEnvelopePointsEx(env, -1) > 1 then
+                    envs = envs + 1
+                end
             end
         end
     end

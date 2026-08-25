@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Generate a piece's REAPER project.
 
-Writes a complete .RPP where every track holds one MicroPython
-Instrument instance whose script is embedded directly in synthesized VST3
-state (the same byte layout REAPER itself saves), so the project opens with
-no environment variables and no build passes. MIDI, the tempo map, volume
-envelopes, and macro automation envelopes all come from composition.py.
+Writes a complete .RPP where every track holds one MicroPython Instrument and
+zero or more MicroPython Effect inserts. Every script is embedded directly in
+synthesized VST3 state (the same byte layout REAPER itself saves), so the
+project opens with no environment variables and no build passes. MIDI, the
+tempo map, volume envelopes, effect racks, and macro automation envelopes all
+come from composition.py.
 
 Usage: generate_project.py [--piece NAME] [out.RPP]
 """
@@ -25,9 +26,22 @@ PIECE, ARGV = piece_arg(sys.argv[1:])
 C, INSTRUMENTS = load_piece(PIECE)
 
 PPQ = 960
-VST_LINE = ('<VST "VST3i: MicroPython Instrument (PyDevices)" '
-            'MicroPythonVST3.vst3 0 "" '
-            '896536053{60A40168727C4E7DAAF808B790961DAA} ""')
+INSTRUMENT_VST = ('<VST "VST3i: MicroPython Instrument (PyDevices)" '
+                  'MicroPythonVST3.vst3 0 "" '
+                  '896536053{60A40168727C4E7DAAF808B790961DAA} ""')
+EFFECT_VST = ('<VST "VST3: MicroPython Effect (PyDevices)" '
+              'MicroPythonVST3.vst3 0 "" '
+              '1503031402{910677E28594410985AD7A76CA68106C} ""')
+
+# Byte-exact header layouts captured from projects REAPER itself saved.  The
+# effect class has an input-bus speaker arrangement ahead of the common state.
+INSTRUMENT_HEADER = [0x35700DF5, 0xFEED5EEE, 0x0,
+                     0x2, 0x1, 0x0, 0x2, 0x0,
+                     None, 0x1, 0xFFFF]
+EFFECT_HEADER = [0x5996706A, 0xFEED5EEE,
+                 0x2, 0x1, 0x0, 0x2, 0x0,
+                 0x2, 0x1, 0x0, 0x2, 0x0,
+                 None, 0x1, 0xFFFF]
 
 # First macro's index among the visible parameters:
 # 0 Bypass, 1 Reload Script, 2 Engine Ready, 3 Engine Error, 4.. macros.
@@ -38,7 +52,7 @@ def guid():
     return "{%s}" % str(uuid.uuid4()).upper()
 
 
-def vst_chunk_lines(script_source, macros):
+def vst_chunk_lines(script_source, macros, header_words=INSTRUMENT_HEADER):
     """REAPER's base64 wrapper around our component state."""
     comp = struct.pack("<ii", 2, 0)                      # version, bypass
     for index in range(16):
@@ -47,9 +61,8 @@ def vst_chunk_lines(script_source, macros):
     comp += script_source
 
     data = struct.pack("<II", len(comp), 1) + comp + b"\0" * 8
-    header = struct.pack(
-        "<11I", 0x35700DF5, 0xFEED5EEE, 0, 2, 1, 0, 2, 0, len(data), 1,
-        0x0000FFFF)
+    words = [len(data) if word is None else word for word in header_words]
+    header = struct.pack("<%dI" % len(words), *words)
     footer = b"\0" * 6
 
     lines = [base64.b64encode(header).decode()]
@@ -100,6 +113,25 @@ def envelope_block(kind, header_extra, points):
     return lines
 
 
+def fx_block(vst_line, header_words, script_source, macros, macro_env):
+    """One embedded MicroPython Instrument or Effect instance."""
+    lines = ["      BYPASS 0 0 0", "      " + vst_line]
+    for chunk_line in vst_chunk_lines(script_source, macros, header_words):
+        lines.append("        " + chunk_line)
+    lines += ["      >",
+              "      FLOATPOS 0 0 0 0",
+              "      FXID %s" % guid()]
+    for index in sorted(macro_env):
+        env = macro_env[index]
+        points = [(C.beats_to_seconds(beat), value, 0)
+                  for beat, value in env]
+        lines += ["  " + line for line in envelope_block(
+            "PARMENV", " %d 0 1 0.5" % (FIRST_MACRO_PARAM + index),
+            points)]
+    lines.append("      WAK 0 0")
+    return lines
+
+
 def track_block(track):
     check_no_same_pitch_overlap(track)
     script = (INSTRUMENTS / track["script"]).read_bytes()
@@ -132,20 +164,15 @@ def track_block(track):
     lines.append("      SHOW 0")
     lines.append("      LASTSEL 0")
     lines.append("      DOCKED 0")
-    lines.append("      BYPASS 0 0 0")
-    lines.append("      " + VST_LINE)
-    for chunk_line in vst_chunk_lines(script, macros):
-        lines.append("        " + chunk_line)
-    lines.append("      >")
-    lines.append("      FLOATPOS 0 0 0 0")
-    lines.append("      FXID %s" % guid())
-    for index in sorted(track["macro_env"]):
-        env = track["macro_env"][index]
-        points = [(C.beats_to_seconds(beat), value, 0)
-                  for beat, value in env]
-        lines += ["  " + l for l in envelope_block(
-            "PARMENV", " %d 0 1 0.5" % (FIRST_MACRO_PARAM + index), points)]
-    lines.append("      WAK 0 0")
+    lines += fx_block(INSTRUMENT_VST, INSTRUMENT_HEADER, script, macros,
+                      track["macro_env"])
+    for effect in track.get("effects", ()):
+        source = effect["source"].encode("utf-8")
+        effect_macros = {
+            index: C.macro_value(effect, index, 0.0) for index in range(16)
+        }
+        lines += fx_block(EFFECT_VST, EFFECT_HEADER, source, effect_macros,
+                          effect.get("macro_env", {}))
     lines.append("    >")
 
     # One MIDI item spanning the song.
