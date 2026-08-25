@@ -2,98 +2,85 @@
 
 Updated: 2026-08-25
 
+All eight phases are complete. The instrument runs in REAPER on Windows and on
+Linux, and the same script and project state render byte-identical PCM on both
+platforms.
+
 ## Repository and constraints
 
 - Repository: `/home/brad/gh/pydevices/micropython-vst3`
 - Canonical workspace: `/home/brad/gh/pydevices`
-- The repository has been initialized but has no initial commit; every project
-  file is currently untracked. Review and create the initial commit before
-  beginning work that depends on a clean Git baseline.
-- Treat sibling `/home/brad/gh/pydevices/audioif` as read-only. Another agent is
-  porting it to CPython. Consume its public headers/build interface only.
+- Treat sibling `/home/brad/gh/pydevices/audioif` as read-only. Consume its
+  public headers and build interface only.
 - Do not make persistent changes in
-  `/home/brad/gh/pydevices/cmods/micropython`. The engine wrapper creates a
+  `/home/brad/gh/pydevices/cmods/micropython`. The engine build creates a
   temporary `/home/brad/gh/pydevices/cmods/vstaudio` symlink and removes it on
-  exit. The symlink is currently absent.
-- Current MicroPython status contains only the independently existing
-  `ports/esp32/lockfiles/dependencies.lock.esp32p4` modification. Current
-  `audioif` changes are concurrent work and do not belong to this repository.
+  exit. Confirm it is absent after any engine build.
+- The only expected MicroPython change is the independently existing
+  `ports/esp32/lockfiles/dependencies.lock.esp32p4` modification.
 
 ## Product decisions
 
-- Windows VST3 first; Linux product work follows the Windows instrument.
 - Instrument only: one 16-channel event input, no audio input, stereo float32
   output.
 - One unrestricted, headless MicroPython sidecar process per active instance.
-- Use the DAW generic parameter editor; LVGL is not required.
-- Scripts retain full desktop MicroPython capabilities. This is not a security
-  sandbox.
+- The DAW generic parameter editor; LVGL is not required.
+- Scripts retain full desktop MicroPython capabilities. This is process
+  isolation for stability, not a security sandbox.
 
-## Current phase status
+## Where things stand
 
-- Phases 0–2: complete (architecture, VST shell, realtime sidecar transport).
-- Phase 3: functionally complete under automated hosts; still marked in
-  progress because a physical DAW play test has not occurred.
-- Phase 4: complete (sample-exact MIDI/CC/pressure/pitch and variable blocks).
-- Phase 5: complete (macros, labels, bounded embedded v2 state, legacy v1,
-  deleted-source restore into a fresh sidecar).
-- Phase 6: in progress. Workflow, examples, status parameters, reload fades,
-  and packaging are complete. The real Windows DAW matrix is the blocker.
-- Phase 7: in progress. Offline faster-than-realtime processing and deterministic
-  malformed state/protocol corpora pass. Soaks, telemetry, discontinuities,
-  coverage-guided fuzzing, and constrained heaps remain.
-- Phase 8: pending as a product phase, although Linux builds and validation are
-  continuously green.
+`PLAN.md` is the source of truth and records every phase as complete.
 
-`PLAN.md` is the source of truth and must be updated as work completes.
+- Steinberg validator: 47/47 on Windows and Linux.
+- Automated tests: 11 of 11 on Windows, 12 of 12 on Linux.
+- REAPER matrix: 14 of 14 steps and every PCM check, on both platforms.
+  Evidence in `docs/evidence/`.
+- Cross-platform parity: identical SHA-256 over the reference render.
 
-## Implemented behavior
+## Implemented behaviour
 
-- Steinberg validator passes 47/47 on Windows and Linux.
-- VST exposes 20 visible parameters: bypass, reload, ready/error status, and 16
-  stable macros. It also exposes 2,080 hidden 16-channel MIDI mapping
-  parameters, for 2,100 total.
-- All 128 CCs, pitch bend, channel/poly pressure, note velocity/tuning, and
-  note-on/off reach Python at absolute delayed sample positions.
-- Macro IDs are permanently 100–115. Every automation point reaches Python as
-  `vstaudio.EVENT_PARAMETER` (`data0` is zero-based macro index).
-- Optional script label syntax:
+- 20 visible parameters (bypass, reload, ready/error status, 16 macros) plus
+  2,080 hidden 16-channel MIDI mapping parameters, 2,100 total. REAPER reports
+  2,103 because it appends its own three.
+- All 128 CCs, pitch bend, channel and poly pressure, note velocity and tuning,
+  and note-on/off reach Python at absolute delayed sample positions.
+- Macro IDs are permanently 100-115 and arrive as `vstaudio.EVENT_PARAMETER`
+  with a zero-based index in `data0`. Optional labels:
+  `# mpvst-macro-labels: Gain | Tone | Attack | Release`.
+- Current macro values are replayed to the script whenever a script loads,
+  reloads, or is restored from project state, so an automated or reopened
+  instance sounds the way it was saved.
+- An instance started from `MPVST_SCRIPT_PATH` follows that file: toggling
+  `Reload Script` re-reads what is on disk, and saving embeds the current
+  source. A project restored from state keeps using its embedded snapshot and
+  ignores later edits to the original file.
+- Reload is a rising-edge action and is only observed while the plug-in is
+  processing. Output uses a 128-sample fade-out, a 640-sample hold at the
+  current 128-frame/512-latency setup, then a 128-sample fade-in.
+- Host transport position, tempo, and time signature reach the work slot.
+  Locates, loop wraps, and play-state changes arrive as
+  `vstaudio.EVENT_TRANSPORT`; `vstaudio.transport()` returns
+  `(playing, seconds, bpm, numerator, denominator)`.
+- `SidecarTransport::telemetry()` reports queue depth, render time, underruns,
+  event drops, restarts, error code, and the last exit reason, with peaks
+  tracked from the audio thread. `-1000` as an exit code means the supervisor
+  killed an engine that had hung.
+- `Engine Error`: 0 clear, 1 script load or reload failure, 2 render failure.
+- Offline mode may wait up to five seconds for the exact output slot; the
+  real-time path stays non-blocking.
+- `MPVST_HEAP_BYTES` caps the MicroPython heap per instance.
 
-  `# mpvst-macro-labels: Gain | Tone | Attack | Release`
+## Building and testing
 
-- State v2 preserves the v1 bypass/macro prefix and appends pipeline depth and
-  up to 1 MiB of script source. Restored source is materialized to an
-  instance-private temporary file and removed on stop.
-- Reload is a rising-edge action. Hosts must toggle `Reload Script` off and on
-  for each reload. Output uses 128 samples out, a 640-sample hold at the current
-  128-frame/512-latency setup, then 128 samples in.
-- `Engine Error`: 0 is clear, 1 is script load/reload failure, 2 is render
-  failure. Detailed bounded text is available from the transport diagnostic
-  API; the generic host control presents the integer code.
-- Offline mode may wait up to five seconds for the exact sidecar output slot;
-  the realtime path remains non-blocking.
-
-## Test evidence
-
-Latest results:
-
-- Windows: 7/7 CTest cases.
-- Linux: 5/5 CTest cases.
-- Steinberg validator: 47/47 on each platform.
-- Exact hooks include note-on sample 576, pitch bend sample 768, Macro 01 sample
-  1041, note-off sample 1312, release tail ending at 3967, variable block
-  boundaries, deleted-source state restore, and exact reload fade samples.
-- Offline no-sleep rendering is silent through sample 255 and exactly 0.125
-  from sample 256.
-
-Linux verification:
+Linux:
 
 ```bash
 cmake --build build-linux -j 4
 ctest --test-dir build-linux --output-on-failure
 ```
 
-Windows verification from WSL:
+Windows, from WSL:
 
 ```bash
 ./.deps/cmake-4.4.2-windows-x86_64/bin/cmake.exe \
@@ -105,63 +92,79 @@ Windows verification from WSL:
   -C Release --output-on-failure
 ```
 
-Explicit MicroPython hook:
+Rebuild a MicroPython sidecar only when `usermods/vstaudio` changes, then
+rebuild the plug-in so the engine is restaged:
 
 ```bash
-'/mnt/c/Users/bradb/AppData/Local/Temp/micropython-vst3-build/tools/smoke_host/Release/mpvst_smoke_host.exe' \
-  'C:\Users\bradb\AppData\Local\Temp\micropython-vst3-build\VST3\Release\MicroPythonVST3.vst3' \
-  --expect-micropython
+./tools/build-micropython-engine.sh --port windows
+./tools/build-micropython-engine.sh --port unix
 ```
 
-The source-controlled `tools/smoke_host` supplies deterministic hooks around
-Steinberg's public hosting classes. The SDK GUI Plug-in Test Host itself was not
-patched; it has no practical deterministic automation/unload surface.
+The Linux CMake cache remembers the engine path. After switching engines,
+reconfigure with `cmake -S . -B build-linux -U MPVST_MICROPYTHON_ENGINE`.
 
-## Builds and artifacts
+## DAW matrix
 
-- Pinned SDK: `.deps/vst3sdk` (ignored).
-- Bundled engine: `.deps/engine/micropython-vst-engine.exe` (ignored).
-- Linux build: `build-linux`.
-- Windows build:
-  `/mnt/c/Users/bradb/AppData/Local/Temp/micropython-vst3-build`.
-- Windows VST bundle:
-  `/mnt/c/Users/bradb/AppData/Local/Temp/micropython-vst3-build/VST3/Release/MicroPythonVST3.vst3`.
-- Package command: `./tools/package-windows.sh`.
-- Latest ignored artifact:
-  `dist/MicroPythonVST3-0.1.0-windows-x86_64.zip`.
-- Latest ZIP SHA-256:
-  `f197fc19ce23315e8ccb1bd30c619b1c528b8b8a18085e709ab96b65a129e70f`.
-
-Rebuild the MicroPython engine only when `usermods/vstaudio` changes:
+REAPER is driven headlessly by a startup ReaScript. Install the packaged
+plug-in first, because the matrix exercises the installed bundle:
 
 ```bash
-./tools/build-micropython-engine.sh
+./tools/daw-matrix/run-reaper-matrix.sh --platform windows
+./tools/daw-matrix/run-reaper-matrix.sh --platform linux
 ```
 
-Then rebuild the Windows VST so the engine and Python assets are restaged.
+REAPER is installed at `C:\Users\bradb\REAPER` and `~/opt/REAPER`; its resource
+paths are `%APPDATA%\REAPER` and `~/.config/REAPER`. The matrix overwrites
+`Scripts/__startup.lua` in the resource path, so remove that file before using
+REAPER interactively.
+
+A host with no live audio device only processes during a render, so the matrix
+forces a short render before reading any status parameter.
+
+## Cross-platform parity
+
+```bash
+./tools/check-cross-platform-parity.sh
+```
+
+Both smoke hosts render a fixed score through the real MicroPython sidecar and
+the raw float32 PCM is compared. The current result is an identical SHA-256, so
+the platforms agree exactly rather than within a tolerance.
+
+## Packaging
+
+```bash
+./tools/package-windows.sh
+./tools/package-linux.sh
+```
+
+Artifacts land in `dist/` with SHA-256 sidecars. `dist/` is ignored, as are
+`.deps/` and the build directories.
 
 ## Recommended next work
 
-1. Install the packaged VST in REAPER on Windows and execute the Phase 6 matrix:
-   scan, instantiate, MIDI play, macro automation, save/reopen, script reload,
-   malformed-script recovery, multiple instances, and uninstall/rescan.
-2. Record DAW/version/audio-driver/block-size results in `PLAN.md`. Add at least
-   one second host after REAPER before marking Phase 6 complete.
-3. Add Phase 7 telemetry snapshots outside the realtime callback: queue depth,
-   render-time high-water mark, underruns, drops, restarts, and crash reason.
-4. Add transport-discontinuity/reset semantics and tests.
-5. Add long realtime/offline/multi-instance soaks and coverage-guided fuzz
-   harnesses for state and shared-memory validation.
+1. A second host on each platform. REAPER is the only DAW currently tested, and
+   the 2,080 hidden MIDI parameters deserve scan and project-load profiling in a
+   host that handles parameters differently.
+2. Coverage-guided fuzzing. `tests/fuzz` already exposes libFuzzer entry points;
+   configure with `-DMPVST_ENABLE_LIBFUZZER=ON` on a clang toolchain and keep
+   any interesting inputs in `tests/fuzz/corpus`.
+3. Multi-hour soaks. `mpvst_soak_tests <engine> <seconds>` runs the scenario for
+   any duration; the suite only runs the five-second form.
+4. macOS bundles, signing, and notarisation, still deferred.
+5. The deferred extensions: an LVGL editor, an audio-input effect component,
+   float64 processing.
 
 ## Known limitations and cautions
 
-- There is no custom editor and no host-visible detailed diagnostic string;
-  only ready/error code parameters are visible in the generic editor.
-- State embeds one source file, not an arbitrary multi-file dependency bundle.
-  Imports must still be available through the desktop MicroPython environment.
-- The 2,080 hidden MIDI parameters are standards-compliant and validator-clean,
-  but should be profiled in real DAWs for scan/state overhead.
-- Physical DAW behavior, installer paths, signing, and uninstallation have not
-  yet been verified on the available machine.
-- Do not claim Phase 3 or Phase 6 complete until the physical DAW evidence is
-  recorded.
+- No custom editor, and no host-visible detailed diagnostic string. The generic
+  editor shows only the ready and error parameters; the bounded diagnostic text
+  is available through the transport API.
+- State embeds one source file, not a dependency bundle. Imports must resolve in
+  the sidecar's own MicroPython environment.
+- The 2,080 hidden MIDI parameters are standards-compliant and validator-clean
+  but unprofiled for scan and project-load overhead in real DAWs.
+- Installer packaging, code signing, and uninstall flows beyond copying and
+  removing the bundle have not been built.
+- The Linux REAPER used for testing runs under WSLg without an audio device.
+  Real-time playback on Linux hardware has not been exercised.

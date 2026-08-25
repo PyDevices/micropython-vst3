@@ -4,8 +4,8 @@ Programmable VST3 instrument backed by a dedicated MicroPython engine process.
 The VST audio callback remains native and real-time safe; Python, garbage
 collection, filesystem access, and engine lifecycle work stay in the sidecar.
 
-The initial target is Windows VST3 with the host's generic parameter editor.
-Linux, an LVGL editor, and audio-input effects are deliberately deferred.
+Windows and Linux VST3 builds both ship, using the host's generic parameter
+editor. An LVGL editor and audio-input effects are deliberately deferred.
 
 See [PLAN.md](PLAN.md) for phase status and
 [docs/architecture/phase-0.md](docs/architecture/phase-0.md) for the locked
@@ -13,9 +13,9 @@ architecture contract.
 
 ## Current milestone
 
-The Phase 1 shell and Phase 2 fixed-latency sidecar transport are complete,
-and Phase 3 can render a Python-created `synthio.Synthesizer` from
-the bundled headless MicroPython process. Current capabilities include:
+All eight phases are complete. The instrument runs in REAPER on Windows and on
+Linux, and the same script and project state render byte-identical PCM on both.
+Current capabilities include:
 
 - one 16-channel event input with sample-positioned note-on/off, velocity,
   tuning, poly-pressure, channel pressure, pitch bend, and all 128 MIDI CCs;
@@ -27,7 +27,12 @@ the bundled headless MicroPython process. Current capabilities include:
 - no allocation, locking, or Python execution in `process()`;
 - one independent MicroPython process per active plug-in instance;
 - structured syntax and runtime error reporting; and
-- script correction and reload without reloading the VST or sidecar process.
+- script correction and reload without reloading the VST or sidecar process;
+- an edit-and-reload developer loop that re-reads the script from disk, while a
+  saved project keeps rendering from the source embedded in its state;
+- host transport position, tempo, and time signature, with locates and loop
+  wraps delivered to the script as transport events; and
+- queue-depth, render-time, underrun, drop, restart, and exit-reason telemetry.
 
 The generic editor also exposes read-only `Engine Ready` and integer
 `Engine Error` status. Reloads use a deterministic 128-sample fade-out, pipeline

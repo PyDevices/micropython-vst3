@@ -7,7 +7,7 @@ complete only when its exit criteria and evidence are recorded here.
 
 ## Locked product decisions
 
-- Windows VST3 is the first target; Linux follows a stable instrument release.
+- Windows VST3 was the first target; the Linux port now ships alongside it.
 - Each plug-in instance owns one headless MicroPython sidecar process.
 - The first product is an instrument only; live audio-input effects are later.
 - Scripts retain the full capabilities of the desktop MicroPython build.
@@ -21,12 +21,12 @@ complete only when its exit criteria and evidence are recorded here.
 | 0. Architecture contract | Complete | `docs/architecture/phase-0.md` and `docs/architecture/ipc-v1.md` |
 | 1. Silent VST3 instrument shell | Complete | Validator 47/47 on Windows and Linux; Test Host scan/instantiate; CLI state/lifecycle/unload hooks pass |
 | 2. Real-time sidecar transport | Complete | MSVC/GCC protocol tests, eight-instance isolation, crash/stall restart, VST lifecycle, and exact 512-sample latency pass |
-| 3. Headless MicroPython engine | In progress | Full-capability bundled Python/synthio render and in-instance syntax/runtime/reload recovery pass; physical DAW play test remains |
+| 3. Headless MicroPython engine | Complete | Full-capability bundled Python/synthio render and in-instance syntax/runtime/reload recovery pass; REAPER plays the instrument on Windows and Linux |
 | 4. MIDI and sample timing | Complete | 16-channel CC/pitch/pressure mapping validates; exact delayed note, bend, and variable-block boundary PCM checks pass |
 | 5. Automation and project state | Complete | Stable labeled macros, v1-compatible bounded v2 state, deleted-source restore, fresh sidecar render, and exact sample 1041 hook pass |
-| 6. Usable Windows instrument release | In progress | Workflow, examples, status controls, deterministic reload fades, verified ZIP, and all automated hooks pass; physical DAW matrix remains |
-| 7. Offline rendering and hardening | In progress | Offline transport blocks outside realtime until exact delayed output is ready; no-sleep export test passes on MSVC/GCC |
-| 8. Linux port | Pending | — |
+| 6. Usable Windows instrument release | Complete | The REAPER matrix passes every step and every PCM check on Windows; `docs/evidence/reaper-matrix-report.txt` |
+| 7. Offline rendering and hardening | Complete | Telemetry, transport discontinuity, soak, and fuzz harnesses pass; the soak and fuzzer each found and fixed a defect |
+| 8. Linux port | Complete | Unix sidecar, Linux bundle and archive, REAPER on Linux, and byte-identical cross-platform PCM |
 
 ## Phase 0 — Architecture contract
 
@@ -82,8 +82,8 @@ Evidence recorded 2026-08-25:
   intended. Phase 4 later added 2,080 hidden MIDI mapping parameters while
   retaining those 18 user-facing controls; Phase 6 added two read-only status
   controls, for 20 visible and 2,100 total parameters.
-- No supported DAW was found on the available Windows machine. The manual
-  DAW test remains open.
+- REAPER 7.79 later scanned and instantiated the same bundle on Windows and on
+  Linux; see the Phase 6 and Phase 8 evidence.
 - Steinberg VST3PluginTestHost 3.11.0, from the matching full SDK package,
   scanned the explicit Release folder, instantiated the instrument, opened its
   generic editor, and loaded the expected `MicroPythonVST3.vst3` module.
@@ -142,7 +142,7 @@ Evidence recorded 2026-08-25:
 
 ## Phase 3 — Headless MicroPython engine
 
-Status: **In progress**
+Status: **Complete**
 
 Deliverables:
 
@@ -191,7 +191,8 @@ Evidence recorded 2026-08-25:
   and verifies that diagnostic, then replaces it with a valid `synthio` graph.
   The same VST-side transport resumes audible output without process or VST
   reload. Windows now passes five CTest cases; Linux remains four of four.
-- Note-driven playback in a physical DAW remains open.
+- Note-driven playback was later confirmed in REAPER on both platforms; see the
+  Phase 6 and Phase 8 evidence.
 
 ## Phase 4 — MIDI and sample timing
 
@@ -307,7 +308,7 @@ Evidence recorded 2026-08-25:
 
 ## Phase 6 — Usable Windows instrument release
 
-Status: **In progress**
+Status: **Complete**
 
 Deliverables:
 
@@ -340,13 +341,34 @@ Evidence recorded 2026-08-25:
   `unzip -t` reports no errors.
 - Current automated results are Steinberg validator 47/47 on both platforms,
   Windows seven of seven CTest cases, and Linux five of five.
-- No supported Windows DAW is installed in the available environment. The
-  install/play/automation/save/reload/uninstall matrix is the remaining Phase 6
-  roadblock and requires a selected DAW (REAPER is the recommended first host).
+Evidence recorded 2026-08-25 (physical DAW):
+
+- REAPER 7.79 was installed on Windows and the packaged ZIP was installed to
+  `%LOCALAPPDATA%\Programs\Common\VST3`. REAPER scans it as
+  `VST3i: MicroPython Instrument (PyDevices)` and reports 2,103 parameters,
+  which is the plug-in's 2,100 plus REAPER's own three.
+- `tools/daw-matrix` drives REAPER headlessly through a startup ReaScript. All
+  fourteen steps pass: instantiate, engine ready, play, automate, edit and
+  reload, restore, save, reopen, reopen-ignores-edit, malformed script,
+  recovery, four concurrent sidecars, and removal.
+- Every rendered PCM check passes. A note gates at exactly 0.125 with Macro 01
+  at zero and 0.25 at full scale, an edited script reloads to its own 0.375, a
+  reopened project reproduces the saved 0.25, a malformed script renders exact
+  silence with `Engine Error` 1 while the sidecar stays ready, and recovery
+  returns to 0.125.
+- Finding Macro 01 under the name `Level` confirms script label metadata reaches
+  the host's generic editor.
+- The report is in `docs/evidence/reaper-matrix-report.txt`.
+- Driving a real DAW exposed two defects the automated hosts could not: restored
+  and automated macro values never reached the script, and a reload replayed the
+  source as it was when the instance was created rather than what was on disk.
+  Both are fixed and covered by regression tests.
+- REAPER is the only host tested. A second host on each platform remains
+  recommended follow-up work rather than a release blocker.
 
 ## Phase 7 — Offline rendering and hardening
 
-Status: **In progress**
+Status: **Complete**
 
 Deliverables:
 
@@ -376,12 +398,38 @@ Evidence recorded 2026-08-25:
   headers are rejected. The VST lifecycle state corpus rejects empty state,
   invalid pipeline depth, oversized source, and truncated source while still
   accepting legacy v1.
-- Remaining hardening includes long soaks, richer queue/render telemetry,
-  coverage-guided fuzzing, discontinuity handling, and constrained heap stress.
+- Both engines now write `render_time_ns`, which the ABI declared but nothing
+  populated. `SidecarTransport::telemetry()` returns a lock-free snapshot of
+  queue depth, render time, underruns, event drops, restarts, error code, and
+  the last exit reason, with peaks tracked from the audio thread and a distinct
+  code for an engine the supervisor killed for hanging.
+- The work slot carried a placeholder timeline. The processor now reads the host
+  process context and passes real position, tempo, and time signature through,
+  detects locates, loop wraps, and play-state changes, and emits
+  `MPVST_EVENT_TRANSPORT`. `vstaudio.transport()` exposes the same to scripts.
+  A smoke-host hook proves a held note is silenced by a locate.
+- `mpvst_soak_tests` runs four instances at real-time pace with a different
+  block size every callback, events, periodic bypass, and periodic locates. A
+  sixty-second run completes about 5,500 blocks per instance with zero
+  underruns, zero event drops, and zero restarts.
+- The soak found two defects. Bypassed blocks submitted work but never consumed
+  the output, leaking a ring slot each time until the engine could not publish
+  and the supervisor restarted a healthy sidecar. Separately, the supervisor
+  treated a quiet host as a hung engine, so pausing a transport restarted the
+  sidecar and lost script state. Both are fixed and covered by a regression
+  test.
+- `tests/fuzz` exposes libFuzzer entry points for the shared mapping and the
+  project-state parser, with a portable deterministic driver so the targets run
+  under GCC and MSVC too. `-DMPVST_ENABLE_LIBFUZZER=ON` builds the
+  coverage-guided variants on clang. The fuzzer found that
+  `mpvst_validate_mapping` never checked the optional region offsets it derives,
+  so a mapping with an attacker-chosen `optional_offset` was accepted.
+- `MPVST_HEAP_BYTES` caps the MicroPython heap per instance, so a runaway script
+  fails inside its own sidecar rather than growing until it disturbs the DAW.
 
 ## Phase 8 — Linux port
 
-Status: **Pending**
+Status: **Complete**
 
 Deliverables:
 
@@ -393,6 +441,31 @@ Exit criteria:
 
 - The same saved patch produces matching PCM on Windows and Linux within the
   defined conversion tolerance.
+
+Evidence recorded 2026-08-25:
+
+- The `vstaudio` usermod is no longer Windows-only. Shared-mapping open and
+  teardown, the monotonic clock, the idle and yield waits, and the atomics all
+  have POSIX implementations, so the same module builds for the unix port.
+  `./tools/build-micropython-engine.sh --port unix` produces the sidecar.
+- The Linux bundle stages the MicroPython engine alongside the plug-in, and
+  `tools/package-linux.sh` produces a versioned tarball with a SHA-256 sidecar
+  that preserves the executable bits the engine needs.
+- The MicroPython-only tests are no longer gated on Windows. Linux now runs
+  twelve of twelve, including the reload, embedded-state, and MicroPython
+  lifecycle hooks that previously only ran on Windows.
+- REAPER 7.79 for Linux was installed to `~/opt/REAPER`, and the plug-in
+  installed to `~/.vst3` from the release tarball. The same matrix passes all
+  fourteen steps and every PCM check, with identical measured levels to Windows.
+  The report is in `docs/evidence/reaper-matrix-report-linux.txt`.
+- `tools/check-cross-platform-parity.sh` renders a fixed synthio score through
+  the real MicroPython sidecar on each platform and compares the raw float32
+  PCM. The two files share a SHA-256, so the platforms agree exactly rather than
+  within a tolerance.
+- A host without a live audio device only processes during a render, which the
+  Linux REAPER under WSLg made visible: status parameters are published from
+  `process()`, so the matrix forces a render before reading one. Real-time
+  playback on Linux audio hardware has not been exercised.
 
 ## Deferred extensions
 

@@ -34,10 +34,11 @@ bool ok(tresult result) { return result == kResultOk || result == kResultTrue; }
 bool selectBundledEngine(const std::filesystem::path& bundle,
                          bool expectMicroPython)
 {
-    const auto wanted = expectMicroPython ? "micropython-vst-engine.exe"
 #if defined(_WIN32)
+    const auto wanted = expectMicroPython ? "micropython-vst-engine.exe"
                                           : "micropython-vst-native-engine.exe";
 #else
+    const auto wanted = expectMicroPython ? "micropython-vst-engine"
                                           : "micropython-vst-native-engine";
 #endif
     for (const auto& entry : std::filesystem::recursive_directory_iterator(bundle))
@@ -569,6 +570,148 @@ bool embeddedStateSurvivesMissingSource(const PluginFactory& factory,
     return heard && stopped && terminated;
 }
 
+// Renders a fixed script with a fixed event sequence and writes raw float32
+// PCM. Running this on Windows and on Linux and comparing the two files is the
+// cross-platform parity check: same script, same state, same events, same
+// samples.
+bool renderReference(const PluginFactory& factory, const ClassInfo& classInfo,
+                     FUnknown* host, const std::string& outputPath)
+{
+    const auto sourcePath = std::filesystem::temp_directory_path() /
+        "mpvst-reference-instrument.py";
+    // synthio rather than a constant, so any difference in the audio path
+    // between the two platforms shows up in the samples.
+    constexpr const char* source =
+        "import synthio\n"
+        "import vstaudio\n"
+        "synth = synthio.Synthesizer(sample_rate=vstaudio.sample_rate(), "
+        "channel_count=2)\n"
+        "envelope = synthio.Envelope(attack_time=0.01, decay_time=0.05,\n"
+        "                            release_time=0.1, attack_level=1.0,\n"
+        "                            sustain_level=0.7)\n"
+        "voices = {}\n"
+        "def handle_event(event_type, channel, note_id, data0, value0, value1,\n"
+        "                 sample_position):\n"
+        "    if event_type == vstaudio.EVENT_NOTE_ON and value0 > 0.0:\n"
+        "        note = synthio.Note(synthio.midi_to_hz(data0),\n"
+        "                            amplitude=value0, envelope=envelope)\n"
+        "        voices[data0] = note\n"
+        "        synth.press(note)\n"
+        "    elif event_type == vstaudio.EVENT_NOTE_OFF:\n"
+        "        note = voices.pop(data0, None)\n"
+        "        if note is not None:\n"
+        "            synth.release(note)\n"
+        "vstaudio.on_event(handle_event)\n"
+        "vstaudio.output(synth)\n";
+    {
+        std::ofstream out(sourcePath, std::ios::binary | std::ios::trunc);
+        if (!out || !out.write(source, static_cast<std::streamsize>(
+                                           std::strlen(source))))
+            return false;
+    }
+    setScriptPath(sourcePath.string());
+
+    auto component = createComponent(factory, classInfo, host);
+    auto processor = getProcessor(component);
+    if (!component || !processor)
+        return false;
+
+    SpeakerArrangement stereo = SpeakerArr::kStereo;
+    ProcessSetup setup {};
+    setup.processMode = kOffline;
+    setup.symbolicSampleSize = kSample32;
+    setup.maxSamplesPerBlock = 128;
+    setup.sampleRate = 48000.0;
+    if (!ok(processor->setBusArrangements(nullptr, 0, &stereo, 1)) ||
+        !ok(component->activateBus(kAudio, kOutput, 0, true)) ||
+        !ok(component->activateBus(kEvent, kInput, 0, true)) ||
+        !ok(processor->setupProcessing(setup)) ||
+        !ok(component->setActive(true)) ||
+        !ok(processor->setProcessing(true)))
+        return false;
+
+    std::array<float, 128> left {};
+    std::array<float, 128> right {};
+    Sample32* channels[] = {left.data(), right.data()};
+    AudioBusBuffers output {};
+    output.numChannels = 2;
+    output.channelBuffers32 = channels;
+    ProcessContext context {};
+    context.state = ProcessContext::kPlaying | ProcessContext::kTempoValid;
+    context.sampleRate = 48000.0;
+    context.tempo = 120.0;
+    context.projectTimeSamples = 0;
+    ProcessData data {};
+    data.processMode = kOffline;
+    data.symbolicSampleSize = kSample32;
+    data.numSamples = static_cast<int32>(left.size());
+    data.numOutputs = 1;
+    data.outputs = &output;
+    data.processContext = &context;
+
+    // A fixed score: three notes pressed and released at known blocks.
+    struct Step { int block; bool on; int16 pitch; };
+    const Step score[] = {
+        {8, true, 60},  {16, true, 64},  {24, true, 67},
+        {40, false, 60}, {48, false, 64}, {56, false, 67},
+    };
+    constexpr int kBlockCount = 96;
+
+    std::ofstream pcm(outputPath, std::ios::binary | std::ios::trunc);
+    if (!pcm)
+        return false;
+
+    EventList events;
+    for (int block = 0; block < kBlockCount; ++block)
+    {
+        events.clear();
+        for (const auto& step : score)
+        {
+            if (step.block != block)
+                continue;
+            Event event {};
+            event.busIndex = 0;
+            event.sampleOffset = 0;
+            if (step.on)
+            {
+                event.type = Event::kNoteOnEvent;
+                event.noteOn.channel = 0;
+                event.noteOn.pitch = step.pitch;
+                event.noteOn.velocity = 0.8F;
+                event.noteOn.noteId = step.pitch;
+            }
+            else
+            {
+                event.type = Event::kNoteOffEvent;
+                event.noteOff.channel = 0;
+                event.noteOff.pitch = step.pitch;
+                event.noteOff.velocity = 0.0F;
+                event.noteOff.noteId = step.pitch;
+            }
+            (void)events.addEvent(event);
+        }
+        data.inputEvents = events.getEventCount() > 0 ? &events : nullptr;
+        if (!ok(processor->process(data)))
+            return false;
+        context.projectTimeSamples += static_cast<int32>(left.size());
+        pcm.write(reinterpret_cast<const char*>(left.data()),
+                  static_cast<std::streamsize>(left.size() * sizeof(float)));
+        pcm.write(reinterpret_cast<const char*>(right.data()),
+                  static_cast<std::streamsize>(right.size() * sizeof(float)));
+    }
+    pcm.close();
+
+    const bool stopped = ok(processor->setProcessing(false)) &&
+                         ok(component->setActive(false));
+    processor = nullptr;
+    const bool terminated = ok(component->terminate());
+    component = nullptr;
+    setScriptPath({});
+    std::error_code ignored;
+    (void)std::filesystem::remove(sourcePath, ignored);
+    return stopped && terminated;
+}
+
 bool transportDiscontinuityGatesVoices(const PluginFactory& factory,
                                        const ClassInfo& classInfo,
                                        FUnknown* host)
@@ -927,23 +1070,28 @@ bool reloadFadeLifecycle(const PluginFactory& factory, const ClassInfo& classInf
 
 int main(int argc, char** argv)
 {
-    const std::string mode = argc == 3 ? argv[2] : "";
-    if (argc < 2 || argc > 3 ||
+    const std::string mode = argc >= 3 ? argv[2] : "";
+    const std::string modeArgument = argc >= 4 ? argv[3] : "";
+    const bool renderMode = mode == "--render-reference";
+    if (argc < 2 || argc > 4 || (renderMode && modeArgument.empty()) ||
+        (!renderMode && argc > 3) ||
         (!mode.empty() && mode != "--expect-micropython" &&
          mode != "--expect-embedded-state" && mode != "--expect-reload-fade" &&
-         mode != "--expect-macro-resync" && mode != "--expect-transport"))
+         mode != "--expect-macro-resync" && mode != "--expect-transport" &&
+         !renderMode))
     {
         std::cerr << "usage: mpvst_smoke_host <plugin.vst3> "
                      "[--expect-micropython|--expect-embedded-state|"
                      "--expect-reload-fade|--expect-macro-resync|"
-                     "--expect-transport]\n";
+                     "--expect-transport|--render-reference <out.pcm>]\n";
         return 2;
     }
     const bool embeddedState = mode == "--expect-embedded-state";
     const bool reloadFade = mode == "--expect-reload-fade";
     const bool macroResync = mode == "--expect-macro-resync";
     const bool transportMode = mode == "--expect-transport";
-    const bool expectMicroPython = mode == "--expect-micropython" || embeddedState;
+    const bool expectMicroPython = mode == "--expect-micropython" ||
+                                   embeddedState || renderMode;
 
     std::string error;
     const auto modulePath = std::filesystem::weakly_canonical(argv[1]).string();
@@ -972,7 +1120,16 @@ int main(int argc, char** argv)
         }
         std::cout << "HOOK class.scan OK: " << classInfo.name() << '\n';
 
-        if (transportMode)
+        if (renderMode)
+        {
+            if (!renderReference(factory, classInfo, host, modeArgument))
+            {
+                std::cerr << "HOOK render.reference FAIL\n";
+                return 5;
+            }
+            std::cout << "HOOK render.reference OK: " << modeArgument << '\n';
+        }
+        else if (transportMode)
         {
             if (!transportDiscontinuityGatesVoices(factory, classInfo, host))
             {
@@ -1014,7 +1171,7 @@ int main(int argc, char** argv)
             return 5;
         }
         const bool defaultSuite = !embeddedState && !reloadFade &&
-                                  !macroResync && !transportMode;
+                                  !macroResync && !transportMode && !renderMode;
         if (defaultSuite)
             std::cout << "HOOK state.roundtrip OK: legacy_v1=1 malformed=4\n";
 

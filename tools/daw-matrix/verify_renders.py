@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the PCM that REAPER rendered during the Windows DAW matrix.
+"""Verify the PCM that REAPER rendered during the DAW matrix.
 
 The matrix instrument emits a constant level while a note is held:
 
@@ -108,7 +108,8 @@ def main() -> int:
     # edge_*.wav are the short renders that only exist to let the plug-in
     # observe a Reload Script transition; they carry no note to measure.
     files = [p for p in sorted(directory.glob("*.wav"))
-             if not p.name.startswith("edge_")]
+             if not p.name.startswith("edge_")
+             and p.stem not in ("extra_status", "startup_status")]
     if not files:
         print("VERIFY FAIL: no rendered WAV files in %s" % directory)
         return 1

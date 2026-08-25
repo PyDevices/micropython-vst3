@@ -39,16 +39,30 @@ endif()
 add_test(NAME mpvst_transport_tests COMMAND mpvst_transport_tests
     $<TARGET_FILE:micropython-vst-native-engine>)
 
-if(WIN32 AND TARGET mpvst-stage-micropython-engine)
+# These need a real MicroPython sidecar, which is staged on any platform that
+# has one built.
+if(TARGET mpvst-stage-micropython-engine)
+    if(WIN32)
+        set(mpvst_engine_name micropython-vst-engine.exe)
+    else()
+        set(mpvst_engine_name micropython-vst-engine)
+    endif()
     add_executable(mpvst_reload_tests reload_tests.cpp)
     target_link_libraries(mpvst_reload_tests PRIVATE mpvst_sidecar_transport)
     target_compile_features(mpvst_reload_tests PRIVATE cxx_std_17)
-    target_compile_options(mpvst_reload_tests PRIVATE /W4 /permissive-)
+    if(MSVC)
+        target_compile_options(mpvst_reload_tests PRIVATE /W4 /permissive-)
+    else()
+        target_compile_options(mpvst_reload_tests PRIVATE
+            -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion)
+    endif()
     add_dependencies(mpvst_reload_tests mpvst-stage-micropython-engine)
     add_test(NAME mpvst_reload_tests COMMAND mpvst_reload_tests
-        $<TARGET_FILE_DIR:MicroPythonVST3>/micropython-vst-engine.exe)
+        $<TARGET_FILE_DIR:MicroPythonVST3>/${mpvst_engine_name})
     add_test(NAME mpvst_embedded_state_smoke COMMAND mpvst_smoke_host
         $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-embedded-state)
+    add_test(NAME mpvst_micropython_smoke COMMAND mpvst_smoke_host
+        $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-micropython)
 endif()
 
 add_test(NAME mpvst_lifecycle_smoke COMMAND mpvst_smoke_host

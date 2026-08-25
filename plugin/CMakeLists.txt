@@ -37,10 +37,16 @@ add_custom_target(mpvst-stage-native-engine ALL
     DEPENDS ${MPVST_PLUGIN_TARGET} micropython-vst-native-engine
     COMMENT "Bundling the native Phase 2 sidecar")
 
-set(MPVST_MICROPYTHON_ENGINE
-    "${CMAKE_SOURCE_DIR}/.deps/engine/micropython-vst-engine.exe"
-    CACHE FILEPATH "Optional prebuilt Windows MicroPython VST engine")
-if(WIN32 AND EXISTS "${MPVST_MICROPYTHON_ENGINE}")
+if(WIN32)
+    set(MPVST_ENGINE_DEFAULT
+        "${CMAKE_SOURCE_DIR}/.deps/engine/micropython-vst-engine.exe")
+else()
+    set(MPVST_ENGINE_DEFAULT
+        "${CMAKE_SOURCE_DIR}/.deps/engine/micropython-vst-engine")
+endif()
+set(MPVST_MICROPYTHON_ENGINE "${MPVST_ENGINE_DEFAULT}"
+    CACHE FILEPATH "Optional prebuilt MicroPython VST engine for this platform")
+if(EXISTS "${MPVST_MICROPYTHON_ENGINE}")
     add_custom_target(mpvst-stage-micropython-engine ALL
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${MPVST_MICROPYTHON_ENGINE}"

@@ -1,6 +1,17 @@
+// The engine runs on Windows and on Unix. Only three things differ: opening the
+// shared mapping the host created, reading a monotonic clock, and yielding.
+#if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#else
+#include <errno.h>
+#include <fcntl.h>
+#include <sched.h>
+#include <sys/mman.h>
+#include <time.h>
+#include <unistd.h>
+#endif
 
 #include "mpvst/protocol.h"
 
@@ -18,7 +29,9 @@
 MP_REGISTER_ROOT_POINTER(mp_obj_t vstaudio_output);
 MP_REGISTER_ROOT_POINTER(mp_obj_t vstaudio_event_callback);
 
+#if defined(_WIN32)
 static HANDLE vstaudio_mapping_handle;
+#endif
 static void *vstaudio_mapping;
 static uint64_t vstaudio_mapping_bytes;
 static mpvst_shared_header *vstaudio_header;
@@ -30,6 +43,8 @@ static uint8_t *vstaudio_outputs;
 static const int16_t *vstaudio_source_samples;
 static uint32_t vstaudio_source_frames;
 static uint32_t vstaudio_source_offset;
+
+#if defined(_WIN32)
 
 static uint64_t atomic_load_u64(const uint64_t *value) {
     return (uint64_t)InterlockedCompareExchange64(
@@ -53,7 +68,35 @@ static void atomic_store_u32(uint32_t *value, uint32_t desired) {
     (void)InterlockedExchange((volatile LONG *)(uintptr_t)value, (LONG)desired);
 }
 
+#else
+
+// GCC and Clang provide the same sequentially consistent operations the
+// Interlocked family gives on Windows, which is what the ring protocol's
+// publish and acquire steps rely on.
+static uint64_t atomic_load_u64(const uint64_t *value) {
+    return __atomic_load_n(value, __ATOMIC_SEQ_CST);
+}
+
+static void atomic_store_u64(uint64_t *value, uint64_t desired) {
+    __atomic_store_n(value, desired, __ATOMIC_SEQ_CST);
+}
+
+static void atomic_increment_u64(uint64_t *value) {
+    (void)__atomic_add_fetch(value, 1u, __ATOMIC_SEQ_CST);
+}
+
+static uint32_t atomic_load_u32(const uint32_t *value) {
+    return __atomic_load_n(value, __ATOMIC_SEQ_CST);
+}
+
+static void atomic_store_u32(uint32_t *value, uint32_t desired) {
+    __atomic_store_n(value, desired, __ATOMIC_SEQ_CST);
+}
+
+#endif
+
 static void close_mapping(void) {
+#if defined(_WIN32)
     if (vstaudio_mapping != NULL) {
         UnmapViewOfFile(vstaudio_mapping);
     }
@@ -61,6 +104,11 @@ static void close_mapping(void) {
         CloseHandle(vstaudio_mapping_handle);
     }
     vstaudio_mapping_handle = NULL;
+#else
+    if (vstaudio_mapping != NULL) {
+        (void)munmap(vstaudio_mapping, (size_t)vstaudio_mapping_bytes);
+    }
+#endif
     vstaudio_mapping = NULL;
     vstaudio_mapping_bytes = 0;
     vstaudio_header = NULL;
@@ -90,6 +138,7 @@ static float *output_channel(mpvst_output_slot *slot, uint32_t channel) {
 // Monotonic nanoseconds for per-block render timing. The division is split so
 // that a long-running counter cannot overflow before it is scaled.
 static uint64_t monotonic_ns(void) {
+#if defined(_WIN32)
     static LARGE_INTEGER frequency;
     if (frequency.QuadPart == 0) {
         QueryPerformanceFrequency(&frequency);
@@ -102,6 +151,33 @@ static uint64_t monotonic_ns(void) {
         return 0u;
     }
     return (ticks / freq) * 1000000000ull + ((ticks % freq) * 1000000000ull) / freq;
+#else
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+        return 0u;
+    }
+    return (uint64_t)now.tv_sec * 1000000000ull + (uint64_t)now.tv_nsec;
+#endif
+}
+
+// Wait a moment without burning the core. The engine only ever waits for the
+// host to hand it work, so a millisecond of latency here costs nothing.
+static void engine_idle(void) {
+#if defined(_WIN32)
+    Sleep(1);
+#else
+    const struct timespec delay = {0, 1000000L};
+    (void)nanosleep(&delay, NULL);
+#endif
+}
+
+// Give up the rest of this scheduling slice while spinning for a slot.
+static void engine_yield(void) {
+#if defined(_WIN32)
+    Sleep(0);
+#else
+    (void)sched_yield();
+#endif
 }
 
 static void set_error_text(const char *text, size_t length, uint32_t error_code) {
@@ -124,6 +200,7 @@ static mp_obj_t vstaudio_configure(mp_obj_t name_obj, mp_obj_t bytes_obj) {
     close_mapping();
     const char *name = mp_obj_str_get_str(name_obj);
     uint64_t bytes = (uint64_t)mp_obj_get_int(bytes_obj);
+#if defined(_WIN32)
     HANDLE handle = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, name);
     if (handle == NULL) {
         mp_raise_OSError(GetLastError());
@@ -134,6 +211,19 @@ static mp_obj_t vstaudio_configure(mp_obj_t name_obj, mp_obj_t bytes_obj) {
         CloseHandle(handle);
         mp_raise_OSError(error);
     }
+#else
+    const int descriptor = shm_open(name, O_RDWR, 0600);
+    if (descriptor < 0) {
+        mp_raise_OSError(errno);
+    }
+    void *mapping = mmap(NULL, (size_t)bytes, PROT_READ | PROT_WRITE, MAP_SHARED,
+                         descriptor, 0);
+    const int map_error = errno;
+    (void)close(descriptor);
+    if (mapping == MAP_FAILED) {
+        mp_raise_OSError(map_error);
+    }
+#endif
 
     mpvst_shared_header *header = (mpvst_shared_header *)mapping;
     if (bytes < sizeof(*header) || header->magic != MPVST_PROTOCOL_MAGIC ||
@@ -142,12 +232,18 @@ static mp_obj_t vstaudio_configure(mp_obj_t name_obj, mp_obj_t bytes_obj) {
         header->endian_marker != MPVST_ENDIAN_MARKER ||
         header->mapping_bytes != bytes || header->channel_count != 2u ||
         header->max_frames == 0u || header->sample_rate_millihz == 0u) {
+#if defined(_WIN32)
         UnmapViewOfFile(mapping);
         CloseHandle(handle);
+#else
+        (void)munmap(mapping, (size_t)bytes);
+#endif
         mp_raise_ValueError(MP_ERROR_TEXT("invalid MPVST mapping"));
     }
 
+#if defined(_WIN32)
     vstaudio_mapping_handle = handle;
+#endif
     vstaudio_mapping = mapping;
     vstaudio_mapping_bytes = bytes;
     vstaudio_header = header;
@@ -348,7 +444,7 @@ static mp_obj_t vstaudio_run(mp_obj_t reload_callback) {
             break;
         }
         if (lifecycle != MPVST_LIFECYCLE_RUNNING) {
-            Sleep(1);
+            engine_idle();
             continue;
         }
 
@@ -358,7 +454,7 @@ static mp_obj_t vstaudio_run(mp_obj_t reload_callback) {
         mpvst_output_slot *output = output_at(output_position);
         if (atomic_load_u64(&work->sequence) != work_position + 1u ||
             atomic_load_u64(&output->sequence) != output_position) {
-            Sleep(0);
+            engine_yield();
             continue;
         }
 

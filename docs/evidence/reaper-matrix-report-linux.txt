@@ -1,0 +1,32 @@
+BEGIN
+INFO reaper_version 7.79/linux-x86_64
+INFO script_path /tmp/mpvst-matrix/script.py
+INFO param_count 2103
+INFO fx_name VST3i: MicroPython Instrument (PyDevices)
+PASS instantiate VST3i: MicroPython Instrument (PyDevices) params=2103 macro_label=Level
+INFO ready_value 1.0
+PASS engine_ready ready=1.000 error=0
+PASS play_note rendered macro_zero.wav
+INFO macro_value 1.0
+PASS automate_set macro=1.000
+PASS edit_script installed edited source
+INFO edited_ready 1.0
+INFO edited_error 0
+PASS reload_edited ready=1.000 error=0
+PASS restore_script reinstalled original source
+PASS save_project bytes=7130
+INFO reopen_macro 1.0
+PASS reopen_project macro=1.000 ready=1.000 params=2103
+PASS reopened_ignores_edit rendered reopened_after_edit.wav
+INFO malformed_error_code 1
+INFO malformed_error_normalized 0.0039215688593686
+INFO malformed_ready 1.0
+PASS malformed_script error=1 ready=1.000
+INFO recover_error 0
+PASS recover_script ready=1.000 error=0
+INFO extra_instances 3
+INFO extra_ready 3
+PASS multiple_instances 4 concurrent sidecars ready
+INFO fx_after_delete 0
+PASS remove_instance fx count 0
+DONE

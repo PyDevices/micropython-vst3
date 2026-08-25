@@ -10,17 +10,36 @@
 #include <string>
 #include <thread>
 
+#if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#else
+#include <cstdlib>
+#include <unistd.h>
+#endif
 
 namespace {
 
 using PyDevices::MicroPythonVST3::SidecarTransport;
 
+// A per-process suffix keeps concurrent test runs from sharing a script file.
+unsigned long currentProcessId()
+{
+#if defined(_WIN32)
+    return static_cast<unsigned long>(GetCurrentProcessId());
+#else
+    return static_cast<unsigned long>(getpid());
+#endif
+}
+
 void setEnvironment(const char* name, const std::string& value)
 {
+#if defined(_WIN32)
     (void)_putenv_s(name, value.c_str());
+#else
+    (void)setenv(name, value.c_str(), 1);
+#endif
 }
 
 bool writeScript(const std::filesystem::path& path, const char* source)
@@ -73,7 +92,7 @@ int main(int argc, char** argv)
         return 2;
 
     const auto scriptPath = std::filesystem::temp_directory_path() /
-        ("mpvst-reload-" + std::to_string(GetCurrentProcessId()) + ".py");
+        ("mpvst-reload-" + std::to_string(currentProcessId()) + ".py");
     setEnvironment("MPVST_ENGINE_PATH", argv[1]);
     setEnvironment("MPVST_SCRIPT_PATH", scriptPath.string());
 

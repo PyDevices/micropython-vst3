@@ -1,5 +1,25 @@
 #!/usr/bin/env bash
+# Build the MicroPython sidecar engine.
+#
+#   ./tools/build-micropython-engine.sh [--port windows|unix]
+#
+# Defaults to the Windows engine, which is the shipping product. The unix port
+# builds the same module set for the Linux bundle.
 set -euo pipefail
+
+port=windows
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --port) port="$2"; shift 2 ;;
+        *) echo "usage: $0 [--port windows|unix]" >&2; exit 2 ;;
+    esac
+done
+
+case "$port" in
+    windows) engine_name=micropython-vst-engine.exe; variant=dev ;;
+    unix)    engine_name=micropython-vst-engine; variant=standard ;;
+    *) echo "error: unsupported port '$port'" >&2; exit 2 ;;
+esac
 
 repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 workspace_dir=$(cd "$repo_dir/.." && pwd)
@@ -7,7 +27,7 @@ cmods_dir=${CMODS_DIR:-"$workspace_dir/cmods"}
 mp_dir=${MICROPYTHON_DIR:-"$cmods_dir/micropython"}
 output_dir="$repo_dir/.deps/engine"
 
-test -f "$mp_dir/ports/windows/Makefile"
+test -f "$mp_dir/ports/$port/Makefile"
 test -f "$workspace_dir/audioif/micropython.mk"
 
 mkdir -p "$output_dir"
@@ -29,11 +49,11 @@ cleanup() {
 trap cleanup EXIT
 
 BUILD=build-vst-engine \
-PROG=micropython-vst-engine \
-    "$cmods_dir/build_mp.sh" --port windows --variant dev
+PROG="$engine_name" \
+    "$cmods_dir/build_mp.sh" --port "$port" --variant "$variant"
 
 install -m 755 \
-    "$mp_dir/ports/windows/build-vst-engine/micropython-vst-engine.exe" \
-    "$output_dir/micropython-vst-engine.exe"
+    "$mp_dir/ports/$port/build-vst-engine/$engine_name" \
+    "$output_dir/$engine_name"
 
-echo "Built $output_dir/micropython-vst-engine.exe"
+echo "Built $output_dir/$engine_name"

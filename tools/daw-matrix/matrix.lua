@@ -1,5 +1,5 @@
 --[[
-Windows DAW matrix for the MicroPython VST3 instrument.
+DAW matrix for the MicroPython VST3 instrument, on Windows and on Linux.
 
 REAPER runs this as Scripts/__startup.lua. It drives the Phase 6 exit criteria
 without any GUI interaction: scan, instantiate, play, automate, save, reopen,
@@ -9,7 +9,9 @@ and quit.
 The script is a deferred state machine because the sidecar handshake and every
 render need REAPER's main loop to run. Rendering is also the only way the
 plug-in processes in this configuration, so a reload edge is only observed if a
-render happens between clearing and setting Reload Script.
+render happens between clearing and setting Reload Script. For the same reason
+a status parameter is only refreshed after a render, so every readiness check is
+preceded by one.
 
 Every step writes a PASS/FAIL line to MPVST_MATRIX_REPORT and the rendered WAV
 files are checked separately by verify_renders.py. A global deadline guarantees
@@ -24,6 +26,9 @@ local SCRIPT = os.getenv("MPVST_SCRIPT_PATH") or ""
 local BAD_SCRIPT = os.getenv("MPVST_BAD_SCRIPT_PATH") or ""
 local EDITED_SCRIPT = os.getenv("MPVST_EDITED_SCRIPT_PATH") or ""
 local FX_NAME = "MicroPython Instrument"
+-- package.config's first line is the platform path separator, so the same
+-- script drives REAPER on Windows and on Linux.
+local SEP = package.config:sub(1, 1)
 local DEADLINE = os.time() + 900
 
 local report = io.open(REPORT, "w")
@@ -102,7 +107,7 @@ local S = {
     error_idx = nil,
     macro_idx = nil,
     reload_idx = nil,
-    project_path = WORKDIR .. "\\matrix.RPP",
+    project_path = WORKDIR .. SEP .. "matrix.RPP",
     extra = {},
 }
 
@@ -213,6 +218,13 @@ step(function()
 end)
 
 step(function()
+    -- Force one render so the sidecar publishes its status: a host without a
+    -- live audio device does not process until something asks it to.
+    render("startup_status", 0.5)
+    sleep_ms(700)
+end)
+
+step(function()
     local ready = ready_value()
     local code = error_code()
     info("ready_value", ready)
@@ -270,7 +282,7 @@ end)
 
 -- Restore the original source and reload back to the known level.
 step(function()
-    if not copy_file(WORKDIR .. "\\good_backup.py", SCRIPT) then
+    if not copy_file(WORKDIR .. SEP .. "good_backup.py", SCRIPT) then
         fail("restore_script", "unable to restore original script")
         return
     end
@@ -308,6 +320,10 @@ step(function()
         return "abort"
     end
     local count = bind(track, 0)
+    -- Status parameters are published while the plug-in processes. A host with
+    -- no live audio device only processes during a render, so force one before
+    -- reading Engine Ready.
+    render("reopened", 3.0)
     local macro = reaper.TrackFX_GetParamNormalized(track, 0, S.macro_idx)
     local ready = ready_value()
     info("reopen_macro", macro)
@@ -318,7 +334,6 @@ step(function()
         fail("reopen_project", string.format("macro=%.3f ready=%.3f", macro,
                                              ready))
     end
-    render("reopened")
     sleep_ms(700)
 end)
 
@@ -336,7 +351,7 @@ step(function()
     render("reopened_after_edit")
     sleep_ms(700)
     pass("reopened_ignores_edit", "rendered reopened_after_edit.wav")
-    copy_file(WORKDIR .. "\\good_backup.py", SCRIPT)
+    copy_file(WORKDIR .. SEP .. "good_backup.py", SCRIPT)
 end)
 
 -- Malformed source on a fresh instance that follows the file.
@@ -358,7 +373,13 @@ step(function()
         return "abort"
     end
     bind(track, fx)
+    add_note(S.track, 1.0, 2.0, 60, 100)
     sleep_ms(4000)
+end)
+
+step(function()
+    render("malformed", 3.0)
+    sleep_ms(700)
 end)
 
 step(function()
@@ -376,13 +397,10 @@ step(function()
         fail("malformed_script", string.format("error=%d ready=%.3f", code,
                                                ready))
     end
-    add_note(S.track, 1.0, 2.0, 60, 100)
-    render("malformed")
-    sleep_ms(700)
 end)
 
 step(function()
-    if not copy_file(WORKDIR .. "\\good_backup.py", SCRIPT) then
+    if not copy_file(WORKDIR .. SEP .. "good_backup.py", SCRIPT) then
         fail("recover_setup", "unable to restore script")
         return
     end
@@ -412,6 +430,11 @@ step(function()
     end
     info("extra_instances", #S.extra)
     sleep_ms(8000)
+end)
+
+step(function()
+    render("extra_status", 0.5)
+    sleep_ms(700)
 end)
 
 step(function()
