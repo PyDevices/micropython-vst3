@@ -24,39 +24,43 @@ done
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 soundtrack_dir=$(cd "$script_dir/../../soundtrack" && pwd)
-# $USER is the WSL username, which is not necessarily the Windows one, so
-# ask Windows rather than assuming they match.
-win_user=$(powershell.exe -NoProfile -Command '[Environment]::UserName' 2>/dev/null | tr -d '\r\n')
-[[ -n "$win_user" ]] || { echo "error: could not determine the Windows username" >&2; exit 1; }
-win_home="/mnt/c/Users/$win_user"
-reaper_exe=${REAPER_EXE:-$win_home/REAPER/reaper.exe}
-reaper_resource=${REAPER_RESOURCE:-$win_home/AppData/Roaming/REAPER}
-bundle=${MPVST_VST3_DIR:-$win_home/AppData/Local/Programs/Common/VST3}/MicroPythonVST3.vst3
-win_temp="$win_home/AppData/Local/Temp"
+# Windows folder locations are queried, never assembled from a username:
+# a profile need not live under C:\Users, and Roaming AppData is often
+# redirected. REAPER_EXE / REAPER_RESOURCE / MPVST_VST3_DIR override.
+source "$script_dir/../../scripts/lib/windows-paths.sh"
+mpvst_load_windows_paths || exit 1
+reaper_exe=${REAPER_EXE:-$WIN_USERPROFILE/REAPER/reaper.exe}
+reaper_resource=${REAPER_RESOURCE:-$WIN_APPDATA/REAPER}
+bundle=${MPVST_VST3_DIR:-$WIN_LOCALAPPDATA/Programs/Common/VST3}/MicroPythonVST3.vst3
 heap_bytes=${MPVST_HEAP_BYTES:-33554432}
 
 test -e "$reaper_exe" || { echo "error: REAPER not found at $reaper_exe" >&2; exit 1; }
 test -x "$reaper_exe" || chmod +x "$reaper_exe"
 test -d "$bundle" || { echo "error: MicroPythonVST3.vst3 not installed at $bundle" >&2; exit 1; }
 
-read -r title render_seconds n_tracks n_envs <<< "$(python3 - <<PYEOF
+read -r title render_seconds n_tracks n_instances n_envs <<< "$(python3 - <<PYEOF
 import sys
 sys.path.insert(0, "$script_dir")
 from piece import load_piece
 C, _ = load_piece("$piece")
-envs = sum(1 for t in C.TRACKS for e in t["macro_env"].values() if e)
-print(C.TITLE, "%.1f" % C.RENDER_SECONDS, len(C.TRACKS), envs)
+units = [unit for track in C.TRACKS
+         for unit in (track,) + tuple(track.get("effects", ())) ]
+envs = sum(1 for unit in units
+           for env in unit.get("macro_env", {}).values() if env)
+print(C.TITLE, "%.1f" % C.RENDER_SECONDS, len(C.TRACKS), len(units), envs)
 PYEOF
 )"
 
 stop_reaper() {
+    # Force-killing REAPER orphans its sidecar engine processes, so stop
+    # those explicitly as well.
     powershell.exe -NoProfile -Command \
-        "Get-Process reaper -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue" \
+        "Get-Process reaper,micropython-vst-engine,micropython-vst-native-engine -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue" \
         >/dev/null 2>&1 || true
 }
 
 if [[ "$mode" == play ]]; then
-    project_dir="$win_home/Music/$title"
+    project_dir="$WIN_MUSIC/$title"
     mkdir -p "$project_dir"
     python3 "$script_dir/generate_project.py" --piece "$piece" "$project_dir/$title.RPP"
     project_native=$(wslpath -w "$project_dir/$title.RPP")
@@ -68,7 +72,7 @@ if [[ "$mode" == play ]]; then
     mkdir -p "$reaper_resource/Scripts"
     cp "$script_dir/reaper/autoplay.lua" "$reaper_resource/Scripts/__startup.lua"
 
-    launcher="$win_temp/mpvst_play_$piece.ps1"
+    launcher="$WIN_TEMP/mpvst_play_$piece.ps1"
     cat > "$launcher" <<PS1
 \$env:MPVST_HEAP_BYTES = "$heap_bytes"
 Start-Process -FilePath "$(wslpath -w "$reaper_exe")" -ArgumentList "-ignoreerrors","$project_native"
@@ -97,7 +101,7 @@ fi
 
 # --- headless verification render -------------------------------------------
 
-work_unix="$win_temp/mpvst-$piece"
+work_unix="$WIN_TEMP/mpvst-$piece"
 timeout_seconds=${SCORE_TIMEOUT:-2400}
 
 rm -rf "$work_unix"
@@ -113,7 +117,7 @@ echo "Stopping any running REAPER instance..."
 stop_reaper
 sleep 2
 
-launcher="$win_temp/mpvst_verify_$piece.ps1"
+launcher="$WIN_TEMP/mpvst_verify_$piece.ps1"
 cat > "$launcher" <<PS1
 \$env:MPVST_HEAP_BYTES = "$heap_bytes"
 \$env:MPVST_SCORE_REPORT = "$work_native\\report.txt"
@@ -121,6 +125,7 @@ cat > "$launcher" <<PS1
 \$env:MPVST_SCORE_SECONDS = "$render_seconds"
 \$env:MPVST_SCORE_BOUNCE = "${piece}_bounce"
 \$env:MPVST_SCORE_TRACKS = "$n_tracks"
+\$env:MPVST_SCORE_INSTANCES = "$n_instances"
 \$env:MPVST_SCORE_MIN_ENVS = "$n_envs"
 \$env:MPVST_SCORE_DEADLINE = "$timeout_seconds"
 Start-Process -FilePath "$(wslpath -w "$reaper_exe")" -ArgumentList "-ignoreerrors","$work_native\\$title.RPP"

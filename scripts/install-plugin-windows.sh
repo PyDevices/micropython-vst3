@@ -15,14 +15,11 @@ repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 build=1
 [[ "${1:-}" == "--no-build" ]] && build=0
 
-[[ -d /mnt/c/Users ]] && command -v powershell.exe >/dev/null 2>&1 \
-    || { echo "error: not running under WSL with a reachable Windows host" >&2; exit 1; }
+source "$repo_dir/scripts/lib/windows-paths.sh"
+mpvst_load_windows_paths || exit 1
 
-win_user=$(powershell.exe -NoProfile -Command '[Environment]::UserName' 2>/dev/null | tr -d '\r\n')
-[[ -n "$win_user" ]] || { echo "error: could not determine the Windows username" >&2; exit 1; }
-
-win_build=${MPVST_WIN_BUILD:-/mnt/c/Users/$win_user/AppData/Local/Temp/micropython-vst3-build}
-vst3_dir=${MPVST_VST3_DIR:-/mnt/c/Users/$win_user/AppData/Local/Programs/Common/VST3}
+win_build=${MPVST_WIN_BUILD:-$WIN_TEMP/micropython-vst3-build}
+vst3_dir=${MPVST_VST3_DIR:-$WIN_LOCALAPPDATA/Programs/Common/VST3}
 bundle_src="$win_build/VST3/Release/MicroPythonVST3.vst3"
 cmake_exe="$repo_dir/.deps/cmake-4.4.2-windows-x86_64/bin/cmake.exe"
 
@@ -45,10 +42,13 @@ fi
 
 [[ -d "$bundle_src" ]] || { echo "error: no bundle at $bundle_src" >&2; exit 1; }
 
-# A DAW holds the .vst3 DLL open, so a running REAPER blocks the copy.
+# A DAW holds the .vst3 DLL open, so a running REAPER blocks the copy -
+# and each sidecar holds micropython-vst-engine.exe open, so orphaned
+# engines (left behind when a host is force-killed) block it too.
 powershell.exe -NoProfile -Command \
-    "Get-Process reaper -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue" \
+    "Get-Process reaper,micropython-vst-engine,micropython-vst-native-engine -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue" \
     >/dev/null 2>&1 || true
+sleep 1
 
 mkdir -p "$vst3_dir"
 rm -rf "$vst3_dir/MicroPythonVST3.vst3"

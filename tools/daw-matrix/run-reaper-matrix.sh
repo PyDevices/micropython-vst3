@@ -23,13 +23,12 @@ timeout_seconds=${MATRIX_TIMEOUT:-660}
 # to_native prints a path the way REAPER's own process will see it, which is
 # only a translation on Windows.
 if [[ "$platform" == windows ]]; then
-    # $USER is the WSL username, not necessarily the Windows one.
-    win_user=$(powershell.exe -NoProfile -Command '[Environment]::UserName' 2>/dev/null | tr -d '\r\n')
-    [[ -n "$win_user" ]] || { echo "error: could not determine the Windows username" >&2; exit 1; }
-    win_home="/mnt/c/Users/$win_user"
-    reaper_exe=${REAPER_EXE:-$win_home/REAPER/reaper.exe}
-    reaper_resource=${REAPER_RESOURCE:-$win_home/AppData/Roaming/REAPER}
-    work_unix=${WORK_DIR:-$win_home/AppData/Local/Temp/mpvst-matrix}
+    # Queried, never assembled from a username: see scripts/lib/windows-paths.sh.
+    source "$repo_dir/scripts/lib/windows-paths.sh"
+    mpvst_load_windows_paths || exit 1
+    reaper_exe=${REAPER_EXE:-$WIN_USERPROFILE/REAPER/reaper.exe}
+    reaper_resource=${REAPER_RESOURCE:-$WIN_APPDATA/REAPER}
+    work_unix=${WORK_DIR:-$WIN_TEMP/mpvst-matrix}
     to_native() { wslpath -w "$1"; }
     sep='\'
 else
@@ -77,7 +76,7 @@ cp "$matrix_dir/matrix.lua" "$reaper_resource/Scripts/__startup.lua"
 stop_reaper() {
     if [[ "$platform" == windows ]]; then
         powershell.exe -NoProfile -Command \
-            "Get-Process reaper -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue" \
+            "Get-Process reaper,micropython-vst-engine,micropython-vst-native-engine -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue" \
             >/dev/null 2>&1 || true
     else
         pkill -x reaper >/dev/null 2>&1 || true
@@ -90,7 +89,7 @@ sleep 2
 
 echo "Launching REAPER matrix on $platform (timeout ${timeout_seconds}s)..."
 if [[ "$platform" == windows ]]; then
-    launcher="$win_home/AppData/Local/Temp/mpvst_run_matrix.ps1"
+    launcher="$WIN_TEMP/mpvst_run_matrix.ps1"
     cat > "$launcher" <<PS1
 \$env:MPVST_SCRIPT_PATH = "$work_native${sep}script.py"
 \$env:MPVST_BAD_SCRIPT_PATH = "$work_native${sep}bad_script.py"

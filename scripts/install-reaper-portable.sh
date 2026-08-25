@@ -26,11 +26,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 have_wsl_windows() {
-    [[ -d /mnt/c/Users ]] && command -v powershell.exe >/dev/null 2>&1
-}
-
-windows_username() {
-    powershell.exe -NoProfile -Command '[Environment]::UserName' 2>/dev/null | tr -d '\r\n'
+    command -v powershell.exe >/dev/null 2>&1
 }
 
 install_linux() {
@@ -68,16 +64,11 @@ install_windows() {
         echo "windows: no Windows host reachable from here (not running under WSL), skipping"
         return 0
     fi
-    # REAPER_EXE for the Windows side is a WSL path (/mnt/c/...). $USER is
-    # the WSL Linux username, not the Windows one, so ask Windows directly
-    # rather than guessing or hardcoding one.
-    local win_user
-    win_user=$(windows_username)
-    if [[ -z "$win_user" ]]; then
-        echo "windows: could not determine the Windows username via powershell.exe; set REAPER_EXE explicitly" >&2
-        return 1
-    fi
-    local exe="${REAPER_EXE:-/mnt/c/Users/$win_user/REAPER/reaper.exe}"
+    # REAPER_EXE is a WSL path. The profile location is queried rather than
+    # assembled from a username: see scripts/lib/windows-paths.sh.
+    source "$repo_dir/scripts/lib/windows-paths.sh"
+    mpvst_load_windows_paths || return 1
+    local exe="${REAPER_EXE:-$WIN_USERPROFILE/REAPER/reaper.exe}"
     if [[ -x "$exe" ]]; then
         echo "windows: already installed at $exe"
         return 0

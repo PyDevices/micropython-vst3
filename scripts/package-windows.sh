@@ -2,8 +2,9 @@
 set -euo pipefail
 
 repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-win_user=$(powershell.exe -NoProfile -Command '[Environment]::UserName' 2>/dev/null | tr -d '\r\n')
-build_dir=${1:-/mnt/c/Users/$win_user/AppData/Local/Temp/micropython-vst3-build}
+source "$repo_dir/scripts/lib/windows-paths.sh"
+mpvst_load_windows_paths || exit 1
+build_dir=${1:-$WIN_TEMP/micropython-vst3-build}
 bundle="$build_dir/VST3/Release/MicroPythonVST3.vst3"
 dist_dir="$repo_dir/dist"
 archive="$dist_dir/MicroPythonVST3-0.2.0-windows-x86_64.zip"

@@ -10,9 +10,10 @@ set -euo pipefail
 
 repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 linux_build=${LINUX_BUILD:-"$repo_dir/build-linux"}
-win_user=$(powershell.exe -NoProfile -Command '[Environment]::UserName' 2>/dev/null | tr -d '\r\n')
-windows_build_win=${WINDOWS_BUILD_WIN:-"C:\\Users\\$win_user\\AppData\\Local\\Temp\\micropython-vst3-build"}
-windows_build_unix=${WINDOWS_BUILD_UNIX:-/mnt/c/Users/$win_user/AppData/Local/Temp/micropython-vst3-build}
+source "$repo_dir/scripts/lib/windows-paths.sh"
+mpvst_load_windows_paths || exit 1
+windows_build_unix=${WINDOWS_BUILD_UNIX:-$WIN_TEMP/micropython-vst3-build}
+windows_build_win=${WINDOWS_BUILD_WIN:-$(wslpath -w "$windows_build_unix")}
 work=${WORK_DIR:-$(mktemp -d)}
 
 linux_pcm="$work/reference-linux.pcm"
