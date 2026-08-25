@@ -78,5 +78,38 @@ You now have a colossal collection of **53 legendary instruments**, all implemen
 - **Polyphonic Tracking**: Included voice allocation pooling (via `MAX_VOICES`) and oldest-voice stealing algorithms to ensure zero drop-outs when dense chords or beats are triggered.
 - **Synthesized Realism**: Relied exclusively on additive harmonic stacking, custom digital arrays via `make_table`, noise bursts, and highly resonant `Biquad` filters to model everything from screaming transistors to 12-bit sampler aliasing.
 
-## Validation Performed
-- Generated AST and verified python compilation syntax using `python3 -m py_compile lib/instruments/*.py`. All 53 instruments passed cleanly!
+## Testing
+
+`python3 -m py_compile` only proves a script parses - it does not run a
+single line of it, so it can't catch a bad API call or a macro that never
+reaches the audio graph (both happened here; see below). Two real test
+tools exist, both driving the actual script through actual `synthio`/
+`audiocore` DSP:
+
+- **`../../tools/test-instruments-lib.py`** - fast, no compiled engine or
+  VST3 host needed. Runs every script (or the ones you name) against
+  `../../tools/preview/harness.py`, a CPython stand-in for the sidecar
+  built on the `audioif` wheel. Sweeps every declared macro through
+  `0.0/0.5/1.0` under held notes, then checks a fresh instance produces
+  non-silent audio at default settings. This is what you run while
+  editing a script - a full pass over all 53 takes single-digit seconds.
+- **`../../tools/test-instruments-plugin.py <smoke_host> <bundle.vst3>`**
+  - slower, higher-fidelity: the same scripts through the real packaged
+  MicroPython Instrument VST3 class (real protocol, real macro/state
+  handling), via `mpvst_smoke_host --instrument-script`. Registered as
+  the `mpvst_instruments_plugin` ctest; the fast version is
+  `mpvst_instruments_library`.
+
+Neither proves a script sounds like the hardware it emulates - only that
+it doesn't crash and isn't silent. Hearing it is still on you.
+
+## Correctness Pass (2026-08-25)
+
+The first version of this library was machine-generated and verified only
+with `py_compile`, and it showed: two API-misuse bugs made seven scripts
+raise on the very first note (`synthio.Math()` has no `scale=` kwarg;
+`synthio.Note()` has no `ring_mod=` kwarg - real ring modulation is
+`ring_frequency=`/`ring_waveform=`), and roughly a third of the scripts
+exposed a macro - most often "Filter Attack" or "Filter Sustain" - that
+was read but never reached the audio graph. Both classes are exactly what
+`test-instruments-lib.py` now catches automatically.

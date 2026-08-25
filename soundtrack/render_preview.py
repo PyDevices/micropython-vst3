@@ -17,7 +17,7 @@ from pathlib import Path
 
 SOUNDTRACK = Path(__file__).resolve().parent
 sys.path.insert(0, str(SOUNDTRACK))
-sys.path.insert(0, str(SOUNDTRACK / "preview"))
+sys.path.insert(0, str(SOUNDTRACK.parent / "tools" / "preview"))
 
 import numpy as np  # noqa: E402
 

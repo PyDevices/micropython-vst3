@@ -73,7 +73,24 @@ if(TARGET mpvst-stage-micropython-engine)
             $<TARGET_FILE:mpvst_smoke_host>
             $<TARGET_FILE_DIR:MicroPythonVST3>/../..)
         set_tests_properties(mpvst_effects_library PROPERTIES TIMEOUT 600)
+
+        # Every lib/instruments/*.py script, through the real VST3 plug-in
+        # class and protocol.
+        add_test(NAME mpvst_instruments_plugin COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tools/test-instruments-plugin.py
+            $<TARGET_FILE:mpvst_smoke_host>
+            $<TARGET_FILE_DIR:MicroPythonVST3>/../..)
+        set_tests_properties(mpvst_instruments_plugin PROPERTIES TIMEOUT 900)
     endif()
+endif()
+
+# The same instrument scripts against the audioif CPython wheel directly
+# (no compiled engine needed) -- fast enough to run on every configure.
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_FOUND)
+    add_test(NAME mpvst_instruments_library COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_SOURCE_DIR}/tools/test-instruments-lib.py)
+    set_tests_properties(mpvst_instruments_library PROPERTIES TIMEOUT 300)
 endif()
 
 add_test(NAME mpvst_lifecycle_smoke COMMAND mpvst_smoke_host

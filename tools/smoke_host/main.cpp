@@ -990,6 +990,174 @@ bool effectScriptProbe(const PluginFactory& factory,
     return true;
 }
 
+// Loads an arbitrary instrument script (e.g. one of lib/instruments/*.py)
+// into the real MicroPython Instrument class and sweeps every one of its 16
+// macros through 0.0/0.5/1.0 while pressing and releasing notes across a
+// wide pitch range. Reports whether the sidecar ever raised (kEngineError
+// going non-zero -- exactly how the ring_mod=/scale= API-misuse crashes
+// surfaced) and whether the script produced any audible output at all.
+bool instrumentScriptProbe(const PluginFactory& factory,
+                           const ClassInfo& classInfo, FUnknown* host,
+                           const std::string& scriptPath)
+{
+    setScriptPath(scriptPath);
+    auto component = createComponent(factory, classInfo, host);
+    auto processor = getProcessor(component);
+    if (!component || !processor)
+    {
+        setScriptPath({});
+        return false;
+    }
+
+    SpeakerArrangement stereo = SpeakerArr::kStereo;
+    ProcessSetup setup {};
+    setup.processMode = kOffline;
+    setup.symbolicSampleSize = kSample32;
+    setup.maxSamplesPerBlock = 256;
+    setup.sampleRate = 48000.0;
+    if (!ok(processor->setBusArrangements(nullptr, 0, &stereo, 1)) ||
+        !ok(component->activateBus(kAudio, kOutput, 0, true)) ||
+        !ok(component->activateBus(kEvent, kInput, 0, true)) ||
+        !ok(processor->setupProcessing(setup)) ||
+        !ok(component->setActive(true)) ||
+        !ok(processor->setProcessing(true)))
+    {
+        setScriptPath({});
+        return false;
+    }
+
+    std::array<float, 256> left {};
+    std::array<float, 256> right {};
+    Sample32* channels[] = {left.data(), right.data()};
+    AudioBusBuffers output {};
+    output.numChannels = 2;
+    output.channelBuffers32 = channels;
+    ProcessContext context {};
+    context.state = ProcessContext::kPlaying | ProcessContext::kTempoValid;
+    context.sampleRate = 48000.0;
+    context.tempo = 120.0;
+    ProcessData data {};
+    data.processMode = kOffline;
+    data.symbolicSampleSize = kSample32;
+    data.numSamples = static_cast<int32>(left.size());
+    data.numOutputs = 1;
+    data.outputs = &output;
+    data.processContext = &context;
+
+    EventList events;
+    ParameterChanges macroChange {1};
+    ParameterChanges outputChanges {4};
+    data.outputParameterChanges = &outputChanges;
+
+    double peak = 0.0;
+    int engineErrorCode = 0;
+    bool sawReady = false;
+    const int16 pitches[] = {24, 36, 48, 60, 67, 72, 84, 96};
+    const float macroSettings[] = {0.0F, 0.5F, 1.0F};
+
+    const auto pumpBlocks = [&](int count) {
+        for (int i = 0; i < count && engineErrorCode == 0; ++i)
+        {
+            if (!ok(processor->process(data)))
+            {
+                engineErrorCode = -1;
+                return;
+            }
+            data.inputEvents = nullptr;
+            data.inputParameterChanges = nullptr;
+            for (int32 queueIndex = 0;
+                 queueIndex < outputChanges.getParameterCount(); ++queueIndex)
+            {
+                auto* queue = outputChanges.getParameterData(queueIndex);
+                if (queue == nullptr || queue->getPointCount() == 0)
+                    continue;
+                int32 sampleOffset = 0;
+                ParamValue value = 0.0;
+                if (queue->getPoint(queue->getPointCount() - 1, sampleOffset,
+                                     value) != kResultTrue)
+                    continue;
+                if (queue->getParameterId() == 2U && value >= 1.0)
+                    sawReady = true;
+                if (queue->getParameterId() == 3U)
+                {
+                    const auto code =
+                        static_cast<int>(value * 255.0 + 0.5);
+                    if (code != 0)
+                        engineErrorCode = code;
+                }
+            }
+            outputChanges.clearQueue();
+            for (auto sample : left)
+                peak = std::max(peak, static_cast<double>(std::abs(sample)));
+            for (auto sample : right)
+                peak = std::max(peak, static_cast<double>(std::abs(sample)));
+            context.projectTimeSamples += data.numSamples;
+        }
+    };
+
+    for (std::size_t settingIndex = 0;
+         settingIndex < 3 && engineErrorCode == 0; ++settingIndex)
+    {
+        for (std::size_t macroIdx = 0;
+             macroIdx < 16 && engineErrorCode == 0; ++macroIdx)
+        {
+            const ParamID id = 100U + static_cast<ParamID>(macroIdx);
+            int32 queueIndex = 0;
+            int32 pointIndex = 0;
+            auto* queue = macroChange.addParameterData(id, queueIndex);
+            if (queue == nullptr ||
+                queue->addPoint(0, macroSettings[settingIndex], pointIndex) !=
+                    kResultTrue)
+            {
+                engineErrorCode = -1;
+                break;
+            }
+            data.inputParameterChanges = &macroChange;
+
+            const auto pitch = pitches[macroIdx % 8];
+            events.clear();
+            Event noteOn {};
+            noteOn.busIndex = 0;
+            noteOn.sampleOffset = 0;
+            noteOn.type = Event::kNoteOnEvent;
+            noteOn.noteOn.channel = 0;
+            noteOn.noteOn.pitch = pitch;
+            noteOn.noteOn.velocity = 0.8F;
+            noteOn.noteOn.noteId = pitch;
+            (void)events.addEvent(noteOn);
+            data.inputEvents = &events;
+
+            pumpBlocks(16);
+            macroChange.clearQueue();
+
+            events.clear();
+            Event noteOff {};
+            noteOff.busIndex = 0;
+            noteOff.sampleOffset = 0;
+            noteOff.type = Event::kNoteOffEvent;
+            noteOff.noteOff.channel = 0;
+            noteOff.noteOff.pitch = pitch;
+            noteOff.noteOff.velocity = 0.0F;
+            noteOff.noteOff.noteId = pitch;
+            (void)events.addEvent(noteOff);
+            data.inputEvents = &events;
+            pumpBlocks(12);
+        }
+    }
+
+    const bool stopped = ok(processor->setProcessing(false)) &&
+                         ok(component->setActive(false));
+    processor = nullptr;
+    const bool terminated = ok(component->terminate());
+    component = nullptr;
+    setScriptPath({});
+
+    std::cout << "INSTRUMENT_PROBE ready=" << (sawReady ? 1 : 0)
+              << " error=" << engineErrorCode << " peak=" << peak << '\n';
+    return stopped && terminated && sawReady && engineErrorCode == 0 &&
+          peak > 0.0005;
+}
+
 bool transportDiscontinuityGatesVoices(const PluginFactory& factory,
                                        const ClassInfo& classInfo,
                                        FUnknown* host)
@@ -1352,20 +1520,23 @@ int main(int argc, char** argv)
     const std::string modeArgument = argc >= 4 ? argv[3] : "";
     const bool renderMode = mode == "--render-reference";
     const bool scriptProbe = mode == "--effect-script";
+    const bool instrumentProbe = mode == "--instrument-script";
     if (argc < 2 || argc > 4 ||
-        ((renderMode || scriptProbe) && modeArgument.empty()) ||
-        (!renderMode && !scriptProbe && argc > 3) ||
+        ((renderMode || scriptProbe || instrumentProbe) && modeArgument.empty()) ||
+        (!renderMode && !scriptProbe && !instrumentProbe && argc > 3) ||
         (!mode.empty() && mode != "--expect-micropython" &&
          mode != "--expect-embedded-state" && mode != "--expect-reload-fade" &&
          mode != "--expect-macro-resync" && mode != "--expect-transport" &&
          mode != "--expect-effect-audio" &&
-         mode != "--effect-script" && !renderMode))
+         mode != "--effect-script" && mode != "--instrument-script" &&
+         !renderMode))
     {
         std::cerr << "usage: mpvst_smoke_host <plugin.vst3> "
                      "[--expect-micropython|--expect-embedded-state|"
                      "--expect-reload-fade|--expect-macro-resync|"
                      "--expect-transport|--expect-effect-audio|"
                      "--effect-script <script.py>|"
+                     "--instrument-script <script.py>|"
                      "--render-reference <out.pcm>]\n";
         return 2;
     }
@@ -1376,7 +1547,7 @@ int main(int argc, char** argv)
     const bool effectMode = mode == "--expect-effect-audio";
     const bool expectMicroPython = mode == "--expect-micropython" ||
                                    embeddedState || renderMode ||
-                                   effectMode || scriptProbe;
+                                   effectMode || scriptProbe || instrumentProbe;
 
     std::string error;
     const auto modulePath = std::filesystem::weakly_canonical(argv[1]).string();
@@ -1446,6 +1617,15 @@ int main(int argc, char** argv)
             }
             std::cout << "HOOK effect.script OK\n";
         }
+        else if (instrumentProbe)
+        {
+            if (!instrumentScriptProbe(factory, classInfo, host, modeArgument))
+            {
+                std::cerr << "HOOK instrument.script FAIL\n";
+                return 5;
+            }
+            std::cout << "HOOK instrument.script OK\n";
+        }
         else if (transportMode)
         {
             if (!transportDiscontinuityGatesVoices(factory, classInfo, host))
@@ -1489,7 +1669,8 @@ int main(int argc, char** argv)
         }
         const bool defaultSuite = !embeddedState && !reloadFade &&
                                   !macroResync && !transportMode &&
-                                  !renderMode && !effectMode && !scriptProbe;
+                                  !renderMode && !effectMode && !scriptProbe &&
+                                  !instrumentProbe;
         if (defaultSuite)
             std::cout << "HOOK state.roundtrip OK: legacy_v1=1 malformed=4\n";
 

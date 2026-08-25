@@ -17,9 +17,14 @@ soundtrack/
   render_preview.py     --piece NAME -> offline CPython render + analysis
   verify_song.py        --piece NAME <bounce> <preview> -> section compare
   launch.sh             [--piece NAME] [--render]
-  preview/              vstaudio shim so scripts run under CPython
   reaper/               headless verify + self-deleting autoplay scripts
 ```
+
+`render_preview.py` runs on top of `../tools/preview/` - a shared CPython
+stand-in for the sidecar (see [`../tools/preview/harness.py`](../tools/preview/harness.py))
+that lets any instrument or effect script run without the compiled engine
+or a VST3 host. It's shared with `lib/instruments/` testing, not specific
+to the soundtrack.
 
 ## Why instruments are per piece, not shared
 

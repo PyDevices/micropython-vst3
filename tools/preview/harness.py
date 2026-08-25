@@ -1,18 +1,27 @@
-"""Offline renderer for the soundtrack instrument scripts.
+"""Offline runner for MicroPython VST3 instrument/effect scripts.
 
-Runs an instrument file against the vstaudio shim on top of the audioif
-CPython wheel - the same DSP code the MicroPython sidecar runs - and pulls
-PCM block by block while delivering the composition's events. The REAPER
-render through the real plug-in stays authoritative; this exists so the
-piece can be iterated and measured quickly.
+Runs a script against the vstaudio shim on top of the audioif CPython
+wheel - the same DSP code (synthio, audiocore, ...) the real MicroPython
+sidecar runs - and pulls PCM block by block. No compiled engine and no
+VST3 host involved, so a script loads and runs in milliseconds instead of
+the seconds a full plug-in load takes; that's what makes it useful for
+iterating across many scripts (see tools/test-instruments-lib.py) or one
+script at a time while developing it.
+
+This is a fast correctness check, not a substitute for the real plug-in:
+it shares the DSP but not the VST3 processor, the shared-memory protocol,
+or macro/state handling. The REAPER render through the real plug-in stays
+authoritative for anything the script's audio behavior alone doesn't
+cover.
 """
 
 import struct
 import sys
 from pathlib import Path
 
-SCORE_DIR = Path(__file__).resolve().parent.parent
-AUDIOIF_DIR = SCORE_DIR.parent.parent / "audioif"
+TOOLS_DIR = Path(__file__).resolve().parent.parent
+REPO_DIR = TOOLS_DIR.parent
+AUDIOIF_DIR = REPO_DIR.parent / "audioif"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(AUDIOIF_DIR))
