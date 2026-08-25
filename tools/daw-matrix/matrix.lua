@@ -18,10 +18,14 @@ files are checked separately by verify_renders.py. A global deadline guarantees
 REAPER exits even when a step fails.
 ]]
 
+-- run-reaper-matrix.sh always sets these; the fallbacks just keep the
+-- script runnable by hand, so they derive the temp dir rather than
+-- hardcoding one user's path.
+local TEMP = os.getenv("TEMP") or os.getenv("TMP") or "/tmp"
 local REPORT = os.getenv("MPVST_MATRIX_REPORT")
-    or "C:\\Users\\bradb\\AppData\\Local\\Temp\\mpvst_matrix_report.txt"
+    or (TEMP .. "\\mpvst_matrix_report.txt")
 local WORKDIR = os.getenv("MPVST_MATRIX_WORKDIR")
-    or "C:\\Users\\bradb\\AppData\\Local\\Temp\\mpvst-matrix"
+    or (TEMP .. "\\mpvst-matrix")
 local SCRIPT = os.getenv("MPVST_SCRIPT_PATH") or ""
 local BAD_SCRIPT = os.getenv("MPVST_BAD_SCRIPT_PATH") or ""
 local EDITED_SCRIPT = os.getenv("MPVST_EDITED_SCRIPT_PATH") or ""

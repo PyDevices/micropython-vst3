@@ -23,9 +23,13 @@ timeout_seconds=${MATRIX_TIMEOUT:-660}
 # to_native prints a path the way REAPER's own process will see it, which is
 # only a translation on Windows.
 if [[ "$platform" == windows ]]; then
-    reaper_exe=${REAPER_EXE:-/mnt/c/Users/bradb/REAPER/reaper.exe}
-    reaper_resource=${REAPER_RESOURCE:-/mnt/c/Users/bradb/AppData/Roaming/REAPER}
-    work_unix=${WORK_DIR:-/mnt/c/Users/bradb/AppData/Local/Temp/mpvst-matrix}
+    # $USER is the WSL username, not necessarily the Windows one.
+    win_user=$(powershell.exe -NoProfile -Command '[Environment]::UserName' 2>/dev/null | tr -d '\r\n')
+    [[ -n "$win_user" ]] || { echo "error: could not determine the Windows username" >&2; exit 1; }
+    win_home="/mnt/c/Users/$win_user"
+    reaper_exe=${REAPER_EXE:-$win_home/REAPER/reaper.exe}
+    reaper_resource=${REAPER_RESOURCE:-$win_home/AppData/Roaming/REAPER}
+    work_unix=${WORK_DIR:-$win_home/AppData/Local/Temp/mpvst-matrix}
     to_native() { wslpath -w "$1"; }
     sep='\'
 else
@@ -86,7 +90,7 @@ sleep 2
 
 echo "Launching REAPER matrix on $platform (timeout ${timeout_seconds}s)..."
 if [[ "$platform" == windows ]]; then
-    launcher="/mnt/c/Users/bradb/AppData/Local/Temp/mpvst_run_matrix.ps1"
+    launcher="$win_home/AppData/Local/Temp/mpvst_run_matrix.ps1"
     cat > "$launcher" <<PS1
 \$env:MPVST_SCRIPT_PATH = "$work_native${sep}script.py"
 \$env:MPVST_BAD_SCRIPT_PATH = "$work_native${sep}bad_script.py"

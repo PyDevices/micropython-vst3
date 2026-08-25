@@ -19,6 +19,9 @@ for that). Every script here is idempotent: safe to rerun.
   the core build/test, only for that DAW-driven tooling. The Windows
   install needs one UAC prompt approved by a human - it isn't fully
   unattended.
+- **`install-plugin-windows.sh [--no-build]`** - builds the Windows VST3
+  bundle and installs it into the per-user VST3 directory a DAW scans,
+  which is where `tools/piece/` and `tools/daw-matrix/` expect it.
 - **`package-linux.sh`** / **`package-windows.sh`** - assemble the
   release archive for each platform's VST3 bundle.
 - **`check-cross-platform-parity.sh`** - renders a fixed score through

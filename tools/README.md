@@ -24,10 +24,17 @@ that generates, renders, and verifies a piece lives here instead:
   and simultaneous-track counts.
 - **`piece/verify_song.py --piece NAME <bounce.wav> <preview.wav>`** -
   compares a REAPER bounce against the offline preview section by section.
+- **`piece/render-all.sh [--piece NAME]`** - the whole pipeline for every
+  piece with no interaction: offline preview, REAPER bounce through the
+  real plug-in, section-by-section comparison of the two, and a 16-bit
+  playback copy. Needs the plug-in installed first
+  (`../scripts/install-plugin-windows.sh`).
 - **`piece/launch.sh [--play|--render] [--piece NAME]`** - drives REAPER
   headlessly to either play a piece through the speakers or bounce and
-  verify it; see the script's header for the Windows path layout it
-  assumes.
+  verify it. `--play` leaves REAPER open and playing.
+- **`piece/make_playable.py <in.wav>... | --piece NAME`** - writes a
+  16-bit copy of a bounce; REAPER renders at 24-bit, which plenty of
+  casual players won't open.
 - **`piece/reaper/`** - the self-deleting autoplay/verify Lua scripts
   `launch.sh` installs as REAPER's startup script.
 

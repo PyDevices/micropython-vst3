@@ -13,6 +13,8 @@ status read is preceded by a short render (see the DAW matrix notes).
 local REPORT = os.getenv("MPVST_SCORE_REPORT")
 local WORKDIR = os.getenv("MPVST_SCORE_WORKDIR")
 local RENDER_SECONDS = tonumber(os.getenv("MPVST_SCORE_SECONDS") or "238.1")
+-- Base name for the rendered file; launch.sh looks for <name>.wav.
+local BOUNCE = os.getenv("MPVST_SCORE_BOUNCE") or "perihelion_bounce"
 local TRACKS = tonumber(os.getenv("MPVST_SCORE_TRACKS") or "16")
 local MIN_ENVS = tonumber(os.getenv("MPVST_SCORE_MIN_ENVS") or "19")
 local DEADLINE = os.time() + tonumber(os.getenv("MPVST_SCORE_DEADLINE")
@@ -149,9 +151,9 @@ end)
 
 step(function()
     emit("INFO render_begin " .. os.date("%H:%M:%S"))
-    render("perihelion_bounce", RENDER_SECONDS)
+    render(BOUNCE, RENDER_SECONDS)
     emit("INFO render_end " .. os.date("%H:%M:%S"))
-    emit("PASS rendered perihelion_bounce.wav")
+    emit("PASS rendered " .. BOUNCE .. ".wav")
 end)
 
 local function driver()
