@@ -1,5 +1,9 @@
 """Resolve a piece name to its composition module and instrument directory.
 
+soundtrack/ is example content, not infrastructure: treat it as
+disposable (it might be renamed, restructured, or deleted independently
+of this tooling). This is the one place that hardcodes its location.
+
 Each piece lives in its own subdirectory of soundtrack/:
 
   soundtrack/<Piece>/composition.py
@@ -24,7 +28,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
-SOUNDTRACK_DIR = Path(__file__).resolve().parent
+SOUNDTRACK_DIR = Path(__file__).resolve().parent.parent.parent / "soundtrack"
 
 
 def available_pieces():

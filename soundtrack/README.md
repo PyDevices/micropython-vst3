@@ -5,11 +5,11 @@ third-party plug-ins, no samples. Every sound is a MicroPython script
 running synthio and the audioif effects inside its own sidecar process.
 
 Each piece is a subdirectory holding its own `composition.py` and
-`instruments/`. See `piece.py`, `generate_project.py`, `render_preview.py`,
-`verify_song.py`, and `launch.sh` for the tooling that generates,
-renders, and verifies a piece - documented in
-[`../tools/README.md`](../tools/README.md), since none of it is specific
-to the soundtrack.
+`instruments/`; nothing else here is checked in - this directory is
+example content, not infrastructure, and might be renamed, restructured,
+or replaced independently of the tooling that generates, renders, and
+verifies a piece. That tooling lives in `../tools/piece/` instead, documented in
+[`../tools/README.md`](../tools/README.md).
 
 ## Why instruments are per piece, not shared
 
@@ -51,9 +51,9 @@ closing tape stop.
 ## Listening
 
 ```bash
-./launch.sh                      # play Perihelion through the speakers
-./launch.sh --piece automata     # play Automata
-./launch.sh --render --piece automata   # headless verified bounce
+../tools/piece/launch.sh                      # play Perihelion through the speakers
+../tools/piece/launch.sh --piece automata     # play Automata
+../tools/piece/launch.sh --render --piece automata   # headless verified bounce
 ```
 
 Play mode regenerates the project under `C:\Users\bradb\Music\<Title>\`,
