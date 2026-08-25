@@ -39,7 +39,25 @@ SAW = make_table([(n, 1.0 / n) for n in range(1, 40)])
 SQUARE = make_table([(n, 1.0 / n) for n in range(1, 40, 2)])
 NOISE = noise_table()
 NOISE_HZ = SR / 8192.0
-FALL = array.array("h", (32767, 0))
+def env_shape_table(attack, decay, sustain, length=96):
+    # One-shot LFO waveform: ramps 0 -> peak over the attack fraction, then
+    # peak -> sustain over the decay fraction, holding sustain afterwards
+    # (once=True freezes at the table's last sample).
+    total = attack + decay
+    n_a = 1 if total <= 0.0 else int(length * attack / total)
+    if n_a < 1:
+        n_a = 1
+    if n_a > length - 1:
+        n_a = length - 1
+    sustain_level = int(32767 * sustain)
+    out = array.array("h", bytearray(length * 2))
+    for i in range(n_a):
+        out[i] = int(32767 * (i + 1) / n_a)
+    span = length - n_a
+    for i in range(span):
+        out[n_a + i] = int(32767 + (sustain_level - 32767) * (i + 1) / span)
+    return out
+
 
 synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
 vstaudio.output(synth)
@@ -111,27 +129,19 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         
         env = synthio.Envelope(attack_time=amp_a, decay_time=amp_d, release_time=amp_r, attack_level=1.0, sustain_level=amp_s)
         
-        # Filter envelope shape
-        f_env_table = array.array("h", (0, 32767, int(32767 * filt_s), int(32767 * filt_s)))
-        # Wait, synthio.LFO can only do simple loops or once. For a full ADSR filter env, it's tricky.
-        # Let's just use FALL for decay part of filter.
-        f_sweep = synthio.LFO(waveform=FALL, once=True, rate=1.0/filt_d, scale=env_amount, interpolate=True)
+        env_tbl = env_shape_table(filt_a, filt_d, filt_s)
+        f_sweep = synthio.LFO(waveform=env_tbl, once=True, rate=1.0/max(0.01, filt_a + filt_d), scale=env_amount, interpolate=True)
         
         cutoff = synthio.Math(synthio.MathOperation.SUM, cutoff_base, f_sweep, 0.0)
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=resonance)
-        
-        # To simulate 24dB, cascade two biquads
-        lp2 = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=resonance * 0.7)
-        
+
         amp = volume * value0 * overdrive
-        
+
         o1 = synthio.Note(hz, waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.4, bend=bend)
         o2 = synthio.Note(hz * osc2_detune, waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.4, bend=bend)
         o3 = synthio.Note(hz * osc3_detune, waveform=SQUARE, envelope=env, filter=lp, amplitude=amp * 0.3, bend=bend)
         n = synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env, filter=lp, amplitude=amp * noise_mix * 0.3)
-        
-        # We can't cascade filters directly in synthio Note, so we just use one lp.
-        
+
         serial += 1
         voices[k] = ((o1, o2, o3, n), serial)
         synth.press(o1)

@@ -24,6 +24,18 @@ def make_table(parts, length=2048, gain=32000):
         out[i] = int(vals[i] * scale)
     return out
 
+def ring_depth_table(depth, length=256):
+    # A ring-modulation waveform biased between unity (depth=0, no audible
+    # effect) and a full bipolar sine (depth=1, true ring modulation). At
+    # ring_frequency rates below ~20Hz this reads as tremolo.
+    out = array.array("h", bytearray(length * 2))
+    for i in range(length):
+        s = math.sin(TAU * i / length)
+        v = (1.0 - depth) + depth * s
+        out[i] = int(32767 * v)
+    return out
+
+
 WAVE_HAMMER = make_table(((1, 1.0), (3, 0.8), (5, 0.5), (9, 0.2)))
 WAVE_STRING = make_table([(n, 1.0 / n) for n in range(1, 40)])
 SINE = make_table(((1, 1.0),))
@@ -83,18 +95,18 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         cutoff = 500.0 + (brilliance * 8000.0)
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=0.7)
         
-        trem_lfo = synthio.LFO(waveform=SINE, rate=trem_rate, scale=trem_depth) if trem_depth > 0.01 else None
+        trem_wave = ring_depth_table(trem_depth) if trem_depth > 0.01 else None
         
         notes = []
         # Chorus simulation
         if chorus > 0.01:
-            n1 = synthio.Note(hz, waveform=WAVE_STRING, envelope=env, filter=lp, amplitude=amp * string_lvl * 0.4, ring_mod=trem_lfo, panning=-0.3)
-            n2 = synthio.Note(hz * (1.0 + chorus * 0.005), waveform=WAVE_STRING, envelope=env, filter=lp, amplitude=amp * string_lvl * 0.4, ring_mod=trem_lfo, panning=0.3)
+            n1 = synthio.Note(hz, waveform=WAVE_STRING, envelope=env, filter=lp, amplitude=amp * string_lvl * 0.4, ring_frequency=trem_rate, ring_waveform=trem_wave, panning=-0.3)
+            n2 = synthio.Note(hz * (1.0 + chorus * 0.005), waveform=WAVE_STRING, envelope=env, filter=lp, amplitude=amp * string_lvl * 0.4, ring_frequency=trem_rate, ring_waveform=trem_wave, panning=0.3)
             notes.extend([n1, n2])
         else:
-            notes.append(synthio.Note(hz, waveform=WAVE_STRING, envelope=env, filter=lp, amplitude=amp * string_lvl * 0.8, ring_mod=trem_lfo))
+            notes.append(synthio.Note(hz, waveform=WAVE_STRING, envelope=env, filter=lp, amplitude=amp * string_lvl * 0.8, ring_frequency=trem_rate, ring_waveform=trem_wave))
             
-        notes.append(synthio.Note(hz, waveform=WAVE_HAMMER, envelope=hammer_env, filter=lp, amplitude=amp * hammer_lvl * 0.6, ring_mod=trem_lfo))
+        notes.append(synthio.Note(hz, waveform=WAVE_HAMMER, envelope=hammer_env, filter=lp, amplitude=amp * hammer_lvl * 0.6, ring_frequency=trem_rate, ring_waveform=trem_wave))
         
         serial += 1
         voices[k] = (tuple(notes), serial)

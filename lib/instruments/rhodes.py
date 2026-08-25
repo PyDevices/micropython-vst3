@@ -24,6 +24,18 @@ def make_table(parts, length=2048, gain=32000):
         out[i] = int(vals[i] * scale)
     return out
 
+def ring_depth_table(depth, length=256):
+    # A ring-modulation waveform biased between unity (depth=0, no audible
+    # effect) and a full bipolar sine (depth=1, true ring modulation). At
+    # ring_frequency rates below ~20Hz this reads as tremolo.
+    out = array.array("h", bytearray(length * 2))
+    for i in range(length):
+        s = math.sin(TAU * i / length)
+        v = (1.0 - depth) + depth * s
+        out[i] = int(32767 * v)
+    return out
+
+
 # Body (warm fundamental)
 WAVE_BODY = make_table(((1, 1.0), (3, 0.1)))
 # Tine (metallic bell attack)
@@ -107,17 +119,16 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, tone, Q=0.7)
         
-        # Stereo Tremolo (Auto-Pan)
-        # Left channel LFO phase offset vs Right channel by setting opposite amplitudes or panning
-        # Synthio doesn't have pan LFO directly, so we apply tremolo via ring_mod or we just do mono tremolo on amplitude
-        trem_lfo = synthio.LFO(waveform=SINE, rate=trem_rate, scale=trem_depth) if trem_depth > 0.01 else None
+        # True stereo tremolo needs per-channel phase; ring-mod tremolo on
+        # a shared modulator plus opposite panning gets an auto-pan feel.
+        trem_wave = ring_depth_table(trem_depth) if trem_depth > 0.01 else None
         
         # Note panning
         pan_l = -0.3
         pan_r = 0.3
         
-        o_body = synthio.Note(hz, waveform=WAVE_BODY, envelope=env, filter=lp, amplitude=amp * body_lvl * 0.5, ring_mod=trem_lfo, panning=pan_l)
-        o_tine = synthio.Note(hz, waveform=WAVE_TINE, envelope=tine_env, filter=lp, amplitude=amp * tine_lvl * 0.4, ring_mod=trem_lfo, panning=pan_r)
+        o_body = synthio.Note(hz, waveform=WAVE_BODY, envelope=env, filter=lp, amplitude=amp * body_lvl * 0.5, ring_frequency=trem_rate, ring_waveform=trem_wave, panning=pan_l)
+        o_tine = synthio.Note(hz, waveform=WAVE_TINE, envelope=tine_env, filter=lp, amplitude=amp * tine_lvl * 0.4, ring_frequency=trem_rate, ring_waveform=trem_wave, panning=pan_r)
         
         serial += 1
         voices[k] = ((o_body, o_tine), serial)

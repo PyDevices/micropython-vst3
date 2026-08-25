@@ -114,8 +114,8 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         # Actually it's easier to say: output = end + (start - end) * FALL
         morph_lfo = synthio.LFO(waveform=FALL, once=True, rate=1.0 / max(0.01, morph_speed * 4.0), scale=1.0, interpolate=True)
         
-        c1 = synthio.Math(synthio.MathOperation.SUM, f1_end, synthio.Math(synthio.MathOperation.SUM, morph_lfo, 0.0, scale=diff1), 0.0)
-        c2 = synthio.Math(synthio.MathOperation.SUM, f2_end, synthio.Math(synthio.MathOperation.SUM, morph_lfo, 0.0, scale=diff2), 0.0)
+        c1 = synthio.Math(synthio.MathOperation.SUM, f1_end, synthio.Math(synthio.MathOperation.SCALE_OFFSET, morph_lfo, diff1, 0.0), 0.0)
+        c2 = synthio.Math(synthio.MathOperation.SUM, f2_end, synthio.Math(synthio.MathOperation.SCALE_OFFSET, morph_lfo, diff2, 0.0), 0.0)
         
         bp1 = synthio.Biquad(synthio.FilterMode.BAND_PASS, c1, Q=6.0)
         bp2 = synthio.Biquad(synthio.FilterMode.BAND_PASS, c2, Q=6.0)

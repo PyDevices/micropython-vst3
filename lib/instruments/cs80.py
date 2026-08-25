@@ -24,9 +24,39 @@ def make_table(parts, length=2048, gain=32000):
         out[i] = int(vals[i] * scale)
     return out
 
+def ring_depth_table(depth, length=256):
+    # A ring-modulation waveform biased between unity (depth=0, no audible
+    # effect) and a full bipolar sine (depth=1, true ring modulation). At
+    # ring_frequency rates below ~20Hz this reads as tremolo.
+    out = array.array("h", bytearray(length * 2))
+    for i in range(length):
+        s = math.sin(TAU * i / length)
+        v = (1.0 - depth) + depth * s
+        out[i] = int(32767 * v)
+    return out
+
+
 SAW = make_table([(n, 1.0 / n) for n in range(1, 40)])
 SINE = make_table(((1, 1.0),))
-FALL = array.array("h", (32767, 0))
+def env_shape_table(attack, decay, sustain, length=96):
+    # One-shot LFO waveform: ramps 0 -> peak over the attack fraction, then
+    # peak -> sustain over the decay fraction, holding sustain afterwards
+    # (once=True freezes at the table's last sample).
+    total = attack + decay
+    n_a = 1 if total <= 0.0 else int(length * attack / total)
+    if n_a < 1:
+        n_a = 1
+    if n_a > length - 1:
+        n_a = length - 1
+    sustain_level = int(32767 * sustain)
+    out = array.array("h", bytearray(length * 2))
+    for i in range(n_a):
+        out[i] = int(32767 * (i + 1) / n_a)
+    span = length - n_a
+    for i in range(span):
+        out[n_a + i] = int(32767 + (sustain_level - 32767) * (i + 1) / span)
+    return out
+
 
 synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
 vstaudio.output(synth)
@@ -88,38 +118,38 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         
         env = synthio.Envelope(attack_time=amp_a, decay_time=amp_d, release_time=amp_r, attack_level=1.0, sustain_level=amp_s)
         
-        f_sweep = synthio.LFO(waveform=FALL, once=True, rate=1.0/filt_d, scale=2000.0 * brilliance, interpolate=True)
+        env_tbl = env_shape_table(filt_a, filt_d, filt_s)
+        f_sweep = synthio.LFO(waveform=env_tbl, once=True, rate=1.0/max(0.01, filt_a + filt_d), scale=2000.0 * brilliance, interpolate=True)
         cutoff = synthio.Math(synthio.MathOperation.SUM, cutoff_base, f_sweep, 0.0)
         
         lp1 = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=resonance)
-        
-        # Ring mod emulation: LFO on amplitude (tremolo) at fast rate
-        rm_lfo = synthio.LFO(waveform=SINE, rate=ring_speed * 10.0, scale=ring_depth)
-        
-        # Layer I
-        o1 = synthio.Note(hz, waveform=SAW, envelope=env, filter=lp1, amplitude=amp * (1.0 - layer2_mix) * 0.8, ring_mod=rm_lfo if ring_depth > 0.01 else None)
-        # Layer II (slightly detuned)
-        o2 = synthio.Note(hz * 1.005, waveform=SAW, envelope=env, filter=lp1, amplitude=amp * layer2_mix * 0.8, ring_mod=rm_lfo if ring_depth > 0.01 else None)
-        
+        hp2 = synthio.Biquad(synthio.FilterMode.HIGH_PASS, hpf_cutoff, Q=0.7)
+
+        ring_wave = ring_depth_table(ring_depth) if ring_depth > 0.01 else None
+
+        # Layer I: low-pass voice
+        amp1 = amp * (1.0 - layer2_mix) * 0.8
+        o1 = synthio.Note(hz, waveform=SAW, envelope=env, filter=lp1, amplitude=amp1, ring_frequency=ring_speed * 10.0, ring_waveform=ring_wave)
+        # Layer II: slightly detuned, high-pass voice (the CS-80's second layer ran through its own filter)
+        amp2 = amp * layer2_mix * 0.8
+        o2 = synthio.Note(hz * 1.005, waveform=SAW, envelope=env, filter=hp2, amplitude=amp2, ring_frequency=ring_speed * 10.0, ring_waveform=ring_wave)
+
         serial += 1
-        voices[k] = ((o1, o2), serial)
+        voices[k] = ((o1, o2), serial, (amp1, amp2))
         synth.press(o1)
         synth.press(o2)
-            
+
     elif event_type in (vstaudio.EVENT_NOTE_OFF, vstaudio.EVENT_NOTE_ON):
         release_voice(k)
-        
+
     elif event_type == vstaudio.EVENT_POLY_PRESSURE:
         voice = voices.get(k)
         if voice is not None:
-            # Emulate Poly AT by modifying amplitude or something (in synthio we'd need to map a Math node to amplitude, but amplitude is static or env-controlled. We can't easily change it post-creation without recreating Note, which is bad).
-            # But we can change the amplitude property dynamically!
-            for note in voice[0]:
-                pass # Note amplitude is changeable? 
-                # According to synthio docs, amplitude of a Note object can be changed or mapped to a Math node. 
-                # Let's just pass for now if we can't easily. Actually `Note.amplitude` is a property.
-                # Just ignore for now since it might be complex or unsupported to change dynamically without a Math node.
-                
+            notes, _, base_amps = voice
+            boost = 1.0 + poly_at_depth * value0
+            for note, base_amp in zip(notes, base_amps):
+                note.amplitude = base_amp * boost
+
     elif event_type == vstaudio.EVENT_PARAMETER:
         if data0 == 0: volume = value0
         elif data0 == 1: cutoff_base = 50.0 * (100.0 ** value0)

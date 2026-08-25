@@ -24,6 +24,18 @@ def make_table(parts, length=2048, gain=32000):
         out[i] = int(vals[i] * scale)
     return out
 
+def ring_depth_table(depth, length=256):
+    # A ring-modulation waveform biased between unity (depth=0, no audible
+    # effect) and a full bipolar sine (depth=1, true ring modulation). At
+    # ring_frequency rates below ~20Hz this reads as tremolo.
+    out = array.array("h", bytearray(length * 2))
+    for i in range(length):
+        s = math.sin(TAU * i / length)
+        v = (1.0 - depth) + depth * s
+        out[i] = int(32767 * v)
+    return out
+
+
 # Reeds are grittier than tines
 WAVE_REED = make_table(((1, 1.0), (2, 0.4), (3, 0.2), (4, 0.1), (5, 0.05)))
 WAVE_BITE = make_table(((1, 1.0), (3, 0.8), (5, 0.6), (7, 0.4), (9, 0.2)))
@@ -87,10 +99,10 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         cutoff = 1000.0 + (value0 * bark * 5000.0)
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=0.8)
         
-        trem_lfo = synthio.LFO(waveform=SINE, rate=trem_rate, scale=trem_depth) if trem_depth > 0.01 else None
+        trem_wave = ring_depth_table(trem_depth) if trem_depth > 0.01 else None
         
-        o_reed = synthio.Note(hz, waveform=WAVE_REED, envelope=env, filter=lp, amplitude=amp * 0.6, ring_mod=trem_lfo)
-        o_bite = synthio.Note(hz, waveform=WAVE_BITE, envelope=bite_env, filter=lp, amplitude=amp * bite * 0.4, ring_mod=trem_lfo)
+        o_reed = synthio.Note(hz, waveform=WAVE_REED, envelope=env, filter=lp, amplitude=amp * 0.6, ring_frequency=trem_rate, ring_waveform=trem_wave)
+        o_bite = synthio.Note(hz, waveform=WAVE_BITE, envelope=bite_env, filter=lp, amplitude=amp * bite * 0.4, ring_frequency=trem_rate, ring_waveform=trem_wave)
         
         serial += 1
         voices[k] = ((o_reed, o_bite), serial)

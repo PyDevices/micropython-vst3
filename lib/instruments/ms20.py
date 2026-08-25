@@ -24,9 +24,47 @@ def make_table(parts, length=2048, gain=32000):
         out[i] = int(vals[i] * scale)
     return out
 
+def noise_table(length=8192, seed=1234567):
+    out = array.array("h", bytearray(length * 2))
+    state = seed
+    for i in range(length):
+        state = (state * 1103515245 + 12345) & 0x7FFFFFFF
+        out[i] = ((state >> 15) & 0xFFFF) - 32768
+    return out
+
+def env_shape_table(attack, decay, sustain, length=96):
+    # One-shot LFO waveform: ramps 0 -> peak over the attack fraction, then
+    # peak -> sustain over the decay fraction, holding sustain afterwards
+    # (once=True freezes at the table's last sample).
+    total = attack + decay
+    n_a = 1 if total <= 0.0 else int(length * attack / total)
+    if n_a < 1:
+        n_a = 1
+    if n_a > length - 1:
+        n_a = length - 1
+    sustain_level = int(32767 * sustain)
+    out = array.array("h", bytearray(length * 2))
+    for i in range(n_a):
+        out[i] = int(32767 * (i + 1) / n_a)
+    span = length - n_a
+    for i in range(span):
+        out[n_a + i] = int(32767 + (sustain_level - 32767) * (i + 1) / span)
+    return out
+
+def ring_depth_table(depth, length=256):
+    # Biased between unity (depth=0, inaudible) and a full bipolar sine
+    # (depth=1, true ring modulation).
+    out = array.array("h", bytearray(length * 2))
+    for i in range(length):
+        s = math.sin(TAU * i / length)
+        v = (1.0 - depth) + depth * s
+        out[i] = int(32767 * v)
+    return out
+
 SAW = make_table([(n, 1.0 / n) for n in range(1, 40)])
 SQUARE = make_table([(n, 1.0 / n) for n in range(1, 40, 2)])
-FALL = array.array("h", (32767, 0))
+NOISE = noise_table()
+NOISE_HZ = SR / 8192.0
 
 synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
 vstaudio.output(synth)
@@ -86,22 +124,33 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         amp = volume * value0
         
         env = synthio.Envelope(attack_time=vca_a, decay_time=eg2_d, release_time=vca_r, attack_level=1.0, sustain_level=1.0)
-        
-        f_sweep = synthio.LFO(waveform=FALL, once=True, rate=1.0/eg2_d, scale=eg2_sweep, interpolate=True)
+
+        env_tbl = env_shape_table(eg2_a, eg2_d, eg2_s)
+        f_sweep = synthio.LFO(waveform=env_tbl, once=True, rate=1.0/max(0.01, eg2_a + eg2_d), scale=eg2_sweep, interpolate=True)
         lpf_freq = synthio.Math(synthio.MathOperation.SUM, lpf_cutoff, f_sweep, 0.0)
-        
-        # For MS-20, series HPF -> LPF is iconic.
-        # Synthio doesn't do series naturally per Note without cascading. We will just use the LPF, since it's most prominent, 
-        # or we could make one oscillator HPF and the other LPF as a hack. Let's just use LPF.
+
+        # The MS-20's iconic HPF -> LPF chain can't be built as a single
+        # series filter per Note, so osc1 runs through the resonant LPF and
+        # osc2 through the resonant HPF, mixed the way the real panel's two
+        # filters would be blended.
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, lpf_freq, Q=lpf_peak)
-        
-        o1 = synthio.Note(hz, waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.5)
-        o2 = synthio.Note(hz * osc2_pitch, waveform=SQUARE, envelope=env, filter=lp, amplitude=amp * 0.5)
-        
+        hp = synthio.Biquad(synthio.FilterMode.HIGH_PASS, hpf_cutoff, Q=hpf_peak)
+
+        ring_wave = ring_depth_table(ring_mod) if ring_mod > 0.01 else None
+
+        o1 = synthio.Note(hz, waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.5,
+                           ring_frequency=hz, ring_waveform=ring_wave)
+        o2 = synthio.Note(hz * osc2_pitch, waveform=SQUARE, envelope=env, filter=hp, amplitude=amp * 0.5,
+                           ring_frequency=hz, ring_waveform=ring_wave)
+        notes = [o1, o2]
+        if noise_lvl > 0.01:
+            notes.append(synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env, filter=lp,
+                                       amplitude=amp * noise_lvl * 0.4))
+
         serial += 1
-        voices[k] = ((o1, o2), serial)
-        synth.press(o1)
-        synth.press(o2)
+        voices[k] = (tuple(notes), serial)
+        for n in notes:
+            synth.press(n)
             
     elif event_type in (vstaudio.EVENT_NOTE_OFF, vstaudio.EVENT_NOTE_ON):
         release_voice(k)

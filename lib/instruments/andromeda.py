@@ -26,7 +26,25 @@ def make_table(parts, length=2048, gain=32000):
 
 SAW = make_table([(n, 1.0 / n) for n in range(1, 40)])
 SQUARE = make_table([(n, 1.0 / n) for n in range(1, 40, 2)])
-FALL = array.array("h", (32767, 0))
+def env_shape_table(attack, decay, sustain, length=96):
+    # One-shot LFO waveform: ramps 0 -> peak over the attack fraction, then
+    # peak -> sustain over the decay fraction, holding sustain afterwards
+    # (once=True freezes at the table's last sample).
+    total = attack + decay
+    n_a = 1 if total <= 0.0 else int(length * attack / total)
+    if n_a < 1:
+        n_a = 1
+    if n_a > length - 1:
+        n_a = length - 1
+    sustain_level = int(32767 * sustain)
+    out = array.array("h", bytearray(length * 2))
+    for i in range(n_a):
+        out[i] = int(32767 * (i + 1) / n_a)
+    span = length - n_a
+    for i in range(span):
+        out[n_a + i] = int(32767 + (sustain_level - 32767) * (i + 1) / span)
+    return out
+
 
 synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
 vstaudio.output(synth)
@@ -87,10 +105,11 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         
         env = synthio.Envelope(attack_time=a_a, decay_time=a_d, release_time=a_r, attack_level=1.0, sustain_level=a_s)
         
-        f_sweep = synthio.LFO(waveform=FALL, once=True, rate=1.0/f_d, scale=1.0, interpolate=True)
+        env_tbl = env_shape_table(f_a, f_d, 0.0)
+        f_sweep = synthio.LFO(waveform=env_tbl, once=True, rate=1.0/max(0.01, f_a + f_d), scale=1.0, interpolate=True)
         
-        c1 = synthio.Math(synthio.MathOperation.SUM, f1_cutoff, synthio.Math(synthio.MathOperation.SUM, f_sweep, 0.0, scale=env_to_f1), 0.0)
-        c2 = synthio.Math(synthio.MathOperation.SUM, f2_cutoff, synthio.Math(synthio.MathOperation.SUM, f_sweep, 0.0, scale=env_to_f2), 0.0)
+        c1 = synthio.Math(synthio.MathOperation.SUM, f1_cutoff, synthio.Math(synthio.MathOperation.SCALE_OFFSET, f_sweep, env_to_f1, 0.0), 0.0)
+        c2 = synthio.Math(synthio.MathOperation.SUM, f2_cutoff, synthio.Math(synthio.MathOperation.SCALE_OFFSET, f_sweep, env_to_f2, 0.0), 0.0)
         
         # Filter 1: Moog-style Low Pass
         lp1 = synthio.Biquad(synthio.FilterMode.LOW_PASS, c1, Q=res1)

@@ -81,7 +81,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         if data0 == 36: # Kick
             env = synthio.Envelope(attack_time=0.001, decay_time=0.4 + kick_ring * 0.4, release_time=0.1, attack_level=1.0, sustain_level=0.0)
             bend = synthio.LFO(waveform=FALL, once=True, rate=1.0/0.1, scale=0.5)
-            hz = 40.0 + kick_p * 60.0
+            hz = (40.0 + kick_p * 60.0) * master_tune
             lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, 400.0 + crunch * 1000.0, Q=1.0)
             notes.append(synthio.Note(hz, waveform=SINE, envelope=env, filter=lp, amplitude=amp * 0.8, bend=bend))
             if crunch > 0.1:
@@ -90,7 +90,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         elif data0 == 38: # Snare
             env_body = synthio.Envelope(attack_time=0.001, decay_time=0.15, release_time=0.1, attack_level=1.0, sustain_level=0.0)
             env_snap = synthio.Envelope(attack_time=0.001, decay_time=0.2 + snare_snap * 0.2, release_time=0.1, attack_level=1.0, sustain_level=0.0)
-            hz = 150.0 + snare_p * 100.0
+            hz = (150.0 + snare_p * 100.0) * master_tune
             lp_body = synthio.Biquad(synthio.FilterMode.LOW_PASS, 1000.0 + crunch * 2000.0, Q=1.0)
             hp_snap = synthio.Biquad(synthio.FilterMode.HIGH_PASS, 1500.0, Q=0.5)
             notes.append(synthio.Note(hz, waveform=PULSE, envelope=env_body, filter=lp_body, amplitude=amp * 0.6))

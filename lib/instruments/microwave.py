@@ -27,7 +27,25 @@ def make_table(parts, length=2048, gain=32000):
 # Aggressive digital waves
 WAVE_1 = make_table(((1, 1.0), (4, 0.8), (8, 0.4)))
 WAVE_2 = make_table(((1, 1.0), (3, 0.7), (5, 0.9), (7, 0.2)))
-FALL = array.array("h", (32767, 0))
+def env_shape_table(attack, decay, sustain, length=96):
+    # One-shot LFO waveform: ramps 0 -> peak over the attack fraction, then
+    # peak -> sustain over the decay fraction, holding sustain afterwards
+    # (once=True freezes at the table's last sample).
+    total = attack + decay
+    n_a = 1 if total <= 0.0 else int(length * attack / total)
+    if n_a < 1:
+        n_a = 1
+    if n_a > length - 1:
+        n_a = length - 1
+    sustain_level = int(32767 * sustain)
+    out = array.array("h", bytearray(length * 2))
+    for i in range(n_a):
+        out[i] = int(32767 * (i + 1) / n_a)
+    span = length - n_a
+    for i in range(span):
+        out[n_a + i] = int(32767 + (sustain_level - 32767) * (i + 1) / span)
+    return out
+
 
 synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
 vstaudio.output(synth)
@@ -85,26 +103,28 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         env = synthio.Envelope(attack_time=amp_a, decay_time=amp_d, release_time=amp_r, attack_level=1.0, sustain_level=amp_s)
         
         # Envelope modulates cutoff
-        f_sweep = synthio.LFO(waveform=FALL, once=True, rate=1.0/amp_d, scale=env_flt, interpolate=True)
+        env_tbl = env_shape_table(f_a, amp_d, 0.0)
+        f_sweep = synthio.LFO(waveform=env_tbl, once=True, rate=1.0/max(0.01, f_a + amp_d), scale=env_flt, interpolate=True)
         cutoff = synthio.Math(synthio.MathOperation.SUM, cutoff_val, f_sweep, 0.0)
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=res)
         
-        # Env to Wavetable simply changes mix over time
-        mix_start = wt_pos
+        # Env to Wavetable: the mix position sweeps from wt_pos to mix_end
+        # over the amp decay time, driven by a live Math crossfade (Note
+        # amplitude accepts a BlockInput, so this actually animates).
         mix_end = min(1.0, max(0.0, wt_pos + env_wt))
-        
-        wt_lfo = synthio.LFO(waveform=FALL, once=True, rate=1.0/amp_d, scale=mix_start - mix_end, interpolate=True)
-        
-        # We can't dynamically mix amplitudes using LFOs natively without multiple math nodes, 
-        # but we can use static mixing for now as an approximation. 
-        # For simplicity, we just use the starting pos
-        
-        notes = []
-        if 1.0 - wt_pos > 0.01:
-            notes.append(synthio.Note(hz, waveform=WAVE_1, envelope=env, filter=lp, amplitude=amp * (1.0 - wt_pos) * 0.7))
-        if wt_pos > 0.01:
-            notes.append(synthio.Note(hz, waveform=WAVE_2, envelope=env, filter=lp, amplitude=amp * wt_pos * 0.7))
-            
+
+        ramp = synthio.LFO(waveform=array.array("h", (0, 32767)), once=True,
+                            rate=1.0 / max(0.01, amp_d), interpolate=True)
+        mix_pos = synthio.Math(synthio.MathOperation.LERP, wt_pos, mix_end, ramp)
+        inv_pos = synthio.Math(synthio.MathOperation.ADD_SUB, 1.0, 0.0, mix_pos)
+        amp1 = synthio.Math(synthio.MathOperation.PRODUCT, inv_pos, amp * 0.7, 1.0)
+        amp2 = synthio.Math(synthio.MathOperation.PRODUCT, mix_pos, amp * 0.7, 1.0)
+
+        notes = [
+            synthio.Note(hz, waveform=WAVE_1, envelope=env, filter=lp, amplitude=amp1),
+            synthio.Note(hz, waveform=WAVE_2, envelope=env, filter=lp, amplitude=amp2),
+        ]
+
         serial += 1
         voices[k] = (tuple(notes), serial)
         for n in notes:

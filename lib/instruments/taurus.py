@@ -33,7 +33,7 @@ vstaudio.output(synth)
 # Macros
 volume = 0.8
 osc_b_detune = 0.01
-glide = 0.0 # synthio doesn't natively support portamento well between notes unless using a single note and changing frequency, we'll ignore for simple poly
+glide = 0.0
 cutoff_val = 1000.0
 res = 1.0
 env_mod = 2000.0
@@ -46,6 +46,7 @@ master_tune = 1.0
 
 voices = {}
 serial = 0
+last_pitch = None
 MAX_VOICES = 1 # Monophonic bass pedals
 
 def key_of(channel, note_id, pitch):
@@ -68,30 +69,38 @@ def steal_oldest():
 def handle_event(event_type, channel, note_id, data0, value0, value1, sample_position):
     global volume, osc_b_detune, glide, cutoff_val, res, env_mod, beat_freq
     global amp_a, amp_d, amp_s, amp_r, master_tune
-    global serial
+    global serial, last_pitch
     
     k = key_of(channel, note_id, data0)
     
     if event_type == vstaudio.EVENT_NOTE_ON and value0 > 0.0:
         if len(voices) >= MAX_VOICES:
             steal_oldest()
-            
+
         hz = synthio.midi_to_hz(data0 + value1) * master_tune
         amp = volume * value0
-        
+
+        bend = None
+        if last_pitch is not None and glide > 0.001:
+            last_hz = synthio.midi_to_hz(last_pitch) * master_tune
+            ratio = last_hz / hz
+            glide_table = array.array("h", (int(32767 * (ratio - 1.0)), 0))
+            bend = synthio.LFO(waveform=glide_table, once=True, rate=1.0 / glide, interpolate=True)
+        last_pitch = data0
+
         env = synthio.Envelope(attack_time=amp_a, decay_time=amp_d, release_time=amp_r, attack_level=1.0, sustain_level=amp_s)
-        
+
         f_sweep = synthio.LFO(waveform=FALL, once=True, rate=1.0/amp_d, scale=env_mod, interpolate=True)
         cutoff = synthio.Math(synthio.MathOperation.SUM, cutoff_val, f_sweep, 0.0)
-        
+
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=res)
-        
+
         # Taurus is famous for two oscillators detuned to create a beat frequency
         actual_detune = osc_b_detune + (beat_freq * 0.05)
-        
-        n1 = synthio.Note(hz, waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.5)
-        n2 = synthio.Note(hz * (1.0 + actual_detune), waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.5)
-        
+
+        n1 = synthio.Note(hz, waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.5, bend=bend)
+        n2 = synthio.Note(hz * (1.0 + actual_detune), waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.5, bend=bend)
+
         serial += 1
         voices[k] = ((n1, n2), serial)
         synth.press(n1)

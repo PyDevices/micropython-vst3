@@ -31,7 +31,16 @@ EP_HARM_1 = make_table(((1, 1.0), (3, 0.4), (5, 0.2)))
 EP_HARM_2 = make_table(((2, 1.0), (4, 0.5), (6, 0.25), (14, 0.1)))
 EP_HARM_3 = make_table(((8, 1.0), (9, 0.8), (11, 0.5), (15, 0.3))) # Metallic tines
 
-FALL = array.array("h", (32767, 0))
+def ring_depth_table(depth, length=256):
+    # Biased between unity (depth=0, inaudible) and a full bipolar sine
+    # (depth=1, true ring modulation); at tremolo-range rates this reads
+    # as tremolo.
+    out = array.array("h", bytearray(length * 2))
+    for i in range(length):
+        s = math.sin(TAU * i / length)
+        v = (1.0 - depth) + depth * s
+        out[i] = int(32767 * v)
+    return out
 
 synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
 vstaudio.output(synth)
@@ -98,11 +107,19 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         env3 = synthio.Envelope(attack_time=att_t, decay_time=e3_d, release_time=rel_t, attack_level=1.0, sustain_level=0.0)
         
         vib_lfo = synthio.LFO(waveform=SINE, rate=vib_rate, scale=vib_depth * 0.02) if vib_depth > 0.01 else None
-        
-        o1 = synthio.Note(hz, waveform=EP_HARM_1, envelope=env1, amplitude=amp * 0.6 * (1.0 - trem_depth), bend=vib_lfo)
-        o2 = synthio.Note(hz * mod_ratio, waveform=EP_HARM_2, envelope=env2, amplitude=amp * 0.3 * fm_amount * (1.0 - trem_depth), bend=vib_lfo)
-        o3 = synthio.Note(hz, waveform=EP_HARM_3, envelope=env3, amplitude=amp * 0.4 * brightness * (1.0 - trem_depth), bend=vib_lfo)
-        
+        trem_wave = ring_depth_table(trem_depth) if trem_depth > 0.01 else None
+
+        # Feedback: the DX7's self-modulating operator adds upper-harmonic
+        # bite, so scale it into the metallic tine layer.
+        # Alg mix: crossfades between the mellow (o1) and bright/metallic
+        # (o3) layers, approximating an algorithm change.
+        o1 = synthio.Note(hz, waveform=EP_HARM_1, envelope=env1, amplitude=amp * 0.6 * (1.0 - alg_mix),
+                           ring_frequency=trem_rate, ring_waveform=trem_wave, bend=vib_lfo)
+        o2 = synthio.Note(hz * mod_ratio, waveform=EP_HARM_2, envelope=env2, amplitude=amp * 0.3 * fm_amount,
+                           ring_frequency=trem_rate, ring_waveform=trem_wave, bend=vib_lfo)
+        o3 = synthio.Note(hz, waveform=EP_HARM_3, envelope=env3, amplitude=amp * 0.4 * brightness * (alg_mix + feedback),
+                           ring_frequency=trem_rate, ring_waveform=trem_wave, bend=vib_lfo)
+
         notes = [o1, o2, o3]
         serial += 1
         voices[k] = (tuple(notes), serial)

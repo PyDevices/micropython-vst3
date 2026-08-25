@@ -26,7 +26,25 @@ def make_table(parts, length=2048, gain=32000):
 
 SAW = make_table([(n, 1.0 / n) for n in range(1, 40)])
 SQUARE = make_table([(n, 1.0 / n) for n in range(1, 40, 2)])
-FALL = array.array("h", (32767, 0))
+def env_shape_table(attack, decay, sustain, length=96):
+    # One-shot LFO waveform: ramps 0 -> peak over the attack fraction, then
+    # peak -> sustain over the decay fraction, holding sustain afterwards
+    # (once=True freezes at the table's last sample).
+    total = attack + decay
+    n_a = 1 if total <= 0.0 else int(length * attack / total)
+    if n_a < 1:
+        n_a = 1
+    if n_a > length - 1:
+        n_a = length - 1
+    sustain_level = int(32767 * sustain)
+    out = array.array("h", bytearray(length * 2))
+    for i in range(n_a):
+        out[i] = int(32767 * (i + 1) / n_a)
+    span = length - n_a
+    for i in range(span):
+        out[n_a + i] = int(32767 + (sustain_level - 32767) * (i + 1) / span)
+    return out
+
 
 synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
 vstaudio.output(synth)
@@ -89,7 +107,8 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         
         env = synthio.Envelope(attack_time=amp_a, decay_time=amp_d, release_time=release_time, attack_level=1.0, sustain_level=amp_s)
         
-        f_sweep = synthio.LFO(waveform=FALL, once=True, rate=1.0/filt_d, scale=env_amount, interpolate=True)
+        env_tbl = env_shape_table(filt_a, filt_d, filt_s)
+        f_sweep = synthio.LFO(waveform=env_tbl, once=True, rate=1.0/max(0.01, filt_a + filt_d), scale=env_amount, interpolate=True)
         
         lfo = synthio.LFO(rate=lfo_rate, scale=lfo_depth * 1000.0)
         

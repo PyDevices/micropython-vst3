@@ -24,6 +24,18 @@ def make_table(parts, length=2048, gain=32000):
         out[i] = int(vals[i] * scale)
     return out
 
+def ring_depth_table(depth, length=256):
+    # A ring-modulation waveform biased between unity (depth=0, no audible
+    # effect) and a full bipolar sine (depth=1, true ring modulation). At
+    # ring_frequency rates below ~20Hz this reads as tremolo.
+    out = array.array("h", bytearray(length * 2))
+    for i in range(length):
+        s = math.sin(TAU * i / length)
+        v = (1.0 - depth) + depth * s
+        out[i] = int(32767 * v)
+    return out
+
+
 def noise_table(length=8192, seed=1234):
     out = array.array("h", bytearray(length * 2))
     state = seed
@@ -92,18 +104,18 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         click_env = synthio.Envelope(attack_time=0.001, decay_time=0.02, release_time=0.02, attack_level=1.0, sustain_level=0.0)
         
         leslie_rate = 6.0 if leslie_fast > 0.5 else 1.0
-        leslie_trem = synthio.LFO(waveform=SINE, rate=leslie_rate, scale=0.3)
+        leslie_wave = ring_depth_table(0.3)
         leslie_vib = synthio.LFO(waveform=SINE, rate=leslie_rate * 1.1, scale=0.02)
         
         notes = []
         # Drawbars: 16' (sub), 8' (fund), 4' (2nd harm), 2' (4th harm)
-        if db16 > 0.01: notes.append(synthio.Note(hz * 0.5, waveform=SINE, envelope=env, amplitude=amp * db16 * 0.25, ring_mod=leslie_trem, bend=leslie_vib, panning=-0.2))
-        if db8 > 0.01: notes.append(synthio.Note(hz, waveform=SINE, envelope=env, amplitude=amp * db8 * 0.25, ring_mod=leslie_trem, bend=leslie_vib, panning=0.2))
-        if db4 > 0.01: notes.append(synthio.Note(hz * 2.0, waveform=SINE, envelope=env, amplitude=amp * db4 * 0.2, ring_mod=leslie_trem, bend=leslie_vib, panning=-0.1))
-        if db2 > 0.01: notes.append(synthio.Note(hz * 4.0, waveform=SINE, envelope=env, amplitude=amp * db2 * 0.15, ring_mod=leslie_trem, bend=leslie_vib, panning=0.1))
+        if db16 > 0.01: notes.append(synthio.Note(hz * 0.5, waveform=SINE, envelope=env, amplitude=amp * db16 * 0.25, ring_frequency=leslie_rate, ring_waveform=leslie_wave, bend=leslie_vib, panning=-0.2))
+        if db8 > 0.01: notes.append(synthio.Note(hz, waveform=SINE, envelope=env, amplitude=amp * db8 * 0.25, ring_frequency=leslie_rate, ring_waveform=leslie_wave, bend=leslie_vib, panning=0.2))
+        if db4 > 0.01: notes.append(synthio.Note(hz * 2.0, waveform=SINE, envelope=env, amplitude=amp * db4 * 0.2, ring_frequency=leslie_rate, ring_waveform=leslie_wave, bend=leslie_vib, panning=-0.1))
+        if db2 > 0.01: notes.append(synthio.Note(hz * 4.0, waveform=SINE, envelope=env, amplitude=amp * db2 * 0.15, ring_frequency=leslie_rate, ring_waveform=leslie_wave, bend=leslie_vib, panning=0.1))
         
         # 3rd harmonic percussion
-        if perc_lvl > 0.01: notes.append(synthio.Note(hz * 3.0, waveform=SINE, envelope=perc_env, amplitude=amp * perc_lvl * 0.4, ring_mod=leslie_trem, bend=leslie_vib))
+        if perc_lvl > 0.01: notes.append(synthio.Note(hz * 3.0, waveform=SINE, envelope=perc_env, amplitude=amp * perc_lvl * 0.4, ring_frequency=leslie_rate, ring_waveform=leslie_wave, bend=leslie_vib))
         
         # Key click
         if key_click > 0.01:
