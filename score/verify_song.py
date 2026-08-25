@@ -17,11 +17,11 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import composition as C  # noqa: E402
+from piece import load_piece, piece_arg  # noqa: E402
 
-SECTIONS = [("A Adrift", 1, 12), ("B Ignition", 13, 28),
-            ("C Approach", 29, 44), ("D Perihelion", 45, 60),
-            ("E Afterglow", 61, 74)]
+PIECE, ARGV = piece_arg(sys.argv[1:])
+C, _INSTRUMENTS = load_piece(PIECE)
+
 TOLERANCE_DB = 3.5
 
 
@@ -52,7 +52,7 @@ def rms_db(seg):
 
 
 def main():
-    bounce_path, preview_path = sys.argv[1], sys.argv[2]
+    bounce_path, preview_path = ARGV[0], ARGV[1]
     rate_b, bounce = load(bounce_path)
     rate_p, preview = load(preview_path)
     assert rate_b == C.SAMPLE_RATE, "bounce sample rate %d" % rate_b
@@ -69,9 +69,9 @@ def main():
     check("bounce/peak", 0.05 < peak < 1.0, "peak=%.3f" % peak)
 
     print("\n  %-14s %10s %10s %8s" % ("section", "bounce", "preview", "diff"))
-    for name, b0, b1 in SECTIONS:
-        s0 = int(C.beats_to_seconds(C.bar(b0)) * C.SAMPLE_RATE)
-        s1 = int(C.beats_to_seconds(C.bar(b1 + 1)) * C.SAMPLE_RATE)
+    for name, b0, b1 in C.SECTIONS:
+        s0 = int(C.beats_to_seconds(b0) * C.SAMPLE_RATE)
+        s1 = int(C.beats_to_seconds(b1) * C.SAMPLE_RATE)
         db_b = rms_db(bounce[s0:min(s1, len(bounce))])
         db_p = rms_db(preview[s0:min(s1, len(preview))])
         diff = db_b - db_p
@@ -80,13 +80,15 @@ def main():
 
     # loudest section must be the climax
     levels = {}
-    for name, b0, b1 in SECTIONS:
-        s0 = int(C.beats_to_seconds(C.bar(b0)) * C.SAMPLE_RATE)
-        s1 = int(C.beats_to_seconds(C.bar(b1 + 1)) * C.SAMPLE_RATE)
+    for name, b0, b1 in C.SECTIONS:
+        s0 = int(C.beats_to_seconds(b0) * C.SAMPLE_RATE)
+        s1 = int(C.beats_to_seconds(b1) * C.SAMPLE_RATE)
         levels[name] = rms_db(bounce[s0:min(s1, len(bounce))])
     loudest = max(levels, key=levels.get)
-    check("bounce/climax_loudest", loudest == "D Perihelion",
-          "loudest=%s" % loudest)
+    expected = getattr(C, "CLIMAX_SECTION", None)
+    if expected:
+        check("bounce/climax_loudest", loudest == expected,
+              "loudest=%s" % loudest)
 
     # no dead air inside the song
     mono = bounce[:int(C.SONG_SECONDS * C.SAMPLE_RATE)].mean(axis=1)

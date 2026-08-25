@@ -13,6 +13,8 @@ status read is preceded by a short render (see the DAW matrix notes).
 local REPORT = os.getenv("MPVST_SCORE_REPORT")
 local WORKDIR = os.getenv("MPVST_SCORE_WORKDIR")
 local RENDER_SECONDS = tonumber(os.getenv("MPVST_SCORE_SECONDS") or "238.1")
+local TRACKS = tonumber(os.getenv("MPVST_SCORE_TRACKS") or "16")
+local MIN_ENVS = tonumber(os.getenv("MPVST_SCORE_MIN_ENVS") or "19")
 local DEADLINE = os.time() + tonumber(os.getenv("MPVST_SCORE_DEADLINE")
                                       or "2400")
 
@@ -69,8 +71,8 @@ end
 step(function()
     local tracks = reaper.CountTracks(0)
     emit("INFO tracks " .. tracks)
-    if tracks ~= 16 then
-        emit("FAIL track_count expected 16 got " .. tracks)
+    if tracks ~= TRACKS then
+        emit("FAIL track_count expected " .. TRACKS .. " got " .. tracks)
         return "abort"
     end
     local with_fx = 0
@@ -81,11 +83,11 @@ step(function()
         end
     end
     emit("INFO tracks_with_fx " .. with_fx)
-    if with_fx ~= 16 then
-        emit("FAIL fx_count expected 16 got " .. with_fx)
+    if with_fx ~= TRACKS then
+        emit("FAIL fx_count expected " .. TRACKS .. " got " .. with_fx)
         return "abort"
     end
-    emit("PASS project_loaded 16 tracks, 16 instances")
+    emit("PASS project_loaded " .. TRACKS .. " tracks and instances")
     sleep_ms(12000)
 end)
 
@@ -98,7 +100,7 @@ end)
 step(function()
     local ready_count = 0
     local errors = {}
-    for t = 0, 15 do
+    for t = 0, TRACKS - 1 do
         local track = reaper.GetTrack(0, t)
         local ridx = param_index(track, 0, "Engine Ready")
         local eidx = param_index(track, 0, "Engine Error")
@@ -116,8 +118,8 @@ step(function()
         end
     end
     emit("INFO engines_ready " .. ready_count)
-    if ready_count == 16 then
-        emit("PASS engines_ready 16 of 16")
+    if ready_count == TRACKS then
+        emit("PASS engines_ready " .. ready_count .. " of " .. TRACKS)
     else
         emit("FAIL engines_ready " .. table.concat(errors, "; "))
         return "abort"
@@ -127,7 +129,7 @@ end)
 step(function()
     -- macro automation envelopes present where the score declares them
     local envs = 0
-    for t = 0, 15 do
+    for t = 0, TRACKS - 1 do
         local track = reaper.GetTrack(0, t)
         for p = 4, 19 do
             local env = reaper.GetFXEnvelope(track, 0, p, false)
@@ -137,10 +139,11 @@ step(function()
         end
     end
     emit("INFO macro_envelopes " .. envs)
-    if envs >= 19 then
+    if envs >= MIN_ENVS then
         emit("PASS automation " .. envs .. " macro envelopes")
     else
-        emit("FAIL automation expected >=19 envelopes, found " .. envs)
+        emit("FAIL automation expected >=" .. MIN_ENVS ..
+             " envelopes, found " .. envs)
     end
 end)
 

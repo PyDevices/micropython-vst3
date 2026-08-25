@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render Perihelion offline through the audioif CPython wheel.
+"""Render a piece offline through the audioif CPython wheel.
 
 Every track's instrument script runs against the vstaudio shim - the same
 DSP the sidecar uses - while this harness delivers the composition's note
@@ -7,10 +7,9 @@ and macro events and mixes the tracks with the same gains, swells, and pans
 the REAPER project uses. Writes a stereo master WAV plus an analysis report
 (peaks, RMS per section, simultaneous-track counts).
 
-Usage: render_preview.py [out.wav] [--stems DIR]
+Usage: render_preview.py [--piece NAME] [out.wav] [--stems DIR]
 """
 
-import struct
 import sys
 import time
 import wave
@@ -22,11 +21,50 @@ sys.path.insert(0, str(SCORE / "preview"))
 
 import numpy as np  # noqa: E402
 
-import composition as C  # noqa: E402
+from piece import load_piece, piece_arg  # noqa: E402
 from harness import InstrumentRun  # noqa: E402
+import vstaudio as shim  # noqa: E402
+
+PIECE, ARGV = piece_arg(sys.argv[1:])
+C, INSTRUMENTS = load_piece(PIECE)
 
 BLOCK = 256
 SR = C.SAMPLE_RATE
+
+
+def tempo_rows():
+    return [(row[0], row[1]) for row in C.TEMPO_MAP]
+
+
+def beat_at_sample(sample):
+    """Inverse of beats_to_seconds, piecewise exact."""
+    seconds = sample / SR
+    rows = tempo_rows()
+    acc = 0.0
+    for i, (start, bpm) in enumerate(rows):
+        end = rows[i + 1][0] if i + 1 < len(rows) else None
+        span = None if end is None else (end - start) * 60.0 / bpm
+        if span is None or seconds <= acc + span:
+            return start + (seconds - acc) * bpm / 60.0
+        acc += span
+    return C.TOTAL_BEATS
+
+
+def bpm_at_beat(beat):
+    rows = tempo_rows()
+    current = rows[0][1]
+    for start, bpm in rows:
+        if beat >= start:
+            current = bpm
+    return current
+
+
+def timesig_at_beat(beat):
+    num, den = 4, 4
+    for row in C.TEMPO_MAP:
+        if beat >= row[0] and len(row) >= 4:
+            num, den = row[2], row[3]
+    return num, den
 
 
 def build_events(track):
@@ -39,15 +77,13 @@ def build_events(track):
         s0 = int(C.beats_to_seconds(start) * SR)
         s1 = int(C.beats_to_seconds(start + dur) * SR)
         events.append((s0, 1, pitch, vel))
-        events.append((max(s0 + 1, s1), 2, pitch, 0.0))
+        events.append((max(s0 + 1, s1), 0, pitch, 0.0))
     # macro automation, sampled per block while it changes
     for index, env in track["macro_env"].items():
         if not env:
             continue
-        first_beat = env[0][0]
-        last_beat = env[-1][0]
-        s = int(C.beats_to_seconds(first_beat) * SR)
-        s_end = int(C.beats_to_seconds(last_beat) * SR)
+        s = int(C.beats_to_seconds(env[0][0]) * SR)
+        s_end = int(C.beats_to_seconds(env[-1][0]) * SR)
         prev = None
         while s <= s_end:
             beat = beat_at_sample(s)
@@ -60,35 +96,22 @@ def build_events(track):
     return events
 
 
-_BEAT_CACHE = {}
-
-
-def beat_at_sample(sample):
-    """Inverse of beats_to_seconds, piecewise exact."""
-    seconds = sample / SR
-    acc = 0.0
-    for i, (start, bpm) in enumerate(C.TEMPO_MAP):
-        end = C.TEMPO_MAP[i + 1][0] if i + 1 < len(C.TEMPO_MAP) else None
-        span = None if end is None else (end - start) * 60.0 / bpm
-        if span is None or seconds <= acc + span:
-            return start + (seconds - acc) * bpm / 60.0
-        acc += span
-    return C.TOTAL_BEATS
-
-
 def render_track(track, total_frames):
-    run = InstrumentRun(SCORE / "instruments" / track["script"], SR)
+    run = InstrumentRun(INSTRUMENTS / track["script"], SR)
     events = build_events(track)
     data = np.zeros((total_frames, 2), dtype=np.float32)
     cursor = 0
     ei = 0
     while cursor < total_frames:
         frames = min(BLOCK, total_frames - cursor)
+        beat = beat_at_sample(cursor)
+        num, den = timesig_at_beat(beat)
+        shim._transport = (True, cursor / SR, bpm_at_beat(beat), num, den)
         while ei < len(events) and events[ei][0] < cursor + frames:
             _, etype, data0, value0 = events[ei]
             if etype == 1:
                 run.deliver(1, 0, -1, data0, value0, 0.0, cursor)
-            elif etype == 2:
+            elif etype == 0:
                 run.deliver(2, 0, -1, data0, 0.0, 0.0, cursor)
             else:
                 run.deliver(6, 0, -1, data0, value0, 0.0, cursor)
@@ -116,24 +139,26 @@ def apply_mix(track, data, total_frames):
 
 
 def main():
-    out_path = Path(sys.argv[1]) if len(sys.argv) > 1 else SCORE / "build" / "perihelion_preview.wav"
+    out_path = SCORE / "build" / ("%s_preview.wav" % PIECE)
+    argv = list(ARGV)
     stems_dir = None
-    if "--stems" in sys.argv:
-        stems_dir = Path(sys.argv[sys.argv.index("--stems") + 1])
+    if "--stems" in argv:
+        stems_dir = Path(argv[argv.index("--stems") + 1])
+        argv.remove("--stems")
+        argv.remove(str(stems_dir))
         stems_dir.mkdir(parents=True, exist_ok=True)
+    if argv:
+        out_path = Path(argv[0])
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     total_frames = int(C.RENDER_SECONDS * SR)
     master = np.zeros((total_frames, 2), dtype=np.float32)
-    print("Perihelion: %.1f s song, %.1f s render, %d tracks"
-          % (C.SONG_SECONDS, C.RENDER_SECONDS, len(C.TRACKS)))
+    print("%s: %.1f s song, %.1f s render, %d tracks"
+          % (C.TITLE, C.SONG_SECONDS, C.RENDER_SECONDS, len(C.TRACKS)))
 
-    sections = [("A Adrift", 1, 12), ("B Ignition", 13, 28),
-                ("C Approach", 29, 44), ("D Perihelion", 45, 60),
-                ("E Afterglow", 61, 74)]
-    bounds = [(int(C.beats_to_seconds(C.bar(b0)) * SR),
-               int(C.beats_to_seconds(C.bar(b1 + 1)) * SR))
-              for _, b0, b1 in sections]
+    bounds = [(int(C.beats_to_seconds(b0) * SR),
+               int(C.beats_to_seconds(b1) * SR))
+              for _, b0, b1 in C.SECTIONS]
 
     section_rms = {}
     for track in C.TRACKS:
@@ -146,30 +171,30 @@ def main():
             float(np.sqrt((data[s0:s1] ** 2).mean())) for s0, s1 in bounds]
         master += data
         elapsed = time.time() - t0
-        print("  %-13s raw_peak=%.3f mixed_peak=%.3f (%.1fs)"
+        print("  %-14s raw_peak=%.3f mixed_peak=%.3f (%.1fs)"
               % (track["name"], raw_peak, mixed_peak, elapsed))
         if stems_dir is not None:
             write_wav(stems_dir / (track["script"][:-3] + ".wav"), data)
 
     print("\nper-track section RMS (dBFS):")
-    print("  %-13s %8s %8s %8s %8s %8s"
-          % (("track",) + tuple(name.split()[0] for name, _, _ in sections)))
+    print("  %-14s " % "track"
+          + " ".join("%8s" % name.split()[0] for name, _, _ in C.SECTIONS))
     for track in C.TRACKS:
         vals = section_rms[track["name"]]
         cells = " ".join("%8.1f" % (20 * np.log10(max(v, 1e-9)))
                          if v > 1e-6 else "       ." for v in vals)
-        print("  %-13s %s" % (track["name"], cells))
+        print("  %-14s %s" % (track["name"], cells))
 
     master *= 10.0 ** (C.MASTER_GAIN_DB / 20.0)
     peak = float(np.abs(master).max())
     print("\nmaster peak %.3f (%.1f dBFS)" % (peak, 20 * np.log10(max(peak, 1e-9))))
 
     # Section profile. The hp150 column measures only energy above 150 Hz
-    # (via FFT band energy) so the sub drone doesn't dominate the numbers
-    # the way it doesn't dominate the ear.
+    # (via FFT band energy) so sub bass doesn't dominate the numbers the
+    # way it doesn't dominate the ear.
     mono = master.mean(axis=1)
     print("\nsection profile:")
-    for (name, b0, b1), (s0, s1) in zip(sections, bounds):
+    for (name, _b0, _b1), (s0, s1) in zip(C.SECTIONS, bounds):
         seg = master[s0:s1]
         rms = float(np.sqrt((seg ** 2).mean()))
         spec = np.fft.rfft(mono[s0:s1])
@@ -178,27 +203,28 @@ def main():
         band = np.fft.irfft(spec, n=s1 - s0)
         wrms = float(np.sqrt((band ** 2).mean()))
         pk = float(np.abs(seg).max())
-        print("  %-13s rms=%6.1f dBFS  hp150=%6.1f dBFS  peak=%6.1f dBFS"
+        print("  %-14s rms=%6.1f dBFS  hp150=%6.1f dBFS  peak=%6.1f dBFS"
               % (name, 20 * np.log10(max(rms, 1e-9)),
                  20 * np.log10(max(wrms, 1e-9)),
                  20 * np.log10(max(pk, 1e-9))))
 
-    # simultaneous-activity check (the brief allows at most 8)
     worst = 0
     worst_beat = 0.0
-    step = 0.5
     b = 0.0
     while b < C.TOTAL_BEATS:
         n = C.active_track_count(b)
         if n > worst:
             worst, worst_beat = n, b
-        b += step
-    print("\nmax simultaneous tracks: %d (at bar %.2f) - limit 8"
-          % (worst, worst_beat / 4 + 1))
+        b += 0.5
+    limit = getattr(C, "ACTIVE_LIMIT", None)
+    print("\nmax simultaneous tracks: %d (at beat %.1f)%s"
+          % (worst, worst_beat,
+             " - limit %d" % limit if limit else " - no limit"))
 
     write_wav(out_path, master)
     print("\nwrote %s" % out_path)
-    return 0 if worst <= 8 and peak < 1.0 else 1
+    ok = peak < 1.0 and (limit is None or worst <= limit)
+    return 0 if ok else 1
 
 
 def write_wav(path, data):

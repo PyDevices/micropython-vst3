@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Generate the Perihelion REAPER project.
+"""Generate a piece's REAPER project.
 
-Writes a complete .RPP with sixteen tracks, each holding one MicroPython
+Writes a complete .RPP where every track holds one MicroPython
 Instrument instance whose script is embedded directly in synthesized VST3
 state (the same byte layout REAPER itself saves), so the project opens with
 no environment variables and no build passes. MIDI, the tempo map, volume
 envelopes, and macro automation envelopes all come from composition.py.
 
-Usage: generate_project.py <out.RPP>
+Usage: generate_project.py [--piece NAME] [out.RPP]
 """
 
 import base64
@@ -18,8 +18,10 @@ from pathlib import Path
 
 SCORE = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCORE))
+from piece import load_piece, piece_arg  # noqa: E402
 
-import composition as C  # noqa: E402
+PIECE, ARGV = piece_arg(sys.argv[1:])
+C, INSTRUMENTS = load_piece(PIECE)
 
 PPQ = 960
 VST_LINE = ('<VST "VST3i: MicroPython Instrument (PyDevices)" '
@@ -99,7 +101,7 @@ def envelope_block(kind, header_extra, points):
 
 def track_block(track):
     check_no_same_pitch_overlap(track)
-    script = (SCORE / "instruments" / track["script"]).read_bytes()
+    script = (INSTRUMENTS / track["script"]).read_bytes()
     macros = {i: C.macro_value(track, i, 0.0) for i in range(16)}
     for i, v in track["macros"].items():
         macros.setdefault(i, v)
@@ -195,14 +197,23 @@ def tempo_block():
              "    LANEHEIGHT 0 0",
              "    ARM 0",
              "    DEFSHAPE 1 -1 -1"]
-    for beat, bpm in C.TEMPO_MAP:
-        lines.append("    PT %.9f %.6f 1" % (C.beats_to_seconds(beat), bpm))
+    for row in C.TEMPO_MAP:
+        beat, bpm = row[0], row[1]
+        if len(row) >= 4:
+            # time-signature field: (denominator << 16) | numerator
+            sig = (row[3] << 16) | row[2]
+            lines.append("    PT %.9f %.6f 1 %d" % (C.beats_to_seconds(beat),
+                                                    bpm, sig))
+        else:
+            lines.append("    PT %.9f %.6f 1" % (C.beats_to_seconds(beat),
+                                                 bpm))
     lines.append("  >")
     return lines
 
 
 def main():
-    out = Path(sys.argv[1]) if len(sys.argv) > 1 else SCORE / "build" / "Perihelion.RPP"
+    out = (Path(ARGV[0]) if ARGV
+           else SCORE / "build" / (C.TITLE + ".RPP"))
     out.parent.mkdir(parents=True, exist_ok=True)
 
     master_vol = 10.0 ** (C.MASTER_GAIN_DB / 20.0)
@@ -210,7 +221,9 @@ def main():
              "  RIPPLE 0",
              "  GROUPOVERRIDE 0 0 0",
              "  AUTOXFADE 129",
-             "  TEMPO %.6f 4 4" % C.TEMPO_MAP[0][1],
+             "  TEMPO %.6f %d %d" % (C.TEMPO_MAP[0][1],
+                 C.TEMPO_MAP[0][2] if len(C.TEMPO_MAP[0]) >= 4 else 4,
+                 C.TEMPO_MAP[0][3] if len(C.TEMPO_MAP[0]) >= 4 else 4),
              "  SAMPLERATE %d 0 0" % C.SAMPLE_RATE,
              "  MASTER_VOLUME %.9f 0 -1 -1 1" % master_vol,
              "  MASTER_NCH 2 2"]

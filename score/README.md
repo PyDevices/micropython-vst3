@@ -1,62 +1,75 @@
-# Perihelion
+# Scores
 
-A four-minute hybrid orchestral/synth score performed entirely by the
-MicroPython VST3 instrument - sixteen tracks, sixteen sidecar instances,
-no third-party plug-ins, no samples. Every sound is a MicroPython script
-in `instruments/` running synthio and the audioif effects (chorus, echo,
-freeverb) inside its own sidecar process.
+Music performed entirely by the MicroPython VST3 instrument - no
+third-party plug-ins, no samples. Every sound is a MicroPython script
+running synthio and the audioif effects inside its own sidecar process.
 
-In D minor, five sections:
+Two pieces live here:
 
-| | bars | tempo | |
+## Perihelion
+
+A four-minute hybrid orchestral score (sixteen tracks): sub drone, Moog
+bass ostinato, string and brass ensembles, choir, timpani, impacts, and
+nineteen automation envelopes of filter motion. D minor, five sections,
+resolving through a Picardy third.
+
+## Automata
+
+A five-and-a-half-minute electronic suite (twenty-four tracks, 4,600+
+notes) built to outgrow Perihelion in every direction:
+
+| | bars | meter/tempo | |
 |---|---|---|---|
-| A | 1-12 | 76 | **Adrift** - sub drone, breathing pad, glass halo, the four-note signal motif in bells |
-| B | 13-28 | 78 | **Ignition** - the Moog ostinato lights up over a D pedal; low strings and the pulse arp join |
-| C | 29-44 | 80/82 | **Approach** - theme in high strings, horns and timpani build, riser into the drop |
-| D | 45-60 | 84 | **Perihelion** - brass theme over the full ensemble, lead doubles an octave up |
-| E | 61-74 | 76→64 | **Afterglow** - choir and pads resolve through a Picardy third to D major |
+| I | 1-20 | 4/4 @84 | **Dawn Protocol** - air, glass, FM bells, choir hum, heartbeat kick |
+| II | 1-32 | **7/8** @112 | **Assembly Line** - 2+2+3 polysynth ostinato, Reese bass, glitch percussion |
+| III | 1-32 | 4/4 @126 | **Ignition** - four on the floor, the 303 wakes up, two-minute build |
+| IV | 1-48 | 4/4 @128 | **Overdrive** - B minor supersaw anthem over the full kit, organ, brass stabs |
+| V | 1-16 | 4/4 @64..48 | **Afterimage** - felt keys quote the Perihelion theme in D major; tape-stop ending |
 
-The Moog-style motion the score asks for is host automation: nineteen
-parameter envelopes drive the instruments' macro parameters - the bass and
-arp cutoff/resonance sweeps, the intro's filter sunrise, the riser's
-octave lift, brass brightness, echo sends.
+What's in it that Perihelion doesn't have:
 
-## Playing it
+- A synthesized drum kit on separate tracks - kick, snare, hats (with
+  real open/closed choking), claps, toms, shaker, glitch percussion -
+  with swing, deterministic humanization, velocity ghost notes, and fills.
+- A 303-style acid bass whose overlapping MIDI notes become genuine
+  slides (the script glides pitch without retriggering the envelope),
+  with accent handling and heavy cutoff/resonance automation.
+- Transport-aware instruments: the sidechain pump pad reads
+  `vstaudio.transport()` at note-on to phase-lock its duck to the beat,
+  and every echo tunes its delay time to the host tempo by itself.
+- A meter change into 7/8 and back, three tempos, a key modulation
+  (A minor to B minor), and a closing tape-stop where the final chord
+  falls two octaves as the tempo map ritards.
+- Twenty-seven macro automation envelopes.
+
+## Running them
 
 ```bash
-./launch.sh
+./launch.sh                      # play Perihelion through the speakers
+./launch.sh --piece automata     # play Automata
+./launch.sh --render --piece automata   # headless verified bounce
 ```
 
-kills any stale REAPER, regenerates the project at
-`C:\Users\bradb\Music\Perihelion\Perihelion.RPP`, and opens it in REAPER
-with a self-deleting startup script that presses play about six seconds in
-(the sidecars get a moment to boot). REAPER stays open afterwards.
-
-```bash
-./launch.sh --render
-```
-
-renders the piece headlessly through the installed plug-in instead:
-verifies all sixteen engines come up, checks the automation envelopes,
-bounces the full mix to `build/Perihelion.wav`, and compares it section by
-section against the offline preview.
+The play mode regenerates the project under `C:\Users\bradb\Music\`,
+opens REAPER with a self-deleting autoplay startup script, and leaves
+REAPER open. The render mode bounces the piece offline through the
+installed plug-in, checks every engine and envelope, and compares the
+result against the CPython preview.
 
 ## How it fits together
 
-- `composition.py` - the single source of truth: tempo map, every note,
-  gains, pans, volume swells, macro automation.
-- `instruments/*.py` - sixteen self-contained sidecar scripts. Each builds
-  its wavetables, voices, filters, and effect chain, and reacts to
-  note/parameter events from the host.
-- `generate_project.py` - writes the .RPP directly, embedding each
-  instrument script in synthesized VST3 state (the same byte layout REAPER
-  saves), so the project opens with no environment variables.
-- `render_preview.py` - renders the piece offline through the audioif
-  CPython wheel (the same DSP the sidecars run) for fast iteration, with
-  per-section level analysis and an at-most-8-simultaneous-tracks check.
-- `verify_song.py` - compares a REAPER bounce against the preview.
-- `preview/` - the vstaudio shim that lets instrument scripts run
-  unmodified under CPython.
-
-The composition keeps at most eight tracks sounding at once; the REAPER
-bounce matches the preview within 1.3 dB per section.
+- `composition.py` / `automata/composition.py` - each piece's single
+  source of truth: tempo map (with time signatures), every note, gains,
+  pans, swells, macro automation.
+- `instruments/`, `automata/instruments/` - self-contained sidecar
+  scripts, one per track.
+- `generate_project.py --piece NAME` - writes the .RPP directly,
+  embedding each instrument script in synthesized VST3 state chunks, so
+  projects open with no environment variables.
+- `render_preview.py --piece NAME` - renders the piece offline through
+  the audioif CPython wheel (the same DSP the sidecars run) with
+  per-section level analysis; `preview/` holds the vstaudio shim that
+  lets instrument scripts run unmodified under CPython, including a
+  simulated transport clock.
+- `verify_song.py --piece NAME <bounce> <preview>` - compares a REAPER
+  bounce against the preview section by section.

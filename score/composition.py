@@ -21,8 +21,11 @@ Form, in D minor:
                                      D major, long tail
 """
 
+TITLE = "Perihelion"
 SAMPLE_RATE = 48000
 MASTER_GAIN_DB = -2.0
+ACTIVE_LIMIT = 8
+CLIMAX_SECTION = "D Perihelion"
 BEATS_PER_BAR = 4
 TOTAL_BARS = 74
 TAIL_SECONDS = 10.0
@@ -683,3 +686,11 @@ def active_track_count(beat):
                 count += 1
                 break
     return count
+
+SECTIONS = [
+    ("A Adrift", bar(1), bar(13)),
+    ("B Ignition", bar(13), bar(29)),
+    ("C Approach", bar(29), bar(45)),
+    ("D Perihelion", bar(45), bar(61)),
+    ("E Afterglow", bar(61), bar(75)),
+]
