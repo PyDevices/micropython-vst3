@@ -1,29 +1,14 @@
 # Soundtrack
 
-Music performed entirely by the MicroPython VST3 instrument - no
+Example audio performed entirely by the MicroPython VST3 instrument - no
 third-party plug-ins, no samples. Every sound is a MicroPython script
 running synthio and the audioif effects inside its own sidecar process.
 
-Each piece is a subdirectory holding its composition and its own
-instruments:
-
-```
-soundtrack/
-  Perihelion/           four-minute hybrid orchestral score (16 tracks)
-  Automata/             five-and-a-half-minute electronic suite (24 tracks)
-  <NextPiece>/          composition.py + instruments/
-  piece.py              resolves a piece name (case-insensitive)
-  generate_project.py   --piece NAME -> .RPP with embedded instrument state
-  render_preview.py     --piece NAME -> offline CPython render + analysis
-  verify_song.py        --piece NAME <bounce> <preview> -> section compare
-  launch.sh             [--piece NAME] [--render]
-  reaper/               headless verify + self-deleting autoplay scripts
-```
-
-`render_preview.py` runs on top of `../tools/preview/` - a shared CPython
-stand-in for the sidecar (see [`../tools/preview/harness.py`](../tools/preview/harness.py))
-that lets any instrument or effect script run without the compiled engine
-or a VST3 host. It's shared with `lib/instruments/` testing, not specific
+Each piece is a subdirectory holding its own `composition.py` and
+`instruments/`. See `piece.py`, `generate_project.py`, `render_preview.py`,
+`verify_song.py`, and `launch.sh` for the tooling that generates,
+renders, and verifies a piece - documented in
+[`../tools/README.md`](../tools/README.md), since none of it is specific
 to the soundtrack.
 
 ## Why instruments are per piece, not shared
@@ -63,7 +48,7 @@ itself to the host tempo through `vstaudio.transport()`); a meter change,
 three tempos, a key modulation, twenty-seven automation envelopes, and a
 closing tape stop.
 
-## Running
+## Listening
 
 ```bash
 ./launch.sh                      # play Perihelion through the speakers
@@ -75,17 +60,4 @@ Play mode regenerates the project under `C:\Users\bradb\Music\<Title>\`,
 opens REAPER with a self-deleting autoplay startup script, and leaves
 REAPER open. Render mode bounces the piece offline through the installed
 plug-in, checks every engine and envelope, writes `build/<Title>.wav`,
-and compares it section by section against the CPython preview
-(`render_preview.py` writes `build/<piece>_preview.wav`).
-
-## Adding a piece
-
-1. `mkdir soundtrack/<Name> soundtrack/<Name>/instruments`
-2. Copy the closest instruments in from an existing piece and tweak.
-3. Write `composition.py` exposing the module surface documented in
-   `piece.py` (tempo map with optional time signatures, SECTIONS,
-   TRACKS with notes/gains/vol swells/macro envelopes).
-4. Iterate with `render_preview.py --piece <name>` - it reports raw and
-   mixed peaks, per-track section RMS, a >150 Hz loudness column, and
-   simultaneous-track counts.
-5. Verify with `./launch.sh --render --piece <name>`, then play it.
+and compares it section by section against the CPython preview.
