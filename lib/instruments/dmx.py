@@ -6,11 +6,26 @@ import math
 import synthio
 import vstaudio
 
+try:
+    from ulab import numpy as np
+except ImportError:
+    np = None
+
 SR = vstaudio.sample_rate()
 TAU = 2.0 * math.pi
 
 
 def make_table(parts, length=2048, gain=32000):
+    if np is not None:
+        idx = np.arange(length)
+        acc = np.zeros(length)
+        for mult, amp in parts:
+            acc = acc + amp * np.sin(idx * (TAU * mult / length))
+        peak = np.max(acc * acc) ** 0.5
+        if peak <= 0.0:
+            peak = 1.0
+        scaled = acc * (gain / peak)
+        return array.array("h", [int(v) for v in scaled])
     vals = [0.0] * length
     for mult, amp in parts:
         step = TAU * mult / length
@@ -39,6 +54,23 @@ def noise_table(length=8192, seed=1234567):
     return out
 
 
+def crush_noise(length=8192, seed=1234567, levels=48, hold=3):
+    # low-bit-depth, low-sample-rate stair-stepped noise - the DMX's crunchy,
+    # gritty sample chip character, distinct from LinnDrum's cleaner samples.
+    # sequential LCG state, doesn't vectorize with ulab
+    out = array.array("h", bytearray(length * 2))
+    state = seed
+    step_size = 65536 // levels
+    held = 0
+    for i in range(length):
+        if i % hold == 0:
+            state = (state * 1103515245 + 12345) & 0x7FFFFFFF
+            raw = ((state >> 15) & 0xFFFF) - 32768
+            held = (raw // step_size) * step_size
+        out[i] = held
+    return out
+
+
 def logmap(v, lo, hi):
     return lo * ((hi / lo) ** v)
 
@@ -47,6 +79,7 @@ SINE = make_table(((1, 1.0), (2, 0.1)))
 TRIANGLE = make_table([(n, (1.0 / (n*n)) * (-1)**((n-1)//2)) for n in range(1, 11, 2)])
 SQUARE = make_table([(n, 1.0 / n) for n in range(1, 15, 2)])
 NOISE = noise_table(seed=121212)
+GRIT = crush_noise(seed=121212)
 NOISE_HZ = SR / 8192.0
 FALL = array.array("h", (32767, 0))
 
@@ -135,23 +168,26 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         
         notes_to_play = []
         
-        # BD (35, 36)
+        # BD (35, 36) - sampled, not a swept VCO: tone plus a gritty low-bit
+        # transient instead of an 808-style pitch drop
         if pitch in (35, 36):
             env = synthio.Envelope(attack_time=0.001, decay_time=bd_decay, release_time=0.05, attack_level=1.0, sustain_level=0.0)
-            drop = synthio.LFO(waveform=FALL, once=True, rate=20.0, scale=0.4, interpolate=True)
             lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, bd_pitch * 3.0, Q=0.8)
-            note = synthio.Note(bd_pitch, waveform=SINE, envelope=env, filter=lp, amplitude=amp, bend=drop)
-            notes_to_play.append(note)
-            
-        # SD (38, 40)
+            body = synthio.Note(bd_pitch, waveform=SINE, envelope=env, filter=lp, amplitude=amp)
+            grit_env = synthio.Envelope(attack_time=0.001, decay_time=0.04, release_time=0.02, attack_level=1.0, sustain_level=0.0)
+            grit_lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, bd_pitch * 7.0, Q=0.7)
+            grit = synthio.Note(NOISE_HZ, waveform=GRIT, envelope=grit_env, filter=grit_lp, amplitude=amp * 0.4)
+            notes_to_play.extend([body, grit])
+
+        # SD (38, 40) - crunchy low-bit-depth snap is the DMX's signature
         elif pitch in (38, 40):
             body_env = synthio.Envelope(attack_time=0.001, decay_time=0.1, release_time=0.05, attack_level=1.0, sustain_level=0.0)
             body = synthio.Note(sd_pitch, waveform=TRIANGLE, envelope=body_env, amplitude=amp * 0.7)
-            
+
             snare_env = synthio.Envelope(attack_time=0.001, decay_time=0.15, release_time=0.05, attack_level=1.0, sustain_level=0.0)
             snare_hp = synthio.Biquad(synthio.FilterMode.HIGH_PASS, 1800.0, Q=1.0)
-            snare = synthio.Note(NOISE_HZ, waveform=NOISE, envelope=snare_env, filter=snare_hp, amplitude=amp * sd_snappy)
-            
+            snare = synthio.Note(NOISE_HZ, waveform=GRIT, envelope=snare_env, filter=snare_hp, amplitude=amp * sd_snappy)
+
             notes_to_play.extend([body, snare])
             
         # Rimshot (37)

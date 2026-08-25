@@ -105,20 +105,25 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         env_tbl = env_shape_table(f_a, f_d, 0.0)
         f_sweep = synthio.LFO(waveform=env_tbl, once=True, rate=1.0/max(0.01, f_a + f_d), scale=env_amount, interpolate=True)
         cutoff = synthio.Math(synthio.MathOperation.SUM, cutoff_base, f_sweep, 0.0)
-        
+
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=res)
-        
-        mix_a = 1.0 - wt_index
-        mix_b = wt_index
-        
-        notes = []
-        if mix_a > 0.01:
-            notes.append(synthio.Note(hz, waveform=WAVE_A, envelope=env, filter=lp, amplitude=amp * mix_a * 0.4, panning=-0.2))
-            notes.append(synthio.Note(hz * (1.0 + detune), waveform=WAVE_A, envelope=env, filter=lp, amplitude=amp * mix_a * 0.4, panning=0.2))
-        if mix_b > 0.01:
-            notes.append(synthio.Note(hz, waveform=WAVE_B, envelope=env, filter=lp, amplitude=amp * mix_b * 0.4, panning=-0.2))
-            notes.append(synthio.Note(hz * (1.0 + detune), waveform=WAVE_B, envelope=env, filter=lp, amplitude=amp * mix_b * 0.4, panning=0.2))
-            
+
+        # PPG's signature is the wavetable position moving through the table, not
+        # sitting still; scan from wave A up to the Wavetable Index target over the
+        # same attack/decay contour as the filter envelope, then hold - the classic
+        # "wave envelope follows filter envelope" PPG factory-patch behavior.
+        scan_tbl = env_shape_table(f_a, f_d, 1.0)
+        scan_lfo = synthio.LFO(waveform=scan_tbl, once=True, rate=1.0/max(0.01, f_a + f_d), scale=wt_index, interpolate=True)
+        amp_a_expr = synthio.Math(synthio.MathOperation.SCALE_OFFSET, scan_lfo, -(amp * 0.4), amp * 0.4)
+        amp_b_expr = synthio.Math(synthio.MathOperation.SCALE_OFFSET, scan_lfo, amp * 0.4, 0.0)
+
+        notes = [
+            synthio.Note(hz, waveform=WAVE_A, envelope=env, filter=lp, amplitude=amp_a_expr, panning=-0.2),
+            synthio.Note(hz * (1.0 + detune), waveform=WAVE_A, envelope=env, filter=lp, amplitude=amp_a_expr, panning=0.2),
+            synthio.Note(hz, waveform=WAVE_B, envelope=env, filter=lp, amplitude=amp_b_expr, panning=-0.2),
+            synthio.Note(hz * (1.0 + detune), waveform=WAVE_B, envelope=env, filter=lp, amplitude=amp_b_expr, panning=0.2),
+        ]
+
         serial += 1
         voices[k] = (tuple(notes), serial)
         for n in notes:

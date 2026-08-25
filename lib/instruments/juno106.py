@@ -6,10 +6,28 @@ import math
 import synthio
 import vstaudio
 
+try:
+    from ulab import numpy as np
+except ImportError:
+    np = None
+
 SR = vstaudio.sample_rate()
 TAU = 2.0 * math.pi
 
 def make_table(parts, length=2048, gain=32000):
+    # Additive-harmonic tables (up to ~40 partials) are a real hot spot for the plain-Python
+    # nested loop; use ulab when it's available (real engine) and fall back to it when not
+    # (desktop test harness).
+    if np is not None:
+        idx = np.arange(length)
+        acc = np.zeros(length)
+        for mult, amp in parts:
+            acc = acc + amp * np.sin(idx * (TAU * mult / length))
+        peak = np.max(acc * acc) ** 0.5
+        if peak <= 0.0:
+            peak = 1.0
+        scaled = acc * (gain / peak)
+        return array.array("h", [int(v) for v in scaled])
     vals = [0.0] * length
     for mult, amp in parts:
         step = TAU * mult / length
@@ -32,11 +50,25 @@ def noise_table(length=8192, seed=1234567):
         out[i] = ((state >> 15) & 0xFFFF) - 32768
     return out
 
+def pulse_table(width, length=2048, gain=30000):
+    # True variable-duty pulse wave for PWM, built as a direct duty-cycle
+    # lookup rather than additive sine synthesis.
+    n_hi = int(length * width)
+    if n_hi < 1:
+        n_hi = 1
+    if n_hi > length - 1:
+        n_hi = length - 1
+    out = array.array("h", bytearray(length * 2))
+    for i in range(length):
+        out[i] = gain if i < n_hi else -gain
+    return out
+
 SAW = make_table([(n, 1.0 / n) for n in range(1, 40)])
 SQUARE = make_table([(n, 1.0 / n) for n in range(1, 40, 2)])
 NOISE = noise_table()
 NOISE_HZ = SR / 8192.0
 FALL = array.array("h", (32767, 0))
+SINE = make_table(((1, 1.0),))
 
 synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
 vstaudio.output(synth)
@@ -97,24 +129,35 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         amp = volume * value0
         
         env = synthio.Envelope(attack_time=amp_a, decay_time=amp_d, release_time=amp_r, attack_level=1.0, sustain_level=amp_s)
-        
+
+        # LFO Rate: the Juno-106's LFO can route to the VCF (via the LFO->VCF slider), so
+        # give it a modest fixed depth here since there's no separate LFO depth macro.
+        filt_lfo = synthio.LFO(rate=lfo_rate, scale=150.0)
         f_sweep = synthio.LFO(waveform=FALL, once=True, rate=1.0/filt_d, scale=env_depth, interpolate=True)
-        
-        cutoff = synthio.Math(synthio.MathOperation.SUM, cutoff_base, f_sweep, 0.0)
+
+        cutoff = synthio.Math(synthio.MathOperation.SUM, cutoff_base, f_sweep, filt_lfo)
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=resonance)
-        
-        # Chorus simulation via wide panning and slight detune
+        # The real HPF sits in series before the resonant VCF on the whole mix; synthio only
+        # allows one filter per Note, so approximate it by high-passing the bass-heavy
+        # sub-oscillator and noise layers directly (thinning bass as cutoff rises, same
+        # audible direction as the real control).
+        hp = synthio.Biquad(synthio.FilterMode.HIGH_PASS, hpf_cutoff, Q=0.7)
+
+        # Chorus: the Juno-106's BBD ensemble effect is an animated pitch wobble, not just
+        # stereo width, so add a slow bend LFO (Chorus Rate) on top of the static spread.
+        chorus_lfo = synthio.LFO(waveform=SINE, rate=chorus_rate, scale=chorus_depth * 0.006) if chorus_depth > 0.01 else None
         detune = chorus_depth * 0.01
-        
-        o_saw = synthio.Note(hz, waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.4, panning=-chorus_depth)
-        o_sq = synthio.Note(hz * (1.0 + detune), waveform=SQUARE, envelope=env, filter=lp, amplitude=amp * 0.4 * pwm_amount, panning=chorus_depth)
-        o_sub = synthio.Note(hz * 0.5, waveform=SQUARE, envelope=env, filter=lp, amplitude=amp * sub_level * 0.4, panning=0.0)
-        n = synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env, filter=lp, amplitude=amp * noise_level * 0.2)
-        
+        pwm_wave = pulse_table(0.5 - pwm_amount * 0.4)
+
+        o_saw = synthio.Note(hz, waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.4, panning=-chorus_depth, bend=chorus_lfo)
+        o_sq = synthio.Note(hz * (1.0 + detune), waveform=pwm_wave, envelope=env, filter=lp, amplitude=amp * 0.4, panning=chorus_depth, bend=chorus_lfo)
+        o_sub = synthio.Note(hz * 0.5, waveform=SQUARE, envelope=env, filter=hp, amplitude=amp * sub_level * 0.4, panning=0.0)
+        n = synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env, filter=hp, amplitude=amp * noise_level * 0.2)
+
         notes = [o_saw, o_sq, o_sub]
         if noise_level > 0.01:
             notes.append(n)
-        
+
         serial += 1
         voices[k] = (tuple(notes), serial)
         for note in notes:

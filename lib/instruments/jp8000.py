@@ -6,10 +6,28 @@ import math
 import synthio
 import vstaudio
 
+try:
+    from ulab import numpy as np
+except ImportError:
+    np = None
+
 SR = vstaudio.sample_rate()
 TAU = 2.0 * math.pi
 
 def make_table(parts, length=2048, gain=32000):
+    # Additive-harmonic tables (up to ~40 partials) are a real hot spot for the plain-Python
+    # nested loop; use ulab when it's available (real engine) and fall back to it when not
+    # (desktop test harness).
+    if np is not None:
+        idx = np.arange(length)
+        acc = np.zeros(length)
+        for mult, amp in parts:
+            acc = acc + amp * np.sin(idx * (TAU * mult / length))
+        peak = np.max(acc * acc) ** 0.5
+        if peak <= 0.0:
+            peak = 1.0
+        scaled = acc * (gain / peak)
+        return array.array("h", [int(v) for v in scaled])
     vals = [0.0] * length
     for mult, amp in parts:
         step = TAU * mult / length
@@ -110,9 +128,13 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         cutoff = synthio.Math(synthio.MathOperation.SUM, cutoff_base, f_sweep, 0.0)
         
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=resonance)
-        
+        # The JP-8000's HPF sits before the resonant VCF in series; synthio only allows one
+        # filter per Note, so approximate it by high-passing the two outermost detuned saws
+        # (thinning their low end as cutoff rises) while the rest keep the full swept VCF.
+        hp = synthio.Biquad(synthio.FilterMode.HIGH_PASS, hpf, Q=0.7)
+
         notes = []
-        
+
         # 7-Saw Supersaw
         # 1 center, 3 detuned up, 3 detuned down
         detunes = [
@@ -131,7 +153,8 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         for i in range(7):
             d = detunes[i]
             p = pans[i] * (0.5 + chorus * 0.5)
-            n = synthio.Note(hz * (1.0 + d), waveform=SAW, envelope=env, filter=lp, amplitude=base_a, panning=p)
+            note_filter = hp if i >= 5 else lp
+            n = synthio.Note(hz * (1.0 + d), waveform=SAW, envelope=env, filter=note_filter, amplitude=base_a, panning=p)
             notes.append(n)
             
         serial += 1

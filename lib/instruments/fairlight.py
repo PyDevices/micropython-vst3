@@ -30,6 +30,19 @@ WAVE_ARR1 = make_table(((1, 1.0), (2, 0.6), (3, 0.4), (5, 0.3), (7, 0.1), (9, 0.
 WAVE_ORCH5 = make_table([(n, 1.0 / math.sqrt(n)) for n in range(1, 20)])
 FALL = array.array("h", (32767, 0))
 
+def quantize_table(src, levels):
+    # Real Fairlight CMI voice cards were 8-bit: this rounds amplitude down
+    # to `levels` steps, the actual quantization stair-step that gave the
+    # CMI its aliased grit (a feature to preserve, not filter away)
+    step = 65536 // levels
+    out = array.array("h", bytearray(len(src) * 2))
+    for i in range(len(src)):
+        out[i] = (src[i] // step) * step
+    return out
+
+WAVE_ARR1_8BIT = quantize_table(WAVE_ARR1, 256)
+WAVE_ORCH5_8BIT = quantize_table(WAVE_ORCH5, 256)
+
 synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
 vstaudio.output(synth)
 
@@ -91,20 +104,25 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         env = synthio.Envelope(attack_time=actual_a, decay_time=actual_d, release_time=actual_r, attack_level=1.0, sustain_level=actual_s)
         
         wave = WAVE_ORCH5 if is_orch else WAVE_ARR1
-        
+        wave_crushed = WAVE_ORCH5_8BIT if is_orch else WAVE_ARR1_8BIT
+
         # Pitch envelope (for Orch5 "whack")
-        actual_pitch_env = 0.5 if is_orch and pitch_env == 0.0 else pitch_env
-        bend = synthio.LFO(waveform=FALL, once=True, rate=1.0/0.1, scale=actual_pitch_env) if actual_pitch_env > 0.01 else None
-        
-        # Fairlight aliasing approximation via a fixed low-pass filter (anti-aliasing filter was weak/stepped)
-        c_base = 3000.0 if bitcrush > 0.5 else 8000.0
-        
+        bend = synthio.LFO(waveform=FALL, once=True, rate=1.0/0.1, scale=pitch_env) if pitch_env > 0.01 else None
+
+        # Fairlight anti-aliasing filter was weak/stepped, so it let the
+        # 8-bit quantization noise through - continuous with Bitcrush Approx
+        c_base = 8000.0 - bitcrush * 5500.0
+
         # Filter envelope
         f_sweep = synthio.LFO(waveform=FALL, once=True, rate=1.0/actual_d, scale=f_env * 5000.0, interpolate=True)
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, synthio.Math(synthio.MathOperation.SUM, c_base, f_sweep, 0.0), Q=1.0)
-        
+
         notes = []
-        notes.append(synthio.Note(hz, waveform=wave, envelope=env, filter=lp, amplitude=amp * 0.7, bend=bend))
+        # Bitcrush Approx blends in the genuinely 8-bit-quantized table -
+        # real stair-step distortion, not just a darker filter
+        notes.append(synthio.Note(hz, waveform=wave, envelope=env, filter=lp, amplitude=amp * 0.7 * (1.0 - bitcrush * 0.6), bend=bend))
+        if bitcrush > 0.01:
+            notes.append(synthio.Note(hz, waveform=wave_crushed, envelope=env, filter=lp, amplitude=amp * 0.7 * bitcrush, bend=bend))
         
         serial += 1
         voices[k] = (tuple(notes), serial)

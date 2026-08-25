@@ -109,7 +109,19 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
             n1 = synthio.Note(hz * 2.0, waveform=PULSE, envelope=env, filter=bp1, amplitude=amp * female_mix * 0.3, bend=vib_lfo, panning=-0.5)
             n2 = synthio.Note(hz * 1.998, waveform=PULSE, envelope=env, filter=bp2, amplitude=amp * female_mix * 0.3, bend=ens_lfo, panning=0.5)
             notes.extend([n1, n2])
-            
+
+        # VP-330's real string/bass section is a separate divide-down organ
+        # register under the choir, an octave down with no formant filtering
+        if bass > 0.01:
+            bp_bass = synthio.Biquad(synthio.FilterMode.LOW_PASS, 900.0, Q=0.9)
+            notes.append(synthio.Note(hz * 0.5, waveform=PULSE, envelope=env, filter=bp_bass, amplitude=amp * bass * 0.5))
+
+        # Brilliance is the VP-330's top-end tone control: a bright unfiltered
+        # doubling that only becomes audible as it's turned up
+        if brilliance > 0.01:
+            hp_bright = synthio.Biquad(synthio.FilterMode.HIGH_PASS, 3000.0, Q=0.7)
+            notes.append(synthio.Note(hz * 2.0, waveform=PULSE, envelope=env, filter=hp_bright, amplitude=amp * brilliance * 0.25))
+
         serial += 1
         voices[k] = (tuple(notes), serial)
         for n in notes:

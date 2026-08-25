@@ -29,6 +29,7 @@ WAVE_A = make_table([(n, 1.0 / n) for n in range(1, 20)]) # Saw-ish
 WAVE_B = make_table([(n, 1.0 / n) for n in range(1, 20, 2)]) # Square-ish
 WAVE_C = make_table([(n, 1.0 / (n*n)) for n in range(1, 20, 2)]) # Triangle-ish
 WAVE_D = make_table(((1, 1.0), (3, 0.5), (5, 0.25), (7, 0.1), (9, 0.05))) # Bell-ish
+SINE = make_table(((1, 1.0),))
 
 def env_shape_table(attack, decay, sustain, length=96):
     # One-shot LFO waveform: ramps 0 -> peak over the attack fraction, then
@@ -82,7 +83,17 @@ def key_of(channel, note_id, pitch):
 def release_voice(k):
     voice = voices.pop(k, None)
     if voice is not None:
-        for note in voice[0]:
+        notes, _, filt_release = voice
+        if filt_release is not None:
+            base_cutoff, sustain_delta, release_time, q = filt_release
+            rel_lfo = synthio.LFO(waveform=array.array("h", (32767, 0)), once=True,
+                                  rate=1.0 / max(0.01, release_time), interpolate=True)
+            rel_cutoff = synthio.Math(synthio.MathOperation.SCALE_OFFSET, rel_lfo,
+                                      sustain_delta, base_cutoff)
+            rel_filter = synthio.Biquad(synthio.FilterMode.LOW_PASS, rel_cutoff, Q=q)
+            for note in notes:
+                note.filter = rel_filter
+        for note in notes:
             synth.release(note)
 
 def steal_oldest():
@@ -123,18 +134,29 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         mix_c = (1.0 - joy_x) * joy_y
         mix_d = joy_x * joy_y
         
+        # Chorus: an animated pitch wobble reads as chorus, not just stereo width, so add a
+        # slow bend LFO on top of the static spread.
+        chorus_lfo = synthio.LFO(waveform=SINE, rate=0.6, scale=chorus * 0.006) if chorus > 0.01 else None
+
         notes = []
         if mix_a > 0.01:
-            notes.append(synthio.Note(hz, waveform=WAVE_A, envelope=env, filter=lp, amplitude=amp * mix_a, panning=-chorus))
+            notes.append(synthio.Note(hz, waveform=WAVE_A, envelope=env, filter=lp, amplitude=amp * mix_a, panning=-chorus, bend=chorus_lfo))
         if mix_b > 0.01:
-            notes.append(synthio.Note(hz * 1.002, waveform=WAVE_B, envelope=env, filter=lp, amplitude=amp * mix_b, panning=chorus))
+            notes.append(synthio.Note(hz * 1.002, waveform=WAVE_B, envelope=env, filter=lp, amplitude=amp * mix_b, panning=chorus, bend=chorus_lfo))
         if mix_c > 0.01:
-            notes.append(synthio.Note(hz * 0.998, waveform=WAVE_C, envelope=env, filter=lp, amplitude=amp * mix_c, panning=-chorus*0.5))
+            notes.append(synthio.Note(hz * 0.998, waveform=WAVE_C, envelope=env, filter=lp, amplitude=amp * mix_c, panning=-chorus*0.5, bend=chorus_lfo))
         if mix_d > 0.01:
-            notes.append(synthio.Note(hz * 1.001, waveform=WAVE_D, envelope=env, filter=lp, amplitude=amp * mix_d, panning=chorus*0.5))
-        
+            notes.append(synthio.Note(hz * 1.001, waveform=WAVE_D, envelope=env, filter=lp, amplitude=amp * mix_d, panning=chorus*0.5, bend=chorus_lfo))
+
+        # Filter Release: retarget the shared filter to a real release sweep
+        # at note-off (Note.filter is mutable post-construction), since the
+        # one-shot attack/decay LFO above can't represent an indefinite
+        # sustain hold followed by a release triggered by an unknown-in-
+        # advance note-off time.
+        filt_release = (cutoff_base, env_amount * f_s, f_r, resonance)
+
         serial += 1
-        voices[k] = (tuple(notes), serial)
+        voices[k] = (tuple(notes), serial, filt_release)
         for n in notes:
             synth.press(n)
             

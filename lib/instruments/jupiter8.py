@@ -6,10 +6,28 @@ import math
 import synthio
 import vstaudio
 
+try:
+    from ulab import numpy as np
+except ImportError:
+    np = None
+
 SR = vstaudio.sample_rate()
 TAU = 2.0 * math.pi
 
 def make_table(parts, length=2048, gain=32000):
+    # Additive-harmonic tables (up to ~40 partials) are a real hot spot for the plain-Python
+    # nested loop; use ulab when it's available (real engine) and fall back to it when not
+    # (desktop test harness).
+    if np is not None:
+        idx = np.arange(length)
+        acc = np.zeros(length)
+        for mult, amp in parts:
+            acc = acc + amp * np.sin(idx * (TAU * mult / length))
+        peak = np.max(acc * acc) ** 0.5
+        if peak <= 0.0:
+            peak = 1.0
+        scaled = acc * (gain / peak)
+        return array.array("h", [int(v) for v in scaled])
     vals = [0.0] * length
     for mult, amp in parts:
         step = TAU * mult / length
@@ -25,7 +43,20 @@ def make_table(parts, length=2048, gain=32000):
     return out
 
 SAW = make_table([(n, 1.0 / n) for n in range(1, 40)])
-SQUARE = make_table([(n, 1.0 / n) for n in range(1, 40, 2)])
+
+def pulse_table(width, length=2048, gain=30000):
+    # True variable-duty pulse wave for PWM, built as a direct duty-cycle
+    # lookup rather than additive sine synthesis.
+    n_hi = int(length * width)
+    if n_hi < 1:
+        n_hi = 1
+    if n_hi > length - 1:
+        n_hi = length - 1
+    out = array.array("h", bytearray(length * 2))
+    for i in range(length):
+        out[i] = gain if i < n_hi else -gain
+    return out
+
 def env_shape_table(attack, decay, sustain, length=96):
     # One-shot LFO waveform: ramps 0 -> peak over the attack fraction, then
     # peak -> sustain over the decay fraction, holding sustain afterwards
@@ -108,23 +139,36 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         
         env_tbl = env_shape_table(filt_a, filt_d, filt_s)
         f_sweep = synthio.LFO(waveform=env_tbl, once=True, rate=1.0/max(0.01, filt_a + filt_d), scale=env_depth, interpolate=True)
-        
-        cutoff = synthio.Math(synthio.MathOperation.SUM, cutoff_base, f_sweep, 0.0)
+        # LFO Rate: Jupiter-8's LFO can route to the VCF; give it a modest fixed depth here
+        # since there's no separate LFO depth macro.
+        filt_lfo = synthio.LFO(rate=lfo_rate, scale=250.0)
+
+        cutoff = synthio.Math(synthio.MathOperation.SUM, cutoff_base, f_sweep, filt_lfo)
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=resonance)
-        hp = synthio.Biquad(synthio.FilterMode.HIGH_PASS, hpf_cutoff, Q=0.7)
-        
+
+        pw_wave = pulse_table(0.1 + pw * 0.8)
+
         # Jupiter 8 Unison creates massive sound
         if unison_spread > 0.01:
             o1 = synthio.Note(hz, waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.3, panning=-0.5)
             o2 = synthio.Note(hz * (1.0 + unison_spread * 0.02), waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.3, panning=0.5)
-            o3 = synthio.Note(hz * (1.0 - unison_spread * 0.02), waveform=SQUARE, envelope=env, filter=lp, amplitude=amp * 0.3, panning=0.0)
+            o3 = synthio.Note(hz * (1.0 - unison_spread * 0.02), waveform=pw_wave, envelope=env, filter=lp, amplitude=amp * 0.3, panning=0.0)
             notes = [o1, o2, o3]
         else:
             o1 = synthio.Note(hz, waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.5)
-            # simulate cross mod via detune and high pitch
-            o2 = synthio.Note(hz * (1.0 + cross_mod), waveform=SQUARE, envelope=env, filter=lp, amplitude=amp * 0.5)
+            # Cross-modulation: synthio can't FM one oscillator's pitch from another's audio
+            # signal, so approximate the warbling cross-mod character with a fast sub-audio
+            # LFO bending osc2's pitch, scaled by the Cross Mod amount.
+            cm_lfo = synthio.LFO(rate=max(20.0, hz * 0.25), scale=cross_mod * 0.4) if cross_mod > 0.01 else None
+            o2 = synthio.Note(hz, waveform=pw_wave, envelope=env, filter=lp, amplitude=amp * 0.5, bend=cm_lfo)
             notes = [o1, o2]
-        
+
+        # The Jupiter-8 has no dedicated per-voice HPF; give the macro a real audible effect
+        # by mixing in a quiet high-passed top-end layer whose brightness tracks HPF Cutoff
+        # (single-filter-per-Note rules out a true series HPF -> VCF chain).
+        hp = synthio.Biquad(synthio.FilterMode.HIGH_PASS, hpf_cutoff, Q=0.7)
+        notes.append(synthio.Note(hz, waveform=SAW, envelope=env, filter=hp, amplitude=amp * 0.15))
+
         serial += 1
         voices[k] = (tuple(notes), serial)
         for n in notes:

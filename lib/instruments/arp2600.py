@@ -6,10 +6,28 @@ import math
 import synthio
 import vstaudio
 
+try:
+    from ulab import numpy as np
+except ImportError:
+    np = None
+
 SR = vstaudio.sample_rate()
 TAU = 2.0 * math.pi
 
 def make_table(parts, length=2048, gain=32000):
+    # Additive-harmonic tables (up to ~40 partials) are a real hot spot for the plain-Python
+    # nested loop; use ulab when it's available (real engine) and fall back to it when not
+    # (desktop test harness).
+    if np is not None:
+        idx = np.arange(length)
+        acc = np.zeros(length)
+        for mult, amp in parts:
+            acc = acc + amp * np.sin(idx * (TAU * mult / length))
+        peak = np.max(acc * acc) ** 0.5
+        if peak <= 0.0:
+            peak = 1.0
+        scaled = acc * (gain / peak)
+        return array.array("h", [int(v) for v in scaled])
     vals = [0.0] * length
     for mult, amp in parts:
         step = TAU * mult / length
@@ -79,7 +97,17 @@ def key_of(channel, note_id, pitch):
 def release_voice(k):
     voice = voices.pop(k, None)
     if voice is not None:
-        for note in voice[0]:
+        notes, _, filt_release, filtered_notes = voice
+        if filt_release is not None:
+            base_cutoff, sustain_delta, release_time, q = filt_release
+            rel_lfo = synthio.LFO(waveform=array.array("h", (32767, 0)), once=True,
+                                  rate=1.0 / max(0.01, release_time), interpolate=True)
+            rel_cutoff = synthio.Math(synthio.MathOperation.SCALE_OFFSET, rel_lfo,
+                                      sustain_delta, base_cutoff)
+            rel_filter = synthio.Biquad(synthio.FilterMode.LOW_PASS, rel_cutoff, Q=q)
+            for note in filtered_notes:
+                note.filter = rel_filter
+        for note in notes:
             synth.release(note)
 
 def steal_oldest():
@@ -105,23 +133,46 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         amp = volume * value0
         
         env = synthio.Envelope(attack_time=vca_a, decay_time=e2_d, release_time=vca_r, attack_level=1.0, sustain_level=1.0)
-        
+
         env_tbl = env_shape_table(e2_a, e2_d, e2_s)
         f_sweep = synthio.LFO(waveform=env_tbl, once=True, rate=1.0/max(0.01, e2_a + e2_d), scale=4000.0, interpolate=True)
         cutoff = synthio.Math(synthio.MathOperation.SUM, cutoff_base, f_sweep, 0.0)
-        
+
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=resonance)
-        
+
         o1 = synthio.Note(hz, waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.4)
         o2 = synthio.Note(hz * osc2_detune, waveform=SQUARE, envelope=env, filter=lp, amplitude=amp * 0.3)
-        o3 = synthio.Note(hz * osc3_detune, waveform=TRIANGLE, envelope=env, filter=lp, amplitude=amp * 0.3)
-        
+        # Env 1 (Attack/Release) patched to osc3's pitch input, scaled by FM Amount: the ARP
+        # 2600 is semi-modular, and "envelope -> VCO frequency" is one of its classic patches
+        # (laser/zap sounds). synthio can't do audio-rate FM, so approximate it as a one-shot
+        # pitch-bend sweep shaped by Env 1.
+        fm_tbl = env_shape_table(e1_a, e1_r, 0.0)
+        fm_lfo = synthio.LFO(waveform=fm_tbl, once=True, rate=1.0/max(0.01, e1_a + e1_r), scale=fm_amt * 2.0, interpolate=True) if fm_amt > 0.01 else None
+        o3 = synthio.Note(hz * osc3_detune, waveform=TRIANGLE, envelope=env, filter=lp, amplitude=amp * 0.3, bend=fm_lfo)
+
+        filtered_notes = [o1, o2, o3]
+        notes = list(filtered_notes)
+
+        # Reverb Mix: the 2600 itself is dry; approximate a reverb-style tail with a quietly
+        # mixed, softly filtered, longer-release copy of the voice rather than true convolution.
+        if reverb_mix > 0.01:
+            wash_env = synthio.Envelope(attack_time=vca_a, decay_time=e2_d, release_time=vca_r + reverb_mix * 2.0, attack_level=1.0, sustain_level=1.0)
+            wash_filt = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff_base * 0.4, Q=0.7)
+            wash = synthio.Note(hz * 1.003, waveform=TRIANGLE, envelope=wash_env, filter=wash_filt, amplitude=amp * reverb_mix * 0.25, panning=0.6)
+            notes.append(wash)
+
+        # Env 2 Release: retarget o1/o2/o3's shared filter to a real release
+        # sweep at note-off (Note.filter is mutable post-construction), since
+        # the one-shot attack/decay LFO above can't represent an indefinite
+        # sustain hold followed by a release triggered by an unknown-in-
+        # advance note-off time.
+        filt_release = (cutoff_base, 4000.0 * e2_s, e2_r, resonance)
+
         serial += 1
-        voices[k] = ((o1, o2, o3), serial)
-        synth.press(o1)
-        synth.press(o2)
-        synth.press(o3)
-            
+        voices[k] = (tuple(notes), serial, filt_release, tuple(filtered_notes))
+        for n in notes:
+            synth.press(n)
+
     elif event_type in (vstaudio.EVENT_NOTE_OFF, vstaudio.EVENT_NOTE_ON):
         release_voice(k)
         

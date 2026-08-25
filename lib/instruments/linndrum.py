@@ -6,11 +6,26 @@ import math
 import synthio
 import vstaudio
 
+try:
+    from ulab import numpy as np
+except ImportError:
+    np = None
+
 SR = vstaudio.sample_rate()
 TAU = 2.0 * math.pi
 
 
 def make_table(parts, length=2048, gain=32000):
+    if np is not None:
+        idx = np.arange(length)
+        acc = np.zeros(length)
+        for mult, amp in parts:
+            acc = acc + amp * np.sin(idx * (TAU * mult / length))
+        peak = np.max(acc * acc) ** 0.5
+        if peak <= 0.0:
+            peak = 1.0
+        scaled = acc * (gain / peak)
+        return array.array("h", [int(v) for v in scaled])
     vals = [0.0] * length
     for mult, amp in parts:
         step = TAU * mult / length
@@ -137,13 +152,17 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         
         notes_to_play = []
         
-        # BD (35, 36)
+        # BD (35, 36) - a sampled acoustic kick, not a swept VCO like the analog
+        # machines: no deliberate pitch-drop, just the sample's tone plus its
+        # short broadband transient thump
         if pitch in (35, 36):
             env = synthio.Envelope(attack_time=0.001, decay_time=bd_decay, release_time=0.05, attack_level=1.0, sustain_level=0.0)
-            drop = synthio.LFO(waveform=FALL, once=True, rate=30.0, scale=0.4, interpolate=True)
             lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, bd_pitch * 4.0, Q=0.8)
-            note = synthio.Note(bd_pitch, waveform=SINE, envelope=env, filter=lp, amplitude=amp, bend=drop)
-            notes_to_play.append(note)
+            body = synthio.Note(bd_pitch, waveform=SINE, envelope=env, filter=lp, amplitude=amp)
+            thump_env = synthio.Envelope(attack_time=0.001, decay_time=0.03, release_time=0.02, attack_level=1.0, sustain_level=0.0)
+            thump_lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, bd_pitch * 6.0, Q=0.6)
+            thump = synthio.Note(NOISE_HZ, waveform=NOISE, envelope=thump_env, filter=thump_lp, amplitude=amp * 0.35)
+            notes_to_play.extend([body, thump])
             
         # SD (38, 40)
         elif pitch in (38, 40):

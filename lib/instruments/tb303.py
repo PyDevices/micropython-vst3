@@ -74,11 +74,13 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
             
         hz = synthio.midi_to_hz(data0 + value1) * master_tune * tuning
         
-        # Accent alters decay and env mod depth
-        actual_decay = decay_time * (0.2 if accent > 0.5 else 1.0)
-        actual_env_mod = env_mod * (1.5 if accent > 0.5 else 1.0)
-        
-        amp = volume * value0 * overdrive * (1.2 if accent > 0.5 else 1.0)
+        # The 303's accent circuit feeds extra voltage into both the VCF envelope
+        # generator and the VCA at once, snapping the filter open harder and louder
+        # together - scale continuously with the accent knob, not a hard switch.
+        actual_decay = decay_time * (1.0 - 0.7 * accent)
+        actual_env_mod = env_mod * (1.0 + 1.2 * accent)
+
+        amp = volume * value0 * overdrive * (1.0 + 0.5 * accent)
         
         env = synthio.Envelope(attack_time=0.01, decay_time=actual_decay, release_time=0.1, attack_level=1.0, sustain_level=0.1)
         

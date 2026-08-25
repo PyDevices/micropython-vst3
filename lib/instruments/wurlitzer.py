@@ -9,12 +9,18 @@ import vstaudio
 SR = vstaudio.sample_rate()
 TAU = 2.0 * math.pi
 
-def make_table(parts, length=2048, gain=32000):
+def make_table(parts, length=2048, gain=32000, asym=0.0):
     vals = [0.0] * length
     for mult, amp in parts:
         step = TAU * mult / length
         for i in range(length):
             vals[i] += amp * math.sin(step * i)
+    if asym:
+        # Wurlitzer reeds drive an electrostatic pickup that clips the two
+        # half-cycles unevenly, giving the reed its buzzy asymmetric growl.
+        for i in range(length):
+            v = vals[i]
+            vals[i] = v + asym * v * abs(v)
     peak = max(abs(v) for v in vals) if vals else 0.0
     if peak <= 0.0:
         peak = 1.0
@@ -37,8 +43,8 @@ def ring_depth_table(depth, length=256):
 
 
 # Reeds are grittier than tines
-WAVE_REED = make_table(((1, 1.0), (2, 0.4), (3, 0.2), (4, 0.1), (5, 0.05)))
-WAVE_BITE = make_table(((1, 1.0), (3, 0.8), (5, 0.6), (7, 0.4), (9, 0.2)))
+WAVE_REED = make_table(((1, 1.0), (2, 0.4), (3, 0.2), (4, 0.1), (5, 0.05)), asym=0.25)
+WAVE_BITE = make_table(((1, 1.0), (3, 0.8), (5, 0.6), (7, 0.4), (9, 0.2)), asym=0.4)
 SINE = make_table(((1, 1.0),))
 
 synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)

@@ -25,6 +25,7 @@ def make_table(parts, length=2048, gain=32000):
     return out
 
 SAW = make_table([(n, 1.0 / n) for n in range(1, 40)])
+SINE = make_table(((1, 1.0),))
 FALL = array.array("h", (32767, 0))
 
 synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
@@ -95,16 +96,24 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
 
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=res)
 
-        # Taurus is famous for two oscillators detuned to create a beat frequency
-        actual_detune = osc_b_detune + (beat_freq * 0.05)
+        # Taurus is famous for two VCOs detuned to create a slow beat; express the
+        # beat control as an actual target Hz (not a fixed ratio) so the wobble rate
+        # stays audible and consistent across the bass register instead of scaling
+        # away at low notes or turning into a dissonant interval at high ones.
+        beat_hz = 0.15 + beat_freq * 5.0
+        actual_detune = osc_b_detune + (beat_hz / hz)
 
-        n1 = synthio.Note(hz, waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.5, bend=bend)
-        n2 = synthio.Note(hz * (1.0 + actual_detune), waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.5, bend=bend)
+        n1 = synthio.Note(hz, waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.45, bend=bend)
+        n2 = synthio.Note(hz * (1.0 + actual_detune), waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.45, bend=bend)
+        # Taurus pedals are defined by huge sub content; add a fixed sub-octave sine
+        # under the two detuned saws for the low-end weight the real pedal has.
+        n3 = synthio.Note(hz * 0.5, waveform=SINE, envelope=env, filter=lp, amplitude=amp * 0.5, bend=bend)
 
         serial += 1
-        voices[k] = ((n1, n2), serial)
+        voices[k] = ((n1, n2, n3), serial)
         synth.press(n1)
         synth.press(n2)
+        synth.press(n3)
             
     elif event_type in (vstaudio.EVENT_NOTE_OFF, vstaudio.EVENT_NOTE_ON):
         release_voice(k)
@@ -114,7 +123,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         elif data0 == 1: osc_b_detune = value0 * 0.1
         elif data0 == 2: glide = value0
         elif data0 == 3: cutoff_val = 50.0 * (100.0 ** value0)
-        elif data0 == 4: res = 0.5 + value0 * 3.5
+        elif data0 == 4: res = 0.5 + value0 * 5.5
         elif data0 == 5: env_mod = value0 * 5000.0
         elif data0 == 6: beat_freq = value0
         elif data0 == 7: amp_a = 0.001 + value0 * 2.0

@@ -6,10 +6,28 @@ import math
 import synthio
 import vstaudio
 
+try:
+    from ulab import numpy as np
+except ImportError:
+    np = None
+
 SR = vstaudio.sample_rate()
 TAU = 2.0 * math.pi
 
 def make_table(parts, length=2048, gain=32000):
+    # Additive-harmonic tables (up to ~40 partials) are a real hot spot for the plain-Python
+    # nested loop; use ulab when it's available (real engine) and fall back to it when not
+    # (desktop test harness).
+    if np is not None:
+        idx = np.arange(length)
+        acc = np.zeros(length)
+        for mult, amp in parts:
+            acc = acc + amp * np.sin(idx * (TAU * mult / length))
+        peak = np.max(acc * acc) ** 0.5
+        if peak <= 0.0:
+            peak = 1.0
+        scaled = acc * (gain / peak)
+        return array.array("h", [int(v) for v in scaled])
     vals = [0.0] * length
     for mult, amp in parts:
         step = TAU * mult / length
@@ -116,9 +134,22 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=actual_res)
         
         o1 = synthio.Note(hz, waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.5)
-        # FM / Sync emulation
-        o2 = synthio.Note(hz * (1.0 + fm_amount * 2.0 + morph4), waveform=SQUARE, envelope=env, filter=lp, amplitude=amp * 0.5 * (0.5 + fm_amount))
-        
+        # FM emulation via detune/amplitude, plus Osc Sync: true audio-rate hard sync isn't
+        # achievable in synthio (no per-sample phase reset), so approximate its buzzy,
+        # harmonically-locked character by snapping osc2 toward an integer multiple of osc1's
+        # frequency as Osc Sync increases, and brightening its waveform to match.
+        base_ratio = 1.0 + fm_amount * 2.0 + morph4
+        if osc_sync > 0.01:
+            ratio = round(base_ratio)
+            if ratio < 1:
+                ratio = 1
+            sync_ratio = base_ratio + (ratio - base_ratio) * osc_sync
+            o2_wave = SAW
+        else:
+            sync_ratio = base_ratio
+            o2_wave = SQUARE
+        o2 = synthio.Note(hz * sync_ratio, waveform=o2_wave, envelope=env, filter=lp, amplitude=amp * 0.5 * (0.5 + fm_amount))
+
         serial += 1
         voices[k] = ((o1, o2), serial)
         synth.press(o1)

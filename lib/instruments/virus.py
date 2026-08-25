@@ -47,7 +47,7 @@ master_tune = 1.0
 
 voices = {}
 serial = 0
-MAX_VOICES = 4 # Hypersaw is very taxing (up to 7 saws per voice)
+MAX_VOICES = 4 # Hypersaw is taxing (5 detuned saws per voice)
 
 def key_of(channel, note_id, pitch):
     return (channel, note_id if note_id >= 0 else pitch)
@@ -79,27 +79,35 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
             steal_oldest()
             
         hz = synthio.midi_to_hz(data0 + value1) * master_tune
-        amp = volume * value0 * (1.0 + distortion * 0.5)
-        
+        amp = volume * value0
+
         env = synthio.Envelope(attack_time=amp_a, decay_time=amp_d, release_time=amp_r, attack_level=1.0, sustain_level=amp_s)
-        
+
         f_sweep = synthio.LFO(waveform=FALL, once=True, rate=1.0/amp_d, scale=env_depth, interpolate=True)
-        cutoff = synthio.Math(synthio.MathOperation.SUM, cutoff_val, f_sweep, 0.0)
-        
+        # Distortion pushes the filter brighter too, mimicking the extra
+        # harmonic energy an analog-modeled overdrive stage would expose
+        cutoff = synthio.Math(synthio.MathOperation.SUM, cutoff_val * (1.0 + distortion * 0.6), f_sweep, 0.0)
+
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=res)
-        
+
         notes = []
-        
+
         # Hypersaw emulation (5 saws)
         detunes = [0.0, hs_detune * 0.03, -hs_detune * 0.03, hs_detune * 0.06, -hs_detune * 0.06]
         pans = [0.0, 0.4, -0.4, 0.8, -0.8]
-        
+
         base_a = amp * 0.2
         for i in range(5):
             notes.append(synthio.Note(hz * (1.0 + detunes[i]), waveform=SAW, envelope=env, filter=lp, amplitude=base_a, panning=pans[i]))
-            
+
         if sub_osc > 0.01:
             notes.append(synthio.Note(hz * 0.5, waveform=SQUARE, envelope=env, filter=lp, amplitude=amp * sub_osc * 0.4))
+
+        # Distortion: an added octave-up harmonic layer through a hotter,
+        # un-lowpassed square wave approximates the extra odd/even overtones
+        # a real overdrive/waveshaper stage would add on top of the saws
+        if distortion > 0.01:
+            notes.append(synthio.Note(hz * 2.0, waveform=SQUARE, envelope=env, amplitude=amp * distortion * 0.25))
             
         serial += 1
         voices[k] = (tuple(notes), serial)

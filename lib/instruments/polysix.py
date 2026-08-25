@@ -24,9 +24,15 @@ def make_table(parts, length=2048, gain=32000):
         out[i] = int(vals[i] * scale)
     return out
 
+def pulse_wave(duty, harmonics=32):
+    parts = [(n, (2.0 / (n * math.pi)) * math.sin(n * math.pi * duty)) for n in range(1, harmonics)]
+    return make_table(parts)
+
 SAW = make_table([(n, 1.0 / n) for n in range(1, 40)])
 SQUARE = make_table([(n, 1.0 / n) for n in range(1, 40, 2)])
 SINE = make_table(((1, 1.0),))
+PULSE_NARROW = pulse_wave(0.15)
+PULSE_WIDE = pulse_wave(0.5)
 FALL = array.array("h", (32767, 0))
 
 synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
@@ -88,10 +94,18 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         # Emulate bucket-brigade ensemble with pitch mod
         ens_lfo1 = synthio.LFO(waveform=SINE, rate=0.6, scale=ens_depth * 0.01) if ens_depth > 0.01 else None
         ens_lfo2 = synthio.LFO(waveform=SINE, rate=6.0, scale=ens_depth * 0.005) if ens_depth > 0.01 else None
-        
+
+        # Real PWM: crossfade the DCO between a narrow and wide pulse table at the
+        # PWM Rate, which sweeps the harmonic balance the way a duty-cycle sweep
+        # would (synthio can't reshape one wavetable's duty cycle in real time).
+        pwm_lfo = synthio.LFO(waveform=SINE, rate=pwm_rate, scale=0.5, offset=0.5)
+        amp_narrow = synthio.Math(synthio.MathOperation.SCALE_OFFSET, pwm_lfo, -(amp * 0.5), amp * 0.5)
+        amp_wide = synthio.Math(synthio.MathOperation.SCALE_OFFSET, pwm_lfo, amp * 0.5, 0.0)
+
         notes = []
-        # Main osc
-        notes.append(synthio.Note(hz, waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.5, bend=ens_lfo1, panning=-0.3))
+        # Main DCO, width-modulated
+        notes.append(synthio.Note(hz, waveform=PULSE_NARROW, envelope=env, filter=lp, amplitude=amp_narrow, bend=ens_lfo1, panning=-0.3))
+        notes.append(synthio.Note(hz, waveform=PULSE_WIDE, envelope=env, filter=lp, amplitude=amp_wide, bend=ens_lfo1, panning=-0.3))
         # Simulated ensemble spread
         if ens_depth > 0.01:
             notes.append(synthio.Note(hz, waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.5, bend=ens_lfo2, panning=0.3))
@@ -114,7 +128,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         elif data0 == 2: cutoff_val = 50.0 * (100.0 ** value0)
         elif data0 == 3: res = 0.5 + value0 * 3.5
         elif data0 == 4: ens_depth = value0 * 2.0
-        elif data0 == 5: pwm_rate = 0.1 + value0 * 10.0 # Just mapped but not actively changing width since we use sawtooth
+        elif data0 == 5: pwm_rate = 0.1 + value0 * 10.0
         elif data0 == 6: amp_a = 0.001 + value0 * 2.0
         elif data0 == 7: amp_d = 0.05 + value0 * 3.0
         elif data0 == 8: amp_s = value0

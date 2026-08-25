@@ -28,8 +28,10 @@ SAW = make_table([(n, 1.0 / n) for n in range(1, 40)])
 SQUARE = make_table([(n, 1.0 / n) for n in range(1, 40, 2)])
 # "DWGS" digital wave approx
 DWGS = make_table(((1, 1.0), (3, 0.5), (4, 0.4), (7, 0.2)))
-STEP = make_table(((1, 1.0),)) # Will use square LFO for step seq approx if possible, but synthio only has SINE natively for LFO if we use make_table, wait, we can make a square LFO table
 
+# 8-step waveform table stands in for the MS2000's 16-step Mod Sequencer:
+# a real step sequencer object (not an LFO shape) that steps a value once
+# per beat division and holds it - built here as a stepped LFO waveform
 LFO_STEP = array.array("h", bytearray(2048 * 2))
 for i in range(2048):
     # Create an 8-step sequence
@@ -88,25 +90,33 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
             steal_oldest()
             
         hz = synthio.midi_to_hz(data0 + value1) * master_tune
-        amp = volume * value0 * (1.0 + distortion * 0.5)
-        
+        amp = volume * value0
+
         env = synthio.Envelope(attack_time=amp_a, decay_time=amp_d, release_time=amp_r, attack_level=1.0, sustain_level=amp_s)
-        
-        # Mod Sequence on filter
+
+        # Mod Sequence: the MS2000's Mod Sequencer is a real 16-step value
+        # sequencer, not an LFO shape - approximated here as an 8-step
+        # stepped table driving the filter cutoff, one step per beat
+        # division set by Mod Seq Rate, depth set by Mod Seq Depth
         mod_lfo = synthio.LFO(waveform=LFO_STEP, rate=mod_seq_rate, scale=mod_seq_depth * 3000.0) if mod_seq_depth > 0.01 else 0.0
         cutoff = synthio.Math(synthio.MathOperation.SUM, cutoff_val, mod_lfo, 0.0) if mod_seq_depth > 0.01 else cutoff_val
-        
+
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=res)
-        
+
         wave = SAW
         if osc_wave > 0.6: wave = DWGS
         elif osc_wave > 0.3: wave = SQUARE
-        
-        n = synthio.Note(hz, waveform=wave, envelope=env, filter=lp, amplitude=amp * 0.7)
-        
+
+        notes = [synthio.Note(hz, waveform=wave, envelope=env, filter=lp, amplitude=amp * 0.7)]
+        # Distortion: fold in an unfiltered octave-up square for extra edge,
+        # the way the MS2000's digital drive stage adds grit above the filter
+        if distortion > 0.01:
+            notes.append(synthio.Note(hz * 2.0, waveform=SQUARE, envelope=env, amplitude=amp * distortion * 0.2))
+
         serial += 1
-        voices[k] = ((n,), serial)
-        synth.press(n)
+        voices[k] = (tuple(notes), serial)
+        for n in notes:
+            synth.press(n)
             
     elif event_type in (vstaudio.EVENT_NOTE_OFF, vstaudio.EVENT_NOTE_ON):
         release_voice(k)

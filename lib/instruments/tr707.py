@@ -89,13 +89,13 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
             hp_snap = synthio.Biquad(synthio.FilterMode.HIGH_PASS, 2000.0, Q=0.5)
             
             notes.append(synthio.Note(200.0 * master_tune, waveform=SINE, envelope=env_body, filter=lp_body, amplitude=amp * lvl_snare * 0.6))
-            notes.append(synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env_snap, filter=hp_snap, amplitude=amp * lvl_snare * 0.4))
+            notes.append(synthio.Note(NOISE_HZ * master_tune, waveform=NOISE, envelope=env_snap, filter=hp_snap, amplitude=amp * lvl_snare * 0.4))
             
         elif data0 in (42, 46): # Closed / Open HH
             decay = 0.05 if data0 == 42 else 0.4 * (1.0 + decay_scale)
             env = synthio.Envelope(attack_time=0.001, decay_time=decay, release_time=0.1, attack_level=1.0, sustain_level=0.0)
             hp = synthio.Biquad(synthio.FilterMode.HIGH_PASS, 7000.0, Q=1.0)
-            notes.append(synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env, filter=hp, amplitude=amp * lvl_hh * 0.5))
+            notes.append(synthio.Note(NOISE_HZ * master_tune, waveform=NOISE, envelope=env, filter=hp, amplitude=amp * lvl_hh * 0.5))
             
         elif data0 in (45, 47, 50): # Toms
             hz = 120.0 if data0 == 45 else (150.0 if data0 == 47 else 180.0)
@@ -107,8 +107,8 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
             env = synthio.Envelope(attack_time=0.001, decay_time=1.5 * (1.0 + decay_scale), release_time=0.5, attack_level=1.0, sustain_level=0.0)
             bp = synthio.Biquad(synthio.FilterMode.BAND_PASS, 5000.0, Q=0.5)
             # Use FM bell for the metallic ringing of the crash
-            notes.append(synthio.Note(1000.0, waveform=FM_BELL, envelope=env, filter=bp, amplitude=amp * lvl_crash * 0.5))
-            notes.append(synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env, filter=bp, amplitude=amp * lvl_crash * 0.2))
+            notes.append(synthio.Note(1000.0 * master_tune, waveform=FM_BELL, envelope=env, filter=bp, amplitude=amp * lvl_crash * 0.5))
+            notes.append(synthio.Note(NOISE_HZ * master_tune, waveform=NOISE, envelope=env, filter=bp, amplitude=amp * lvl_crash * 0.2))
             
         if notes:
             serial += 1

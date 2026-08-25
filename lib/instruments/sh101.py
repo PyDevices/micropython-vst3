@@ -6,10 +6,25 @@ import math
 import synthio
 import vstaudio
 
+try:
+    from ulab import numpy as np
+except ImportError:
+    np = None
+
 SR = vstaudio.sample_rate()
 TAU = 2.0 * math.pi
 
 def make_table(parts, length=2048, gain=32000):
+    if np is not None:
+        idx = np.arange(length)
+        acc = np.zeros(length)
+        for mult, amp in parts:
+            acc = acc + amp * np.sin(idx * (TAU * mult / length))
+        peak = np.max(acc * acc) ** 0.5
+        if peak <= 0.0:
+            peak = 1.0
+        scaled = acc * (gain / peak)
+        return array.array("h", [int(v) for v in scaled])
     vals = [0.0] * length
     for mult, amp in parts:
         step = TAU * mult / length
@@ -23,6 +38,13 @@ def make_table(parts, length=2048, gain=32000):
     for i in range(length):
         out[i] = int(vals[i] * scale)
     return out
+
+def make_pulse_table(duty, length=2048, gain=32000, harmonics=32):
+    # Band-limited rectangular pulse via its Fourier series so the duty cycle
+    # actually reshapes the harmonic content (true PWM), not just a naive
+    # sample-and-hold pulse that would alias badly at pitch.
+    parts = [(n, (2.0 / (n * math.pi)) * math.sin(n * math.pi * duty)) for n in range(1, harmonics)]
+    return make_table(parts, length, gain)
 
 SAW = make_table([(n, 1.0 / n) for n in range(1, 40)])
 SQUARE = make_table([(n, 1.0 / n) for n in range(1, 40, 2)])
@@ -82,8 +104,11 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=res)
         
-        # PWM emulation not directly supported, using saw for main osc and square for sub
-        n1 = synthio.Note(hz, waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.5)
+        # SH-101's main VCO is a pulse wave with a real PWM control; rebuild the
+        # duty-cycle table per note-on from the current Pulse Width macro.
+        duty = 0.05 + pw * 0.9
+        pulse_wave = make_pulse_table(duty)
+        n1 = synthio.Note(hz, waveform=pulse_wave, envelope=env, filter=lp, amplitude=amp * 0.5)
         n_sub = synthio.Note(hz * 0.5, waveform=SQUARE, envelope=env, filter=lp, amplitude=amp * sub_osc * 0.5)
         
         serial += 1

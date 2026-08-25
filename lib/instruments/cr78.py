@@ -6,11 +6,26 @@ import math
 import synthio
 import vstaudio
 
+try:
+    from ulab import numpy as np
+except ImportError:
+    np = None
+
 SR = vstaudio.sample_rate()
 TAU = 2.0 * math.pi
 
 
 def make_table(parts, length=2048, gain=32000):
+    if np is not None:
+        idx = np.arange(length)
+        acc = np.zeros(length)
+        for mult, amp in parts:
+            acc = acc + amp * np.sin(idx * (TAU * mult / length))
+        peak = np.max(acc * acc) ** 0.5
+        if peak <= 0.0:
+            peak = 1.0
+        scaled = acc * (gain / peak)
+        return array.array("h", [int(v) for v in scaled])
     vals = [0.0] * length
     for mult, amp in parts:
         step = TAU * mult / length
@@ -168,12 +183,13 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
             note = synthio.Note(800.0, waveform=SQUARE, envelope=env, filter=bp, amplitude=amp * cowbell_level)
             notes_to_play.append(note)
 
-        # Guiro (58)
+        # Guiro (58) - a scraping ratchet, not a single swell: stack short
+        # staggered noise clicks so the ridges of the scrape are audible
         elif pitch == 58:
-            env = synthio.Envelope(attack_time=0.01, decay_time=0.2, release_time=0.1, attack_level=1.0, sustain_level=0.0)
             bp = synthio.Biquad(synthio.FilterMode.BAND_PASS, 3500.0, Q=1.0)
-            note = synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env, filter=bp, amplitude=amp * guiro_level)
-            notes_to_play.append(note)
+            for i, attack in enumerate((0.001, 0.02, 0.04, 0.06, 0.08)):
+                env = synthio.Envelope(attack_time=attack, decay_time=0.03, release_time=0.02, attack_level=1.0, sustain_level=0.0)
+                notes_to_play.append(synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env, filter=bp, amplitude=amp * guiro_level * (1.0 - i * 0.12)))
 
         # Tambourine (54)
         elif pitch == 54:

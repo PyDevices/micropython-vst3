@@ -6,10 +6,28 @@ import math
 import synthio
 import vstaudio
 
+try:
+    from ulab import numpy as np
+except ImportError:
+    np = None
+
 SR = vstaudio.sample_rate()
 TAU = 2.0 * math.pi
 
 def make_table(parts, length=2048, gain=32000):
+    # Additive-harmonic tables (up to ~40 partials) are a real hot spot for the plain-Python
+    # nested loop; use ulab when it's available (real engine) and fall back to it when not
+    # (desktop test harness).
+    if np is not None:
+        idx = np.arange(length)
+        acc = np.zeros(length)
+        for mult, amp in parts:
+            acc = acc + amp * np.sin(idx * (TAU * mult / length))
+        peak = np.max(acc * acc) ** 0.5
+        if peak <= 0.0:
+            peak = 1.0
+        scaled = acc * (gain / peak)
+        return array.array("h", [int(v) for v in scaled])
     vals = [0.0] * length
     for mult, amp in parts:
         step = TAU * mult / length
@@ -98,7 +116,17 @@ def key_of(channel, note_id, pitch):
 def release_voice(k):
     voice = voices.pop(k, None)
     if voice is not None:
-        for note in voice[0]:
+        notes, _, filt_release, filtered_notes = voice
+        if filt_release is not None:
+            base_cutoff, sustain_delta, release_time, q = filt_release
+            rel_lfo = synthio.LFO(waveform=array.array("h", (32767, 0)), once=True,
+                                  rate=1.0 / max(0.01, release_time), interpolate=True)
+            rel_cutoff = synthio.Math(synthio.MathOperation.SCALE_OFFSET, rel_lfo,
+                                      sustain_delta, base_cutoff)
+            rel_filter = synthio.Biquad(synthio.FilterMode.LOW_PASS, rel_cutoff, Q=q)
+            for note in filtered_notes:
+                note.filter = rel_filter
+        for note in notes:
             synth.release(note)
 
 def steal_oldest():
@@ -143,12 +171,23 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         o2 = synthio.Note(hz * osc2_pitch, waveform=SQUARE, envelope=env, filter=hp, amplitude=amp * 0.5,
                            ring_frequency=hz, ring_waveform=ring_wave)
         notes = [o1, o2]
+        lp_notes = [o1]
         if noise_lvl > 0.01:
-            notes.append(synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env, filter=lp,
-                                       amplitude=amp * noise_lvl * 0.4))
+            noise_note = synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env, filter=lp,
+                                      amplitude=amp * noise_lvl * 0.4)
+            notes.append(noise_note)
+            lp_notes.append(noise_note)
+
+        # EG2 Release: retarget the LPF-routed notes to a real release sweep
+        # at note-off (only the LPF gets the EG2 sweep, so only those notes
+        # need it; the HPF stays fixed). Note.filter is mutable
+        # post-construction, so this reassigns it rather than trying to
+        # represent an indefinite sustain hold in the one-shot attack/decay
+        # LFO above.
+        filt_release = (lpf_cutoff, eg2_sweep * eg2_s, eg2_r, lpf_peak)
 
         serial += 1
-        voices[k] = (tuple(notes), serial)
+        voices[k] = (tuple(notes), serial, filt_release, tuple(lp_notes))
         for n in notes:
             synth.press(n)
             

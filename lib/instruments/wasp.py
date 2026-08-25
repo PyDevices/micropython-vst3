@@ -34,7 +34,9 @@ def noise_table(length=8192, seed=1234):
 
 NOISE = noise_table()
 NOISE_HZ = SR / 8192.0
-WAVE_DIGI = make_table([(n, 1.0 / n) for n in range(1, 40)]) # Gritty digital oscillator approx
+# The Wasp's two VCOs are digital (CMOS) square-wave oscillators, not analog saws -
+# odd harmonics only gives the thin, buzzy character real to the hardware.
+WAVE_DIGI = make_table([(n, 1.0 / n) for n in range(1, 40, 2)])
 
 synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
 vstaudio.output(synth)
@@ -88,12 +90,20 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         
         env = synthio.Envelope(attack_time=amp_a, decay_time=amp_d, release_time=amp_r, attack_level=1.0, sustain_level=amp_s)
         
-        fm = synthio.FilterMode.HIGH_PASS if filter_mode > 0.5 else synthio.FilterMode.LOW_PASS
+        # Real Wasp filter is a 3-position switch (LP/BP/HP), not a 2-way toggle.
+        if filter_mode < 0.33:
+            fm = synthio.FilterMode.LOW_PASS
+        elif filter_mode < 0.66:
+            fm = synthio.FilterMode.BAND_PASS
+        else:
+            fm = synthio.FilterMode.HIGH_PASS
         flt = synthio.Biquad(fm, cutoff_val, Q=res)
-        
+
         notes = []
-        notes.append(synthio.Note(hz, waveform=WAVE_DIGI, envelope=env, filter=flt, amplitude=amp * 0.8))
-        
+        # Two digital square VCOs, detuned, for the raw doubled-oscillator Wasp tone.
+        notes.append(synthio.Note(hz, waveform=WAVE_DIGI, envelope=env, filter=flt, amplitude=amp * 0.45))
+        notes.append(synthio.Note(hz * 1.007, waveform=WAVE_DIGI, envelope=env, filter=flt, amplitude=amp * 0.45))
+
         if noise_lvl > 0.01:
             notes.append(synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env, filter=flt, amplitude=amp * noise_lvl * 0.2))
             
@@ -109,7 +119,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         if data0 == 0: volume = value0
         elif data0 == 1: filter_mode = value0
         elif data0 == 2: cutoff_val = 50.0 * (100.0 ** value0)
-        elif data0 == 3: res = 0.5 + value0 * 4.0 # unstable filter
+        elif data0 == 3: res = 0.5 + value0 * 7.5 # pushes into self-oscillation like the real unstable filter
         elif data0 == 4: noise_lvl = value0
         elif data0 == 5: amp_a = 0.001 + value0 * 2.0
         elif data0 == 6: amp_d = 0.05 + value0 * 3.0

@@ -109,9 +109,8 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         diff1 = f1_end - f1_start
         diff2 = f2_end - f2_start
         
-        # Use FALL to sweep. Note FALL goes from 1.0 to 0.0
-        # So we start at f1_end, and sweep down (or up) to f1_start.
-        # Actually it's easier to say: output = end + (start - end) * FALL
+        # FALL ramps 1.0 -> 0.0 once, so output = end + (start - end) * FALL
+        # sweeps from f_start at note-on down to f_end over morph_speed
         morph_lfo = synthio.LFO(waveform=FALL, once=True, rate=1.0 / max(0.01, morph_speed * 4.0), scale=1.0, interpolate=True)
         
         c1 = synthio.Math(synthio.MathOperation.SUM, f1_end, synthio.Math(synthio.MathOperation.SCALE_OFFSET, morph_lfo, diff1, 0.0), 0.0)
@@ -120,11 +119,15 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         bp1 = synthio.Biquad(synthio.FilterMode.BAND_PASS, c1, Q=6.0)
         bp2 = synthio.Biquad(synthio.FilterMode.BAND_PASS, c2, Q=6.0)
         
-        # FM modulation emulation via pitch mod (vibrato on steroids)
-        fm_mod = synthio.LFO(waveform=SINE, rate=hz * 2.0, scale=fm_idx * 0.1) if fm_idx > 0.01 else None
-        
-        n1 = synthio.Note(hz, waveform=WAVE_FM, envelope=env, filter=bp1, amplitude=amp * brightness * 0.6, bend=fm_mod, panning=-0.3)
-        n2 = synthio.Note(hz, waveform=WAVE_FM, envelope=env, filter=bp2, amplitude=amp * brightness * 0.6, bend=fm_mod, panning=0.3)
+        # True FM operators/algorithms aren't in reach here, so the FM engine
+        # is approximated as: fast pitch modulation (sideband generation,
+        # like real FM) run through formant filters (the real FS1R's actual
+        # party trick). Brightness raises the modulation index rather than
+        # just the volume, since a brighter FM tone is a harder-modulated one.
+        fm_mod = synthio.LFO(waveform=SINE, rate=hz * 2.0, scale=fm_idx * (0.04 + brightness * 0.18)) if fm_idx > 0.01 else None
+
+        n1 = synthio.Note(hz, waveform=WAVE_FM, envelope=env, filter=bp1, amplitude=amp * 0.6, bend=fm_mod, panning=-0.3)
+        n2 = synthio.Note(hz, waveform=WAVE_FM, envelope=env, filter=bp2, amplitude=amp * 0.6, bend=fm_mod, panning=0.3)
         
         serial += 1
         voices[k] = ((n1, n2), serial)

@@ -79,13 +79,16 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         hz = synthio.midi_to_hz(data0 + value1) * master_tune
         amp = volume * value0
         
-        # LPG strike simulates a vactrol snapping open and closing
-        # Both amplitude and filter cutoff follow this
-        actual_decay = lpg_decay if lpg_strike > 0.5 else 0.5
-        
-        env = synthio.Envelope(attack_time=amp_a, decay_time=actual_decay, release_time=amp_r, attack_level=1.0, sustain_level=amp_s if lpg_strike < 0.5 else 0.0)
-        
-        f_sweep = synthio.LFO(waveform=FALL, once=True, rate=1.0/actual_decay, scale=10000.0, interpolate=True)
+        # A vactrol-driven LPG ties amplitude and filter cutoff to one envelope; more
+        # Strike means a harder snap (shorter decay, more percussive, brighter jolt),
+        # scaled continuously rather than as an on/off switch.
+        actual_decay = 0.05 + lpg_decay * (1.0 - 0.7 * lpg_strike)
+        sustain_level = amp_s * (1.0 - lpg_strike)
+
+        env = synthio.Envelope(attack_time=amp_a, decay_time=actual_decay, release_time=amp_r, attack_level=1.0, sustain_level=sustain_level)
+
+        strike_depth = 2000.0 + lpg_strike * 9000.0
+        f_sweep = synthio.LFO(waveform=FALL, once=True, rate=1.0/actual_decay, scale=strike_depth, interpolate=True)
         cutoff = synthio.Math(synthio.MathOperation.SUM, 200.0, f_sweep, 0.0)
         
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=0.5) # LPG has very low Q

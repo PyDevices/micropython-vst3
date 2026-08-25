@@ -96,13 +96,13 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
             hp_snap = synthio.Biquad(synthio.FilterMode.HIGH_PASS, 1000.0, Q=0.5)
             
             notes.append(synthio.Note(hz * master_tune, waveform=SQUARE, envelope=env_body, filter=lp, amplitude=amp * 0.4))
-            notes.append(synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env_snap, filter=hp_snap, amplitude=amp * 0.6))
+            notes.append(synthio.Note(NOISE_HZ * master_tune, waveform=NOISE, envelope=env_snap, filter=hp_snap, amplitude=amp * 0.6))
             
         elif data0 in (42, 46): # Closed / Open HH
             decay = 0.05 if data0 == 42 else 0.4 * (1.0 + decay_scale)
             env = synthio.Envelope(attack_time=0.001, decay_time=decay, release_time=0.1, attack_level=1.0, sustain_level=0.0)
             hp = synthio.Biquad(synthio.FilterMode.HIGH_PASS, 4000.0 + hh_p * 2000.0 - crunch * 2000.0, Q=1.0)
-            notes.append(synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env, filter=hp, amplitude=amp * 0.5))
+            notes.append(synthio.Note(NOISE_HZ * master_tune, waveform=NOISE, envelope=env, filter=hp, amplitude=amp * 0.5))
             
         elif data0 in (45, 47, 50): # Toms
             hz = (80.0 if data0 == 45 else (110.0 if data0 == 47 else 140.0)) + tom_p * 40.0

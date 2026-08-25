@@ -103,19 +103,25 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         perc_env = synthio.Envelope(attack_time=0.001, decay_time=perc_dec, release_time=0.05, attack_level=1.0, sustain_level=0.0)
         click_env = synthio.Envelope(attack_time=0.001, decay_time=0.02, release_time=0.02, attack_level=1.0, sustain_level=0.0)
         
-        leslie_rate = 6.0 if leslie_fast > 0.5 else 1.0
-        leslie_wave = ring_depth_table(0.3)
-        leslie_vib = synthio.LFO(waveform=SINE, rate=leslie_rate * 1.1, scale=0.02)
-        
+        # Leslie has two independent rotors: a slow bass drum and a faster
+        # treble horn, each with its own speed and modulation depth.
+        drum_rate = 5.0 if leslie_fast > 0.5 else 0.6
+        horn_rate = 6.8 if leslie_fast > 0.5 else 0.85
+        drum_wave = ring_depth_table(0.15)
+        horn_wave = ring_depth_table(0.35)
+        drum_vib = synthio.LFO(waveform=SINE, rate=drum_rate * 1.05, scale=0.01)
+        horn_vib = synthio.LFO(waveform=SINE, rate=horn_rate * 1.05, scale=0.025)
+
         notes = []
-        # Drawbars: 16' (sub), 8' (fund), 4' (2nd harm), 2' (4th harm)
-        if db16 > 0.01: notes.append(synthio.Note(hz * 0.5, waveform=SINE, envelope=env, amplitude=amp * db16 * 0.25, ring_frequency=leslie_rate, ring_waveform=leslie_wave, bend=leslie_vib, panning=-0.2))
-        if db8 > 0.01: notes.append(synthio.Note(hz, waveform=SINE, envelope=env, amplitude=amp * db8 * 0.25, ring_frequency=leslie_rate, ring_waveform=leslie_wave, bend=leslie_vib, panning=0.2))
-        if db4 > 0.01: notes.append(synthio.Note(hz * 2.0, waveform=SINE, envelope=env, amplitude=amp * db4 * 0.2, ring_frequency=leslie_rate, ring_waveform=leslie_wave, bend=leslie_vib, panning=-0.1))
-        if db2 > 0.01: notes.append(synthio.Note(hz * 4.0, waveform=SINE, envelope=env, amplitude=amp * db2 * 0.15, ring_frequency=leslie_rate, ring_waveform=leslie_wave, bend=leslie_vib, panning=0.1))
-        
-        # 3rd harmonic percussion
-        if perc_lvl > 0.01: notes.append(synthio.Note(hz * 3.0, waveform=SINE, envelope=perc_env, amplitude=amp * perc_lvl * 0.4, ring_frequency=leslie_rate, ring_waveform=leslie_wave, bend=leslie_vib))
+        # Drawbars: 16' (sub), 8' (fund) go through the bass drum rotor;
+        # 4' (2nd harm), 2' (4th harm) go through the treble horn rotor
+        if db16 > 0.01: notes.append(synthio.Note(hz * 0.5, waveform=SINE, envelope=env, amplitude=amp * db16 * 0.25, ring_frequency=drum_rate, ring_waveform=drum_wave, bend=drum_vib, panning=-0.2))
+        if db8 > 0.01: notes.append(synthio.Note(hz, waveform=SINE, envelope=env, amplitude=amp * db8 * 0.25, ring_frequency=drum_rate, ring_waveform=drum_wave, bend=drum_vib, panning=0.2))
+        if db4 > 0.01: notes.append(synthio.Note(hz * 2.0, waveform=SINE, envelope=env, amplitude=amp * db4 * 0.2, ring_frequency=horn_rate, ring_waveform=horn_wave, bend=horn_vib, panning=-0.1))
+        if db2 > 0.01: notes.append(synthio.Note(hz * 4.0, waveform=SINE, envelope=env, amplitude=amp * db2 * 0.15, ring_frequency=horn_rate, ring_waveform=horn_wave, bend=horn_vib, panning=0.1))
+
+        # 3rd harmonic percussion rides the horn rotor
+        if perc_lvl > 0.01: notes.append(synthio.Note(hz * 3.0, waveform=SINE, envelope=perc_env, amplitude=amp * perc_lvl * 0.4, ring_frequency=horn_rate, ring_waveform=horn_wave, bend=horn_vib))
         
         # Key click
         if key_click > 0.01:

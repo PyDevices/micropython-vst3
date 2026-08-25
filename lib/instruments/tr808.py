@@ -6,11 +6,26 @@ import math
 import synthio
 import vstaudio
 
+try:
+    from ulab import numpy as np
+except ImportError:
+    np = None
+
 SR = vstaudio.sample_rate()
 TAU = 2.0 * math.pi
 
 
 def make_table(parts, length=2048, gain=32000):
+    if np is not None:
+        idx = np.arange(length)
+        acc = np.zeros(length)
+        for mult, amp in parts:
+            acc = acc + amp * np.sin(idx * (TAU * mult / length))
+        peak = np.max(acc * acc) ** 0.5
+        if peak <= 0.0:
+            peak = 1.0
+        scaled = acc * (gain / peak)
+        return array.array("h", [int(v) for v in scaled])
     vals = [0.0] * length
     for mult, amp in parts:
         step = TAU * mult / length
@@ -49,6 +64,15 @@ SQUARE = make_table([(n, 1.0 / n) for n in range(1, 23, 2)])
 NOISE = noise_table(seed=808080)
 NOISE_HZ = SR / 8192.0
 FALL = array.array("h", (32767, 0))
+
+# The real 808's hi-hats/cymbals come from six square-wave oscillators mixed
+# together, not noise - build that same inharmonic square bank here (ratios
+# approximate the real circuit's ~205/304/369/421/497/619 Hz bank) and drive
+# each partial with a few of its own odd harmonics for square-wave grit.
+_METAL_TONES = ((10, 1.0), (15, 0.85), (18, 0.75), (21, 0.65), (24, 0.55), (30, 0.45))
+_METAL_PARTS = [(m * h, a * (1.0 / h)) for m, a in _METAL_TONES for h in (1, 3, 5)]
+METAL = make_table(_METAL_PARTS, length=2048)
+METAL_HZ = 90.0
 
 synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
 vstaudio.output(synth)
@@ -180,18 +204,18 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
                 
             env = synthio.Envelope(attack_time=0.001, decay_time=oh_decay if is_open else ch_decay, release_time=0.05, attack_level=1.0, sustain_level=0.0)
             hp = synthio.Biquad(synthio.FilterMode.HIGH_PASS, 8000.0, Q=0.8)
-            note = synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env, filter=hp, amplitude=amp * 0.7)
+            note = synthio.Note(METAL_HZ, waveform=METAL, envelope=env, filter=hp, amplitude=amp * 0.7)
             notes_to_play.append(note)
             if is_open:
                 open_hat_keys.append(k)
-                
+
         # Cymbal (49, 51, 57, 59)
         elif pitch in (49, 51, 57, 59):
             env = synthio.Envelope(attack_time=0.001, decay_time=cym_decay, release_time=0.2, attack_level=1.0, sustain_level=0.0)
             bp = synthio.Biquad(synthio.FilterMode.BAND_PASS, 6000.0, Q=0.5)
             hp = synthio.Biquad(synthio.FilterMode.HIGH_PASS, 9000.0, Q=0.7)
-            note = synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env, filter=bp, amplitude=amp * 0.6)
-            note2 = synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env, filter=hp, amplitude=amp * 0.4)
+            note = synthio.Note(METAL_HZ, waveform=METAL, envelope=env, filter=bp, amplitude=amp * 0.6)
+            note2 = synthio.Note(METAL_HZ, waveform=METAL, envelope=env, filter=hp, amplitude=amp * 0.4)
             notes_to_play.extend([note, note2])
 
         # Clap (39)

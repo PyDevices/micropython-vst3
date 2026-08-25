@@ -74,17 +74,16 @@ def steal_oldest():
 
 def update_hiss():
     global hiss_note
-    # Tape hiss continues as long as a note is pressed, or constantly.
-    # Often Mellotrons only hiss when tape is engaged.
+    # Tape hiss continues as long as a note is pressed (tape engaged).
     if len(voices) > 0 and tape_hiss > 0.01:
+        target_amp = volume * tape_hiss * 0.1
         if hiss_note is None:
             env = synthio.Envelope(attack_time=0.1, decay_time=0.1, release_time=0.1, attack_level=1.0, sustain_level=1.0)
             lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, 4000.0, Q=0.5)
-            hiss_note = synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env, filter=lp, amplitude=volume * tape_hiss * 0.1)
+            hiss_note = synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env, filter=lp, amplitude=target_amp)
             synth.press(hiss_note)
         else:
-            # cannot change amplitude dynamically easily without math node, but it's ok
-            pass
+            hiss_note.amplitude = target_amp
     else:
         if hiss_note is not None:
             synth.release(hiss_note)
@@ -124,7 +123,9 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         update_hiss()
         
     elif event_type == vstaudio.EVENT_PARAMETER:
-        if data0 == 0: volume = value0
+        if data0 == 0:
+            volume = value0
+            update_hiss()
         elif data0 == 1: tone = 500.0 + value0 * 4000.0
         elif data0 == 2: flutter_rate = 0.1 + value0 * 10.0
         elif data0 == 3: flutter_depth = value0

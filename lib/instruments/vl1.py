@@ -99,7 +99,17 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
             
     elif event_type in (vstaudio.EVENT_NOTE_OFF, vstaudio.EVENT_NOTE_ON):
         release_voice(k)
-        
+
+    elif event_type in (vstaudio.EVENT_CHANNEL_PRESSURE, vstaudio.EVENT_POLY_PRESSURE):
+        # The VL1 is a real physical-modeled wind instrument: it's played
+        # with a breath controller, so ongoing breath pressure re-shapes
+        # the tone of a note already sounding, not just its initial hit
+        pressure = value0
+        for voice in voices.values():
+            for n in voice[0]:
+                if n.filter is not None:
+                    n.filter.frequency = 500.0 + breath * (2000.0 + pressure * 3000.0)
+
     elif event_type == vstaudio.EVENT_PARAMETER:
         if data0 == 0: volume = value0
         elif data0 == 1: breath = value0

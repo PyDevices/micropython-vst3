@@ -24,8 +24,11 @@ def make_table(parts, length=2048, gain=32000):
         out[i] = int(vals[i] * scale)
     return out
 
-# Phase Distortion fake: We morph from sine to a bright square-ish wave by using a low pass filter
-WAVE_PD = make_table([(n, 1.0 / n) for n in range(1, 40)]) # Saw
+# True phase distortion warps a sine read-pointer's speed rather than filtering a
+# spectrum; synthio has no per-sample phase control, so we approximate the audible
+# result (a harmonic-rich tone whose brightness sweeps like the DCW envelope) with
+# a harmonic-rich sawtooth run through a swept resonant low-pass below.
+WAVE_PD = make_table([(n, 1.0 / n) for n in range(1, 40)])
 SINE = make_table(((1, 1.0),))
 def env_shape_table(attack, decay, sustain, length=96):
     # One-shot LFO waveform: ramps 0 -> peak over the attack fraction, then
@@ -102,8 +105,8 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         
         env = synthio.Envelope(attack_time=amp_a, decay_time=amp_d, release_time=amp_r, attack_level=1.0, sustain_level=amp_s)
         
-        # PD envelope modulates the "distortion" (cutoff of the rich wave)
-        # We can't do a true multi-stage envelope easily for filter, so we use an LFO decay
+        # DCW envelope modulates the "distortion" (cutoff of the rich wave) with a
+        # one-shot attack->decay->0 shape, mirroring the CZ's DCW envelope stage.
         env_tbl = env_shape_table(pd_a, pd_d, 0.0)
         f_sweep = synthio.LFO(waveform=env_tbl, once=True, rate=1.0/max(0.01, pd_a + pd_d), scale=pd_depth, interpolate=True)
         

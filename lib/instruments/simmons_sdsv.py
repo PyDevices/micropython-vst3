@@ -6,11 +6,26 @@ import math
 import synthio
 import vstaudio
 
+try:
+    from ulab import numpy as np
+except ImportError:
+    np = None
+
 SR = vstaudio.sample_rate()
 TAU = 2.0 * math.pi
 
 
 def make_table(parts, length=2048, gain=32000):
+    if np is not None:
+        idx = np.arange(length)
+        acc = np.zeros(length)
+        for mult, amp in parts:
+            acc = acc + amp * np.sin(idx * (TAU * mult / length))
+        peak = np.max(acc * acc) ** 0.5
+        if peak <= 0.0:
+            peak = 1.0
+        scaled = acc * (gain / peak)
+        return array.array("h", [int(v) for v in scaled])
     vals = [0.0] * length
     for mult, amp in parts:
         step = TAU * mult / length
@@ -132,7 +147,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         # BD (35, 36)
         if pitch in (35, 36):
             env = synthio.Envelope(attack_time=0.001, decay_time=bd_decay, release_time=0.05, attack_level=1.0, sustain_level=0.0)
-            drop = synthio.LFO(waveform=FALL, once=True, rate=15.0, scale=bd_sweep, interpolate=True)
+            drop = synthio.LFO(waveform=FALL, once=True, rate=6.0, scale=bd_sweep, interpolate=True)
             body = synthio.Note(bd_pitch, waveform=SINE, envelope=env, amplitude=amp, bend=drop)
             
             click = synthio.Note(NOISE_HZ, waveform=NOISE, envelope=click_env, filter=click_hp, amplitude=amp * click_level)
@@ -141,7 +156,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         # SD (38, 40)
         elif pitch in (38, 40):
             env = synthio.Envelope(attack_time=0.001, decay_time=sd_decay, release_time=0.05, attack_level=1.0, sustain_level=0.0)
-            drop = synthio.LFO(waveform=FALL, once=True, rate=20.0, scale=sd_sweep, interpolate=True)
+            drop = synthio.LFO(waveform=FALL, once=True, rate=8.0, scale=sd_sweep, interpolate=True)
             body = synthio.Note(sd_pitch, waveform=SINE, envelope=env, amplitude=amp * 0.7, bend=drop)
             
             noise_env = synthio.Envelope(attack_time=0.001, decay_time=sd_decay * 1.2, release_time=0.05, attack_level=1.0, sustain_level=0.0)
@@ -161,7 +176,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
                 tune = ht_pitch
             
             env = synthio.Envelope(attack_time=0.001, decay_time=tom_decay, release_time=0.05, attack_level=1.0, sustain_level=0.0)
-            drop = synthio.LFO(waveform=FALL, once=True, rate=15.0, scale=tom_sweep, interpolate=True)
+            drop = synthio.LFO(waveform=FALL, once=True, rate=5.0, scale=tom_sweep, interpolate=True)
             body = synthio.Note(tune, waveform=SINE, envelope=env, amplitude=amp, bend=drop)
             
             noise_env = synthio.Envelope(attack_time=0.001, decay_time=tom_decay * 0.8, release_time=0.05, attack_level=1.0, sustain_level=0.0)
