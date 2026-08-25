@@ -16,8 +16,8 @@ import sys
 import uuid
 from pathlib import Path
 
-SCORE = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCORE))
+SOUNDTRACK = Path(__file__).resolve().parent
+sys.path.insert(0, str(SOUNDTRACK))
 from piece import load_piece, piece_arg  # noqa: E402
 
 PIECE, ARGV = piece_arg(sys.argv[1:])
@@ -213,7 +213,7 @@ def tempo_block():
 
 def main():
     out = (Path(ARGV[0]) if ARGV
-           else SCORE / "build" / (C.TITLE + ".RPP"))
+           else SOUNDTRACK / "build" / (C.TITLE + ".RPP"))
     out.parent.mkdir(parents=True, exist_ok=True)
 
     master_vol = 10.0 ** (C.MASTER_GAIN_DB / 20.0)

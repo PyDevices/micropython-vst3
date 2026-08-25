@@ -22,7 +22,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-score_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+soundtrack_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 reaper_exe=${REAPER_EXE:-/mnt/c/Users/bradb/REAPER/reaper.exe}
 reaper_resource=${REAPER_RESOURCE:-/mnt/c/Users/bradb/AppData/Roaming/REAPER}
 bundle="/mnt/c/Users/bradb/AppData/Local/Programs/Common/VST3/MicroPythonVST3.vst3"
@@ -34,7 +34,7 @@ test -d "$bundle" || { echo "error: MicroPythonVST3.vst3 not installed at $bundl
 
 read -r title render_seconds n_tracks n_envs <<< "$(python3 - <<PYEOF
 import sys
-sys.path.insert(0, "$score_dir")
+sys.path.insert(0, "$soundtrack_dir")
 from piece import load_piece
 C, _ = load_piece("$piece")
 envs = sum(1 for t in C.TRACKS for e in t["macro_env"].values() if e)
@@ -51,7 +51,7 @@ stop_reaper() {
 if [[ "$mode" == play ]]; then
     project_dir="/mnt/c/Users/bradb/Music/$title"
     mkdir -p "$project_dir"
-    python3 "$score_dir/generate_project.py" --piece "$piece" "$project_dir/$title.RPP"
+    python3 "$soundtrack_dir/generate_project.py" --piece "$piece" "$project_dir/$title.RPP"
     project_native=$(wslpath -w "$project_dir/$title.RPP")
 
     echo "Stopping any running REAPER instance..."
@@ -59,7 +59,7 @@ if [[ "$mode" == play ]]; then
     sleep 2
 
     mkdir -p "$reaper_resource/Scripts"
-    cp "$score_dir/reaper/autoplay.lua" "$reaper_resource/Scripts/__startup.lua"
+    cp "$soundtrack_dir/reaper/autoplay.lua" "$reaper_resource/Scripts/__startup.lua"
 
     launcher="/mnt/c/Users/bradb/AppData/Local/Temp/mpvst_play_$piece.ps1"
     cat > "$launcher" <<PS1
@@ -97,10 +97,10 @@ rm -rf "$work_unix"
 mkdir -p "$work_unix"
 work_native=$(wslpath -w "$work_unix")
 
-python3 "$score_dir/generate_project.py" --piece "$piece" "$work_unix/$title.RPP"
+python3 "$soundtrack_dir/generate_project.py" --piece "$piece" "$work_unix/$title.RPP"
 
 mkdir -p "$reaper_resource/Scripts"
-cp "$score_dir/reaper/verify.lua" "$reaper_resource/Scripts/__startup.lua"
+cp "$soundtrack_dir/reaper/verify.lua" "$reaper_resource/Scripts/__startup.lua"
 
 echo "Stopping any running REAPER instance..."
 stop_reaper
@@ -138,14 +138,14 @@ cat "$work_unix/report.txt" 2>/dev/null || echo "no report produced"
 
 bounce="$work_unix/perihelion_bounce.wav"
 if [ -f "$bounce" ]; then
-    mkdir -p "$score_dir/build"
-    cp "$bounce" "$score_dir/build/$title.wav"
+    mkdir -p "$soundtrack_dir/build"
+    cp "$bounce" "$soundtrack_dir/build/$title.wav"
     echo
     echo "=== bounce vs preview ==="
-    "$score_dir/../../audioif/.venv/bin/python" "$score_dir/verify_song.py" \
+    "$soundtrack_dir/../../audioif/.venv/bin/python" "$soundtrack_dir/verify_song.py" \
         --piece "$piece" \
-        "$score_dir/build/$title.wav" \
-        "$score_dir/build/${piece}_preview.wav"
+        "$soundtrack_dir/build/$title.wav" \
+        "$soundtrack_dir/build/${piece}_preview.wav"
 else
     echo "error: no bounce produced" >&2
     exit 1

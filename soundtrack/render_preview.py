@@ -15,9 +15,9 @@ import time
 import wave
 from pathlib import Path
 
-SCORE = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCORE))
-sys.path.insert(0, str(SCORE / "preview"))
+SOUNDTRACK = Path(__file__).resolve().parent
+sys.path.insert(0, str(SOUNDTRACK))
+sys.path.insert(0, str(SOUNDTRACK / "preview"))
 
 import numpy as np  # noqa: E402
 
@@ -139,7 +139,7 @@ def apply_mix(track, data, total_frames):
 
 
 def main():
-    out_path = SCORE / "build" / ("%s_preview.wav" % PIECE)
+    out_path = SOUNDTRACK / "build" / ("%s_preview.wav" % PIECE)
     argv = list(ARGV)
     stems_dir = None
     if "--stems" in argv:

@@ -1,4 +1,4 @@
-"""Offline renderer for the score's instrument scripts.
+"""Offline renderer for the soundtrack instrument scripts.
 
 Runs an instrument file against the vstaudio shim on top of the audioif
 CPython wheel - the same DSP code the MicroPython sidecar runs - and pulls
