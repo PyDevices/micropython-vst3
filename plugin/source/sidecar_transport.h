@@ -20,8 +20,22 @@ public:
     SidecarTransport& operator=(const SidecarTransport&) = delete;
     SidecarTransport() = default;
 
+    // Where an instance's script came from. A developer-file instance follows
+    // MPVST_SCRIPT_PATH on disk so reloads pick up edits; a restored snapshot
+    // stays pinned to the source embedded in the project state.
+    enum class ScriptOrigin
+    {
+        DeveloperFile,
+        RestoredSnapshot,
+    };
+
     static std::string initialScriptSource();
-    void setScriptSource(std::string source);
+    static std::string developerScriptPath();
+    void setScriptSource(std::string source,
+                         ScriptOrigin origin = ScriptOrigin::RestoredSnapshot);
+    // Re-reads the developer file, if this instance follows one, and returns
+    // the source that should be embedded in project state. Not real-time safe.
+    std::string refreshDeveloperScriptSource();
 
     void configure(double sampleRate, std::uint32_t maxFrames,
                    std::uint32_t latencySamples) noexcept;
@@ -33,6 +47,32 @@ public:
                  bool bypassed, const mpvst_event* events = nullptr,
                  std::uint32_t eventCount = 0U,
                  bool offline = false) noexcept;
+
+    // A point-in-time view of how the sidecar is coping. Every field is
+    // gathered from counters the audio thread only ever adds to, so reading it
+    // never blocks the caller and never disturbs rendering. Read it from a
+    // timer or the editor, not from the audio callback.
+    struct Telemetry
+    {
+        std::uint64_t blocksRequested = 0U;
+        std::uint64_t blocksRendered = 0U;
+        std::uint64_t underruns = 0U;
+        std::uint64_t eventDrops = 0U;
+        std::uint64_t eventsConsumed = 0U;
+        std::uint64_t restarts = 0U;
+        std::uint64_t renderTimeLastNs = 0U;
+        std::uint64_t renderTimeHighWaterNs = 0U;
+        std::uint32_t queueDepth = 0U;
+        std::uint32_t queueDepthHighWater = 0U;
+        std::uint32_t errorCode = 0U;
+        std::uint32_t engineState = 0U;
+        std::int32_t lastExitCode = 0;
+        bool lastExitWasUnexpected = false;
+        bool ready = false;
+    };
+
+    Telemetry telemetry() noexcept;
+    void resetTelemetryPeaks() noexcept;
 
     std::uint32_t latencySamples() const noexcept { return latencySamples_; }
     bool ready() const noexcept { return available_.load(); }
@@ -63,6 +103,7 @@ private:
     mpvst_work_slot* work_ = nullptr;
     std::string mappingName_;
     std::string scriptSource_;
+    ScriptOrigin scriptOrigin_ {ScriptOrigin::RestoredSnapshot};
     std::string materializedScriptPath_;
     std::uint64_t mappingBytes_ = 0U;
     std::uint64_t instanceNonce_ = 0U;
@@ -81,6 +122,12 @@ private:
     std::atomic<bool> supervisorStop_ {false};
     std::atomic<std::uint32_t> activeCallbacks_ {0U};
     std::atomic<std::uint64_t> restartCount_ {0U};
+    std::atomic<std::uint64_t> renderTimeLastNs_ {0U};
+    std::atomic<std::uint64_t> renderTimeHighWaterNs_ {0U};
+    std::atomic<std::uint32_t> queueDepth_ {0U};
+    std::atomic<std::uint32_t> queueDepthHighWater_ {0U};
+    std::atomic<std::int32_t> lastExitCode_ {0};
+    std::atomic<bool> lastExitWasUnexpected_ {false};
     std::thread supervisor_;
 };
 

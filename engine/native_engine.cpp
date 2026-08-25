@@ -80,6 +80,7 @@ int main(int argc, char** argv)
         output->frame_count = request->frame_count;
         output->start_sample = request->start_sample;
         output->channel_count = header.channel_count;
+        const auto renderStarted = std::chrono::steady_clock::now();
         output->flags = eventGate ||
                                 (request->flags & MPVST_WORK_FLAG_TEST_TONE) != 0U
                             ? 0U
@@ -121,6 +122,10 @@ int main(int argc, char** argv)
         (void)mpvst::relaxed_fetch_add_u64(
             &status->events_consumed, request->event_count);
         mpvst::release_consumer(request, header.work_slot_count, workPosition);
+        output->render_time_ns = static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - renderStarted)
+                .count());
         mpvst::publish_producer(output, outputPosition);
         ++workPosition;
         ++outputPosition;

@@ -20,7 +20,8 @@ Processor::Processor ()
     setControllerClass (kControllerUID);
     for (auto& value : macros_)
         value.store (0.5f, std::memory_order_relaxed);
-    sidecar_.setScriptSource (scriptSource_);
+    sidecar_.setScriptSource (scriptSource_,
+                              SidecarTransport::ScriptOrigin::DeveloperFile);
 }
 
 FUnknown* Processor::createInstance (void*)
@@ -76,6 +77,7 @@ tresult PLUGIN_API Processor::setActive (TBool state)
         fadeSamplesRemaining_ = 0U;
         holdSamplesRemaining_ = 0U;
         active_.store (1U, std::memory_order_relaxed);
+        macroResyncPending_.store (1U, std::memory_order_relaxed);
         (void)sidecar_.start ();
     }
     else
@@ -222,13 +224,13 @@ void Processor::clearOutput (ProcessData& data) noexcept
 }
 
 std::uint32_t Processor::collectEvents (IEventList* input,
-                                        int32 frameCount) noexcept
+                                        int32 frameCount,
+                                        std::uint32_t count) noexcept
 {
     if (input == nullptr || frameCount <= 0)
-        return 0U;
+        return count;
 
     const auto hostCount = input->getEventCount ();
-    std::uint32_t count = 0U;
     for (int32 index = 0; index < hostCount && count < events_.size (); ++index)
     {
         Event source {};
@@ -276,10 +278,49 @@ std::uint32_t Processor::collectEvents (IEventList* input,
 
 void Processor::sortEvents (std::uint32_t count) noexcept
 {
-    std::sort (events_.begin (), events_.begin () + count,
-               [] (const mpvst_event& left, const mpvst_event& right) {
-                   return left.sample_position < right.sample_position;
-               });
+    // Insertion sort keeps equal sample positions in submission order, so the
+    // macro resynchronisation emitted at position zero stays ahead of any note
+    // that starts in the same frame. It also never allocates, which std::sort's
+    // stable counterpart does not guarantee in a real-time callback. Host
+    // events arrive in ascending order, so the common case is linear.
+    for (std::uint32_t index = 1U; index < count; ++index)
+    {
+        const auto pending = events_[index];
+        std::uint32_t position = index;
+        while (position > 0U &&
+               events_[position - 1U].sample_position > pending.sample_position)
+        {
+            events_[position] = events_[position - 1U];
+            --position;
+        }
+        events_[position] = pending;
+    }
+}
+
+std::uint32_t Processor::emitMacroResync (int32 frameCount,
+                                          std::uint32_t count) noexcept
+{
+    // A freshly loaded script starts from its own defaults and has never seen a
+    // parameter change, so the host's macro values and the script's idea of
+    // them diverge until the user happens to move a control. Replaying the
+    // current values as ordinary parameter events at the head of the block
+    // makes an automated, restored, or reloaded instance sound the same as one
+    // the user has just touched.
+    if (frameCount <= 0)
+        return count;
+
+    for (std::size_t index = 0; index < macros_.size (); ++index)
+    {
+        if (count >= events_.size ())
+            break;
+        mpvst_event event {};
+        event.sample_position = 0;
+        event.type = MPVST_EVENT_PARAMETER;
+        event.data0 = static_cast<std::int32_t> (index);
+        event.value0 = macros_[index].load (std::memory_order_relaxed);
+        events_[count++] = event;
+    }
+    return count;
 }
 
 void Processor::publishEngineStatus (IParameterChanges* changes) noexcept
@@ -320,6 +361,10 @@ void Processor::applyReloadFade (float* left, float* right,
             if (fadeSamplesRemaining_ == 0U)
             {
                 (void)sidecar_.requestReload ();
+                // The engine drains commands before it consumes the next work
+                // slot, so events submitted from the following block reach the
+                // reloaded script rather than the outgoing one.
+                macroResyncPending_.store (1U, std::memory_order_relaxed);
                 reloadFadeState_ = ReloadFadeState::Holding;
                 holdSamplesRemaining_ = sidecar_.latencySamples () +
                                         configuredMaxFrames_;
@@ -356,7 +401,14 @@ tresult PLUGIN_API Processor::process (ProcessData& data)
         return kResultFalse;
 
     clearOutput (data);
-    auto eventCount = collectEvents (data.inputEvents, data.numSamples);
+    std::uint32_t eventCount = 0U;
+    if (macroResyncPending_.load (std::memory_order_relaxed) != 0U &&
+        sidecar_.ready () && data.numSamples > 0)
+    {
+        eventCount = emitMacroResync (data.numSamples, eventCount);
+        macroResyncPending_.store (0U, std::memory_order_relaxed);
+    }
+    eventCount = collectEvents (data.inputEvents, data.numSamples, eventCount);
     eventCount = collectParameterChanges (data.inputParameterChanges,
                                           data.numSamples, eventCount);
     sortEvents (eventCount);
@@ -423,6 +475,7 @@ tresult PLUGIN_API Processor::setState (IBStream* state)
                               std::memory_order_relaxed);
     pipelineBlocks_ = pipelineBlocks;
     scriptSource_ = std::move (scriptSource);
+    macroResyncPending_.store (1U, std::memory_order_relaxed);
     if (active_.load (std::memory_order_relaxed) != 0U)
         sidecar_.stop ();
     sidecar_.setScriptSource (scriptSource_);
@@ -435,6 +488,11 @@ tresult PLUGIN_API Processor::getState (IBStream* state)
 {
     if (state == nullptr)
         return kResultFalse;
+
+    // Saving is the moment the project takes its own copy of the script, so an
+    // instance that follows a developer file embeds what is on disk now rather
+    // than what it happened to read when it was created.
+    scriptSource_ = sidecar_.refreshDeveloperScriptSource ();
 
     IBStreamer stream (state, kLittleEndian);
     if (!stream.writeInt32 (kStateVersion) ||

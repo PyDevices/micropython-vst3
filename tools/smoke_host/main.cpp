@@ -569,6 +569,127 @@ bool embeddedStateSurvivesMissingSource(const PluginFactory& factory,
     return heard && stopped && terminated;
 }
 
+bool macroResyncAppliesRestoredState(const PluginFactory& factory,
+                                     const ClassInfo& classInfo, FUnknown* host)
+{
+    // A restored instance must sound the way the saved project sounded. The
+    // script starts from its own defaults and never sees a parameter change on
+    // this path, so without a resynchronisation the restored macro value is
+    // silently ignored until the user moves the control.
+#if defined(_WIN32)
+    (void)_putenv_s("MPVST_NATIVE_EVENT_GATE", "1");
+#else
+    (void)setenv("MPVST_NATIVE_EVENT_GATE", "1", 1);
+#endif
+
+    auto original = createComponent(factory, classInfo, host);
+    if (!original)
+        return false;
+    MemoryStream snapshot;
+    if (!ok(original->getState(&snapshot)))
+        return false;
+    (void)original->terminate();
+    original = nullptr;
+
+    // State is int32 version, int32 bypass, then the sixteen macro floats, so
+    // Macro 01 begins at byte eight. Raising it to full scale makes the native
+    // engine's gate level 0.25 instead of its 0.125 default.
+    constexpr int64 kMacroOffset = 8;
+    if (snapshot.getSize() < kMacroOffset + static_cast<int64>(sizeof(float)))
+        return false;
+    const float fullScale = 1.0F;
+    std::memcpy(snapshot.getData() + kMacroOffset, &fullScale, sizeof(fullScale));
+
+    auto restored = createComponent(factory, classInfo, host);
+    auto processor = getProcessor(restored);
+    if (!restored || !processor)
+        return false;
+    snapshot.seek(0, IBStream::kIBSeekSet, nullptr);
+    if (!ok(restored->setState(&snapshot)))
+        return false;
+
+    SpeakerArrangement stereo = SpeakerArr::kStereo;
+    ProcessSetup setup {};
+    setup.processMode = kRealtime;
+    setup.symbolicSampleSize = kSample32;
+    setup.maxSamplesPerBlock = 128;
+    setup.sampleRate = 48000.0;
+    if (!ok(processor->setBusArrangements(nullptr, 0, &stereo, 1)) ||
+        !ok(restored->activateBus(kAudio, kOutput, 0, true)) ||
+        !ok(restored->activateBus(kEvent, kInput, 0, true)) ||
+        !ok(processor->setupProcessing(setup)) ||
+        !ok(restored->setActive(true)) ||
+        !ok(processor->setProcessing(true)))
+        return false;
+
+    std::array<float, 128> left {};
+    std::array<float, 128> right {};
+    Sample32* channels[] = {left.data(), right.data()};
+    AudioBusBuffers output {};
+    output.numChannels = 2;
+    output.channelBuffers32 = channels;
+    ProcessData data {};
+    data.processMode = kRealtime;
+    data.symbolicSampleSize = kSample32;
+    data.numSamples = static_cast<int32>(left.size());
+    data.numOutputs = 1;
+    data.outputs = &output;
+
+    // The note starts well after the engine reports ready so the resynchronised
+    // macro is already in effect for every audible sample.
+    constexpr int kNoteBlock = 12;
+    constexpr int kBlockCount = 28;
+    constexpr int kLatency = 512;
+    const int noteInputSample = kNoteBlock * static_cast<int>(left.size());
+    const int firstAudibleSample = noteInputSample + kLatency;
+
+    EventList events;
+    for (int block = 0; block < kBlockCount; ++block)
+    {
+        if (block == kNoteBlock)
+        {
+            Event noteOn {};
+            noteOn.busIndex = 0;
+            noteOn.sampleOffset = 0;
+            noteOn.type = Event::kNoteOnEvent;
+            noteOn.noteOn.channel = 0;
+            noteOn.noteOn.pitch = 60;
+            noteOn.noteOn.velocity = 1.0F;
+            noteOn.noteOn.noteId = 1;
+            (void)events.addEvent(noteOn);
+            data.inputEvents = &events;
+        }
+        if (!ok(processor->process(data)))
+            return false;
+        if (block == kNoteBlock)
+        {
+            events.clear();
+            data.inputEvents = nullptr;
+        }
+        for (std::size_t frame = 0; frame < left.size(); ++frame)
+        {
+            const auto sample = block * static_cast<int>(left.size()) +
+                                static_cast<int>(frame);
+            const float expected = sample >= firstAudibleSample ? 0.25F : 0.0F;
+            if (std::abs(left[frame] - expected) > 0.000001F)
+            {
+                std::cerr << "HOOK macro.resync FAIL: sample=" << sample
+                          << " expected=" << expected
+                          << " actual=" << left[frame] << '\n';
+                return false;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(4));
+    }
+
+    const bool stopped = ok(processor->setProcessing(false)) &&
+                         ok(restored->setActive(false));
+    processor = nullptr;
+    const bool terminated = ok(restored->terminate());
+    restored = nullptr;
+    return stopped && terminated;
+}
+
 bool reloadFadeLifecycle(const PluginFactory& factory, const ClassInfo& classInfo,
                          FUnknown* host)
 {
@@ -684,15 +805,17 @@ int main(int argc, char** argv)
     const std::string mode = argc == 3 ? argv[2] : "";
     if (argc < 2 || argc > 3 ||
         (!mode.empty() && mode != "--expect-micropython" &&
-         mode != "--expect-embedded-state" && mode != "--expect-reload-fade"))
+         mode != "--expect-embedded-state" && mode != "--expect-reload-fade" &&
+         mode != "--expect-macro-resync"))
     {
         std::cerr << "usage: mpvst_smoke_host <plugin.vst3> "
                      "[--expect-micropython|--expect-embedded-state|"
-                     "--expect-reload-fade]\n";
+                     "--expect-reload-fade|--expect-macro-resync]\n";
         return 2;
     }
     const bool embeddedState = mode == "--expect-embedded-state";
     const bool reloadFade = mode == "--expect-reload-fade";
+    const bool macroResync = mode == "--expect-macro-resync";
     const bool expectMicroPython = mode == "--expect-micropython" || embeddedState;
 
     std::string error;
@@ -722,7 +845,16 @@ int main(int argc, char** argv)
         }
         std::cout << "HOOK class.scan OK: " << classInfo.name() << '\n';
 
-        if (reloadFade)
+        if (macroResync)
+        {
+            if (!macroResyncAppliesRestoredState(factory, classInfo, host))
+            {
+                std::cerr << "HOOK macro.resync FAIL\n";
+                return 5;
+            }
+            std::cout << "HOOK macro.resync OK: restored_macro=1.0 gate=0.25\n";
+        }
+        else if (reloadFade)
         {
             if (!reloadFadeLifecycle(factory, classInfo, host))
             {
@@ -745,16 +877,17 @@ int main(int argc, char** argv)
             std::cerr << "HOOK state.roundtrip FAIL\n";
             return 5;
         }
-        if (!embeddedState && !reloadFade)
+        const bool defaultSuite = !embeddedState && !reloadFade && !macroResync;
+        if (defaultSuite)
             std::cout << "HOOK state.roundtrip OK: legacy_v1=1 malformed=4\n";
 
-        if (!embeddedState && !reloadFade &&
+        if (defaultSuite &&
             !processLifecycle(factory, classInfo, host, expectMicroPython))
         {
             std::cerr << "HOOK lifecycle.process FAIL\n";
             return 6;
         }
-        if (!embeddedState && !reloadFade)
+        if (defaultSuite)
             std::cout << "HOOK lifecycle.process OK\n";
     }
 

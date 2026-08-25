@@ -29,6 +29,10 @@ constexpr std::uint32_t kSlotCount = 8U;
 constexpr std::uint32_t kEventCapacity = 256U;
 constexpr std::uint32_t kCommandCapacity = 8U;
 constexpr std::size_t kMaximumScriptBytes = 1024U * 1024U;
+// Reported as the last exit code when the supervisor kills a stalled engine
+// rather than finding one that exited by itself. No real process status uses
+// it, so telemetry can tell a hang apart from a crash.
+constexpr std::int32_t kStalledExitCode = -1000;
 
 std::string environmentValue(const char* name)
 {
@@ -80,9 +84,38 @@ std::string SidecarTransport::initialScriptSource()
     return readScript(path);
 }
 
-void SidecarTransport::setScriptSource(std::string source)
+void SidecarTransport::setScriptSource(std::string source, ScriptOrigin origin)
 {
     scriptSource_ = std::move(source);
+    scriptOrigin_ = origin;
+}
+
+std::string SidecarTransport::developerScriptPath()
+{
+    const auto enginePath = nativeEnginePath();
+    if (std::filesystem::path(enginePath).stem().string() !=
+        "micropython-vst-engine")
+        return {};
+    const auto overridePath = environmentValue("MPVST_SCRIPT_PATH");
+    if (overridePath.empty())
+        return {};
+    std::error_code ignored;
+    if (!std::filesystem::exists(overridePath, ignored))
+        return {};
+    return overridePath;
+}
+
+std::string SidecarTransport::refreshDeveloperScriptSource()
+{
+    if (scriptOrigin_ != ScriptOrigin::DeveloperFile)
+        return scriptSource_;
+    const auto path = developerScriptPath();
+    if (path.empty())
+        return scriptSource_;
+    auto latest = readScript(path);
+    if (!latest.empty())
+        scriptSource_ = std::move(latest);
+    return scriptSource_;
 }
 
 void SidecarTransport::configure(double sampleRate, std::uint32_t maxFrames,
@@ -192,7 +225,21 @@ bool SidecarTransport::launchEngine()
         const auto directory = std::filesystem::path(enginePath).parent_path();
         const auto scriptOverride = environmentValue("MPVST_SCRIPT_PATH");
         std::string selectedScript;
-        if (!scriptSource_.empty())
+        const auto developerPath = scriptOrigin_ == ScriptOrigin::DeveloperFile
+            ? developerScriptPath()
+            : std::string {};
+        if (!developerPath.empty())
+        {
+            // Hand the engine the developer's own file so that toggling Reload
+            // Script re-reads whatever is on disk now. Materialising a private
+            // copy here would pin the instance to the source as it was when the
+            // plug-in was created, which makes the documented edit-and-reload
+            // loop silently replay stale code. Restored projects keep using
+            // their embedded snapshot instead, so a saved project still opens
+            // the same way after the original file moves or changes.
+            selectedScript = developerPath;
+        }
+        else if (!scriptSource_.empty())
         {
             if (materializedScriptPath_.empty())
             {
@@ -298,6 +345,39 @@ std::uint32_t SidecarTransport::errorCode() noexcept
     return result;
 }
 
+SidecarTransport::Telemetry SidecarTransport::telemetry() noexcept
+{
+    Telemetry snapshot;
+    snapshot.ready = available_.load();
+    snapshot.restarts = restartCount_.load();
+    snapshot.renderTimeLastNs = renderTimeLastNs_.load(std::memory_order_relaxed);
+    snapshot.renderTimeHighWaterNs =
+        renderTimeHighWaterNs_.load(std::memory_order_relaxed);
+    snapshot.queueDepth = queueDepth_.load(std::memory_order_relaxed);
+    snapshot.queueDepthHighWater =
+        queueDepthHighWater_.load(std::memory_order_relaxed);
+    snapshot.lastExitCode = lastExitCode_.load(std::memory_order_relaxed);
+    snapshot.lastExitWasUnexpected =
+        lastExitWasUnexpected_.load(std::memory_order_relaxed);
+    if (status_ == nullptr)
+        return snapshot;
+
+    snapshot.blocksRequested = mpvst::acquire_load_u64(&status_->blocks_requested);
+    snapshot.blocksRendered = mpvst::acquire_load_u64(&status_->blocks_rendered);
+    snapshot.underruns = mpvst::acquire_load_u64(&status_->underruns);
+    snapshot.eventDrops = mpvst::acquire_load_u64(&status_->event_drops);
+    snapshot.eventsConsumed = mpvst::acquire_load_u64(&status_->events_consumed);
+    snapshot.errorCode = mpvst::acquire_load_u32(&status_->error_code);
+    snapshot.engineState = mpvst::acquire_load_u32(&status_->engine_state);
+    return snapshot;
+}
+
+void SidecarTransport::resetTelemetryPeaks() noexcept
+{
+    renderTimeHighWaterNs_.store(0U, std::memory_order_relaxed);
+    queueDepthHighWater_.store(0U, std::memory_order_relaxed);
+}
+
 std::string SidecarTransport::diagnostic()
 {
     if (!available_.load() || status_ == nullptr)
@@ -400,6 +480,22 @@ void SidecarTransport::supervise() noexcept
         if (child_.running() && !stalled)
             continue;
 
+        // Record why the engine went away before replacing it: a stall is a
+        // hang the supervisor is breaking, otherwise the child exited on its
+        // own and its status is the closest thing to a crash reason we have.
+        int exitCode = 0;
+        if (stalled)
+        {
+            lastExitWasUnexpected_.store(true, std::memory_order_relaxed);
+            lastExitCode_.store(kStalledExitCode, std::memory_order_relaxed);
+        }
+        else if (child_.wait(0U, &exitCode))
+        {
+            lastExitWasUnexpected_.store(exitCode != 0, std::memory_order_relaxed);
+            lastExitCode_.store(static_cast<std::int32_t>(exitCode),
+                                std::memory_order_relaxed);
+        }
+
         available_.store(false);
         waitForCallbacks();
         child_.terminate();
@@ -441,6 +537,14 @@ void SidecarTransport::submitWork(std::int64_t startSample,
             (void)mpvst::relaxed_fetch_add_u64(&status_->event_drops, eventCount);
         return;
     }
+    // Blocks handed to the engine but not yet consumed. This is the queue the
+    // engine has to keep up with, so its peak is what matters when diagnosing
+    // an instance that underruns only occasionally.
+    const auto depth = static_cast<std::uint32_t>(workPosition_ - outputPosition_);
+    queueDepth_.store(depth, std::memory_order_relaxed);
+    if (depth > queueDepthHighWater_.load(std::memory_order_relaxed))
+        queueDepthHighWater_.store(depth, std::memory_order_relaxed);
+
     slot->generation = mpvst::acquire_load_u32(&header_->generation);
     slot->frame_count = frames;
     slot->start_sample = startSample;
@@ -522,6 +626,14 @@ bool SidecarTransport::consumeOutput(float* left, float* right,
         target = copyEnd;
         if (outputOffset_ == slot->frame_count)
         {
+            // Sample how long the engine spent on this block as it is retired.
+            // A plain load-compare-store is enough for a high-water mark: the
+            // audio thread is the only writer, and a lost update would only
+            // understate a peak that a later block will raise again.
+            const auto renderTime = slot->render_time_ns;
+            renderTimeLastNs_.store(renderTime, std::memory_order_relaxed);
+            if (renderTime > renderTimeHighWaterNs_.load(std::memory_order_relaxed))
+                renderTimeHighWaterNs_.store(renderTime, std::memory_order_relaxed);
             outputOffset_ = 0U;
             mpvst::release_consumer(slot, header_->output_slot_count, outputPosition_++);
         }

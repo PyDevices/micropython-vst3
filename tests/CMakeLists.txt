@@ -55,3 +55,5 @@ add_test(NAME mpvst_lifecycle_smoke COMMAND mpvst_smoke_host
     $<TARGET_FILE_DIR:MicroPythonVST3>/../..)
 add_test(NAME mpvst_reload_fade_smoke COMMAND mpvst_smoke_host
     $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-reload-fade)
+add_test(NAME mpvst_macro_resync_smoke COMMAND mpvst_smoke_host
+    $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-macro-resync)

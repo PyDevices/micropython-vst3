@@ -48,7 +48,10 @@ private:
         Steinberg::Vst::IParameterChanges* changes,
         Steinberg::int32 frameCount, std::uint32_t count) noexcept;
     std::uint32_t collectEvents (Steinberg::Vst::IEventList* input,
-                                 Steinberg::int32 frameCount) noexcept;
+                                 Steinberg::int32 frameCount,
+                                 std::uint32_t count) noexcept;
+    std::uint32_t emitMacroResync (Steinberg::int32 frameCount,
+                                   std::uint32_t count) noexcept;
     void sortEvents (std::uint32_t count) noexcept;
     void publishEngineStatus (
         Steinberg::Vst::IParameterChanges* changes) noexcept;
@@ -59,6 +62,7 @@ private:
     std::atomic<Steinberg::uint32> bypass_ {0};
     std::atomic<Steinberg::uint32> reloadLatch_ {0};
     std::atomic<Steinberg::uint32> active_ {0};
+    std::atomic<Steinberg::uint32> macroResyncPending_ {1};
     std::array<std::atomic<float>, kMacroParameterCount> macros_ {};
     std::string scriptSource_;
     Steinberg::int32 pipelineBlocks_ {kDefaultPipelineBlocks};

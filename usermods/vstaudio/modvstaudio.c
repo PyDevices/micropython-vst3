@@ -87,6 +87,23 @@ static float *output_channel(mpvst_output_slot *slot, uint32_t channel) {
     return samples + (uint64_t)vstaudio_header->max_frames * channel;
 }
 
+// Monotonic nanoseconds for per-block render timing. The division is split so
+// that a long-running counter cannot overflow before it is scaled.
+static uint64_t monotonic_ns(void) {
+    static LARGE_INTEGER frequency;
+    if (frequency.QuadPart == 0) {
+        QueryPerformanceFrequency(&frequency);
+    }
+    LARGE_INTEGER counter;
+    QueryPerformanceCounter(&counter);
+    const uint64_t ticks = (uint64_t)counter.QuadPart;
+    const uint64_t freq = (uint64_t)frequency.QuadPart;
+    if (freq == 0u) {
+        return 0u;
+    }
+    return (ticks / freq) * 1000000000ull + ((ticks % freq) * 1000000000ull) / freq;
+}
+
 static void set_error_text(const char *text, size_t length, uint32_t error_code) {
     if (vstaudio_status == NULL) {
         return;
@@ -322,6 +339,7 @@ static mp_obj_t vstaudio_run(mp_obj_t reload_callback) {
         output->start_sample = work->start_sample;
         output->channel_count = 2u;
         output->flags = MPVST_OUTPUT_FLAG_SILENT;
+        const uint64_t render_started_ns = monotonic_ns();
         bool rendered = false;
         nlr_buf_t nlr;
         if (nlr_push(&nlr) == 0) {
@@ -371,6 +389,7 @@ static mp_obj_t vstaudio_run(mp_obj_t reload_callback) {
         atomic_store_u64(&vstaudio_status->events_consumed,
             atomic_load_u64(&vstaudio_status->events_consumed) + work->event_count);
         atomic_store_u64(&work->sequence, work_position + vstaudio_header->work_slot_count);
+        output->render_time_ns = monotonic_ns() - render_started_ns;
         atomic_store_u64(&output->sequence, output_position + 1u);
         ++work_position;
         ++output_position;
