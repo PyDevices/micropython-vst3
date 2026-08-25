@@ -20,7 +20,7 @@ set(VST3_SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.deps/vst3sdk" CACHE PATH
 if(NOT EXISTS "${VST3_SDK_ROOT}/CMakeLists.txt")
     message(FATAL_ERROR
         "VST3 SDK not found at ${VST3_SDK_ROOT}. "
-        "Run tools/fetch-vst3-sdk.sh or set VST3_SDK_ROOT.")
+        "Run scripts/fetch-vst3-sdk.sh or set VST3_SDK_ROOT.")
 endif()
 
 set(SMTG_ENABLE_VST3_PLUGIN_EXAMPLES OFF CACHE BOOL "" FORCE)

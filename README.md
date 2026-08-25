@@ -67,7 +67,7 @@ IDs for the generic editor with a header comment:
 
 Changing these labels does not change parameter IDs or detach automation.
 
-Create the Windows release archive with `./tools/package-windows.sh`. The
+Create the Windows release archive with `./scripts/package-windows.sh`. The
 script verifies all bundled engine/bootstrap files and emits a versioned ZIP
 plus SHA-256 file under ignored `dist/`. See
 [docs/windows-workflow.md](docs/windows-workflow.md) for installation and the
@@ -77,12 +77,26 @@ In a DAW's generic parameter editor, toggle `Reload Script` off and then on to
 request each subsequent reload. The rising edge is the action; the value itself
 is not saved as project state.
 
+## Getting started
+
+A fresh clone has none of the external dependencies this repo needs
+(the VST3 SDK, the sibling `cmods`/`audioif` repos the engine build
+depends on, or REAPER for the DAW-driven tooling) - `.deps/` and those
+sibling checkouts are all gitignored. One command sets all of it up:
+
+```bash
+./scripts/bootstrap.sh
+```
+
+See [scripts/README.md](scripts/README.md) for what it does and how to
+run each step individually.
+
 ## Configure
 
 Fetch the pinned VST3 SDK dependency:
 
 ```bash
-./tools/fetch-vst3-sdk.sh
+./scripts/fetch-vst3-sdk.sh
 ```
 
 Build the Windows MicroPython sidecar before configuring the Windows VST. This
@@ -90,7 +104,7 @@ uses the sibling `audioif` repository read-only and places the result under the
 ignored `.deps/engine` directory:
 
 ```bash
-./tools/build-micropython-engine.sh
+./scripts/build-micropython-engine.sh
 ```
 
 Configure and build with CMake:

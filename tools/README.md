@@ -1,16 +1,10 @@
 # Tools
 
-Build, packaging, and test infrastructure for the plug-in and the shared
-`lib/effects/` and `lib/instruments/` libraries.
-
-## Build & package
-
-- **`fetch-vst3-sdk.sh`** - downloads the VST3 SDK into `.deps/vst3sdk`.
-- **`build-micropython-engine.sh [--port windows|unix]`** - builds the
-  MicroPython sidecar engine (defaults to the Windows engine, the
-  shipping product; `--port unix` builds the same module set for Linux).
-- **`package-windows.sh`** / **`package-linux.sh`** - assemble the
-  release archive for each platform's VST3 bundle.
+Developer-workflow and test infrastructure for the plug-in and the
+shared `lib/effects/` and `lib/instruments/` libraries: things you run
+repeatedly while developing, not maintainer/CI automation. For fetching
+dependencies, building the engine, packaging a release, or bootstrapping
+a fresh clone (including REAPER), see [`../scripts/`](../scripts/README.md).
 
 ## Composing a piece
 
@@ -64,8 +58,6 @@ that generates, renders, and verifies a piece lives here instead:
 - **`smoke_host/`** - the C++ host used by every `--expect-*`/`--*-script`
   probe above and by the ctest suite in `../tests/`. Loads the built
   bundle directly (no DAW) and drives it through the real VST3 processor.
-- **`check-cross-platform-parity.sh`** - renders a fixed score through
-  both platforms' real sidecars and compares the PCM byte for byte.
 - **`daw-matrix/`** - drives the instrument+effect chain through a real
   copy of REAPER with no GUI interaction (`run-reaper-matrix.sh`), for
   the things only a real DAW host can exercise: FX chain add/remove,

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the MicroPython sidecar engine.
 #
-#   ./tools/build-micropython-engine.sh [--port windows|unix]
+#   ./scripts/build-micropython-engine.sh [--port windows|unix]
 #
 # Defaults to the Windows engine, which is the shipping product. The unix port
 # builds the same module set for the Linux bundle.

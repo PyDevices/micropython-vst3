@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Package the Linux VST3 bundle, mirroring tools/package-windows.sh.
+# Package the Linux VST3 bundle, mirroring scripts/package-windows.sh.
 set -euo pipefail
 
 repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
