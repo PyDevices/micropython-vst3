@@ -1,8 +1,10 @@
-# Single-File Hardware Emulations Walkthrough
+# Hardware Emulations
 
-All requested classic drum machines, synthesizers, vintage electromechanical keyboards, Phase 4 digital/deep-cut legends, and the massive Phase 5 expansion (Formants, VA, Lo-Fi Samplers, Physical Modeling) have been successfully implemented and verified in the `lib/instruments/` directory! 
-
-You now have a colossal collection of **53 legendary instruments**, all implemented using pure 100% `synthio` synthesis without a single audio sample.
+53 classic synthesizers, electromechanical keyboards, and drum machines,
+each a self-contained `synthio` script - no samples. See "Testing" and
+"Hardware-Accuracy Pass" below before trusting anything above that line
+as verified; the two passes after the initial one are what actually ran
+these against real audio and real hardware behavior.
 
 ## 1. Classic Synthesizers
 
@@ -72,11 +74,14 @@ You now have a colossal collection of **53 legendary instruments**, all implemen
 6. **[`dmx.py`](dmx.py)**: Oberheim DMX
 7. **[`simmons_sdsv.py`](simmons_sdsv.py)**: Simmons SDS-V
 
-## Architecture & Features
+## Architecture
 
-- **Accurate Parameters**: Exposed each instrument's distinct control set to the 16 VST automation macros using the `# mpvst-macro-labels` standard.
-- **Polyphonic Tracking**: Included voice allocation pooling (via `MAX_VOICES`) and oldest-voice stealing algorithms to ensure zero drop-outs when dense chords or beats are triggered.
-- **Synthesized Realism**: Relied exclusively on additive harmonic stacking, custom digital arrays via `make_table`, noise bursts, and highly resonant `Biquad` filters to model everything from screaming transistors to 12-bit sampler aliasing.
+- Each instrument's control set maps to up to 16 VST automation macros via
+  the `# mpvst-macro-labels` header.
+- Voice allocation is a fixed pool (`MAX_VOICES`) with oldest-voice
+  stealing when a chord or drum roll exceeds it.
+- Synthesis is additive harmonic tables (`make_table`), noise generators,
+  and `Biquad` filters - no samples.
 
 ## Testing
 
@@ -113,3 +118,27 @@ raise on the very first note (`synthio.Math()` has no `scale=` kwarg;
 exposed a macro - most often "Filter Attack" or "Filter Sustain" - that
 was read but never reached the audio graph. Both classes are exactly what
 `test-instruments-lib.py` now catches automatically.
+
+## Hardware-Accuracy Pass (2026-08-25)
+
+A follow-up pass went beyond "doesn't crash": every remaining dead macro
+now reaches the audio graph, and every emulation was checked against
+what the real hardware actually does, not just against `synthio`'s
+capabilities. Notable fixes: hard sync approximated by snapping the
+slave oscillator toward a harmonic of the master (OB-Xa, Prophet-5,
+Odyssey, Nord Lead); real ring modulation via `ring_frequency`/
+`ring_waveform` instead of a fake tremolo (MS-20, Odyssey); real
+variable-duty-cycle PWM tables instead of a volume-scaled no-op
+(Jupiter-8, Juno-106, SH-101, Polysix); Karplus-Strong rebuilt as an
+actual noise-into-feedback-delay string model instead of a filtered
+noise burst; a Mellotron tape-hiss note whose amplitude was captured
+once and never updated; drum machines that were secretly all
+808-style pitch-swept synthesis regardless of whether the real machine
+(LinnDrum, DMX) was sample-based or (Simmons SDS-V) swept far slower
+than what was implemented. `Note.filter` and `Note.amplitude` are
+mutable after construction, which is what makes real filter releases,
+live channel/poly-pressure response, and reassigned filters at note-off
+possible in a scripting model that otherwise builds each note's graph
+once at note-on. Table generation (`make_table`, mostly) uses `ulab`
+where it's a measured ~10x win, with a plain-Python fallback so
+`test-instruments-lib.py` still runs without it.
