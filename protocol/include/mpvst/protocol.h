@@ -59,7 +59,13 @@ typedef enum mpvst_event_type
     MPVST_EVENT_CHANNEL_PRESSURE = 7,
     /* Transport discontinuity. data0 is non-zero while the host is playing,
        value0 carries the new project position in seconds. */
-    MPVST_EVENT_TRANSPORT = 8
+    MPVST_EVENT_TRANSPORT = 8,
+    /* Patch select. data0 is the program index 0-127; value0 is the same
+       value normalized to 0.0-1.0. VST3 has no native "program change"
+       input event, so the host maps an incoming MIDI Program Change
+       message onto the plug-in's kIsProgramChange-flagged parameter, and
+       that parameter change becomes this event. */
+    MPVST_EVENT_PROGRAM_CHANGE = 9
 } mpvst_event_type;
 
 typedef enum mpvst_command_type

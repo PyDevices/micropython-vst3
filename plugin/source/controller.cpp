@@ -4,6 +4,7 @@
 #include "parameters.h"
 #include "script_metadata.h"
 #include "pluginterfaces/base/ustring.h"
+#include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivstmidicontrollers.h"
 
 #include <algorithm>
@@ -39,6 +40,24 @@ tresult PLUGIN_API Controller::initialize (FUnknown* context)
     parameters.addParameter (new RangeParameter (
         STR16 ("Engine Error"), kEngineErrorParameter, nullptr,
         0.0, 255.0, 0.0, 255, ParameterInfo::kIsReadOnly));
+
+    // Patch program list: hosts translate an incoming MIDI Program Change
+    // message into a change of this kIsProgramChange-flagged parameter,
+    // since VST3's IEventList has no native program-change event type.
+    addUnit (new Unit (STR16 ("Root"), kRootUnitId, kNoParentUnitId,
+                       kPatchParameter));
+    auto* patchList = new ProgramList (STR16 ("Patches"), kPatchParameter,
+                                       kRootUnitId);
+    addProgramList (patchList);
+    for (std::size_t index = 0; index < kPatchCount; ++index)
+    {
+        std::array<char, 16> ascii {};
+        std::snprintf (ascii.data (), ascii.size (), "Patch %03u",
+                       static_cast<unsigned> (index + 1));
+        UString128 title (ascii.data ());
+        patchList->addProgram (title);
+    }
+    parameters.addParameter (patchList->getParameter ());
 
     for (std::size_t index = 0; index < kMacroParameterCount; ++index)
     {
@@ -83,6 +102,21 @@ tresult PLUGIN_API Controller::getMidiControllerAssignment (
     id = midiParameterId (static_cast<std::size_t> (channel),
                           static_cast<std::size_t> (midiControllerNumber));
     return kResultTrue;
+}
+
+tresult PLUGIN_API Controller::getUnitByBus (MediaType type, BusDirection dir,
+                                             int32 busIndex, int32 channel,
+                                             UnitID& unitId)
+{
+    // Associates the event input bus with the root unit, which owns the
+    // patch program list: this is what tells a host it may translate an
+    // incoming MIDI Program Change message into kPatchParameter.
+    if (type == kEvent && dir == kInput && busIndex == 0 && channel == 0)
+    {
+        unitId = kRootUnitId;
+        return kResultTrue;
+    }
+    return kResultFalse;
 }
 
 tresult PLUGIN_API Controller::setComponentState (IBStream* state)

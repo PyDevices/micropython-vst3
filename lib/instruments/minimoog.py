@@ -100,6 +100,18 @@ filt_d = 0.3
 filt_s = 0.2
 overdrive = 1.0
 
+# Patches: index -> (name, 16 macro values in mpvst-macro-labels order).
+# Selected by MIDI Program Change (0-127); see handle_event's
+# EVENT_PROGRAM_CHANGE branch below.
+PATCHES = {
+    0: ("Init", (0.8, 0.35, 0.25, 0.4, 0.05, 0.51, 0.49, 0.0,
+                0.05, 0.4, 0.5, 0.35, 0.05, 0.4, 0.2, 0.0)),
+    1: ("Deep Bass", (0.9, 0.2, 0.35, 0.55, 0.0, 0.52, 0.48, 0.0,
+                      0.02, 0.3, 0.8, 0.2, 0.02, 0.25, 0.7, 0.15)),
+    2: ("Screaming Lead", (0.85, 0.55, 0.75, 0.7, 0.15, 0.58, 0.44, 0.05,
+                          0.01, 0.2, 0.9, 0.4, 0.01, 0.15, 0.6, 0.6)),
+}
+
 voices = {}
 serial = 0
 last_pitch = None
@@ -188,5 +200,12 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         elif data0 == 13: filt_d = logmap(value0, 0.05, 3.0)
         elif data0 == 14: filt_s = value0
         elif data0 == 15: overdrive = logmap(value0, 1.0, 3.0)
+
+    elif event_type == vstaudio.EVENT_PROGRAM_CHANGE:
+        patch = PATCHES.get(data0)
+        if patch is not None:
+            for macro_index, macro_value in enumerate(patch[1]):
+                handle_event(vstaudio.EVENT_PARAMETER, channel, note_id,
+                             macro_index, macro_value, 0.0, sample_position)
 
 vstaudio.on_event(handle_event)

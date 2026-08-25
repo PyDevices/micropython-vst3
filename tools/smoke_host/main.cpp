@@ -1158,6 +1158,179 @@ bool instrumentScriptProbe(const PluginFactory& factory,
           peak > 0.0005;
 }
 
+// Sets the Patch parameter (ParamID 4, the same one a host maps an
+// incoming MIDI Program Change onto, since VST3 has no native
+// program-change input event) to two different program indices and
+// checks the script actually received MPVST_EVENT_PROGRAM_CHANGE with
+// the right data0 both times, via a continuously-held note whose
+// amplitude the script sets directly from the program index.
+bool patchSelectDeliversProgramChange(const PluginFactory& factory,
+                                      const ClassInfo& classInfo,
+                                      FUnknown* host)
+{
+    const auto sourcePath = std::filesystem::temp_directory_path() /
+        "mpvst-patch-select.py";
+    constexpr const char* source =
+        "import synthio\n"
+        "import vstaudio\n"
+        "synth = synthio.Synthesizer(sample_rate=vstaudio.sample_rate(), "
+        "channel_count=2)\n"
+        "vstaudio.output(synth)\n"
+        "note = synthio.Note(220.0, amplitude=0.0)\n"
+        "synth.press(note)\n"
+        "def handle_event(event_type, channel, note_id, data0, value0, "
+        "value1, sample_position):\n"
+        "    if event_type == vstaudio.EVENT_PROGRAM_CHANGE:\n"
+        "        note.amplitude = data0 / 127.0\n"
+        "vstaudio.on_event(handle_event)\n";
+    {
+        std::ofstream out(sourcePath, std::ios::binary | std::ios::trunc);
+        if (!out || !out.write(source, static_cast<std::streamsize>(
+                                           std::strlen(source))))
+            return false;
+    }
+    setScriptPath(sourcePath.string());
+
+    auto component = createComponent(factory, classInfo, host);
+    auto processor = getProcessor(component);
+    if (!component || !processor)
+    {
+        setScriptPath({});
+        return false;
+    }
+
+    SpeakerArrangement stereo = SpeakerArr::kStereo;
+    ProcessSetup setup {};
+    setup.processMode = kOffline;
+    setup.symbolicSampleSize = kSample32;
+    setup.maxSamplesPerBlock = 256;
+    setup.sampleRate = 48000.0;
+    if (!ok(processor->setBusArrangements(nullptr, 0, &stereo, 1)) ||
+        !ok(component->activateBus(kAudio, kOutput, 0, true)) ||
+        !ok(component->activateBus(kEvent, kInput, 0, true)) ||
+        !ok(processor->setupProcessing(setup)) ||
+        !ok(component->setActive(true)) ||
+        !ok(processor->setProcessing(true)))
+    {
+        setScriptPath({});
+        return false;
+    }
+
+    std::array<float, 256> left {};
+    std::array<float, 256> right {};
+    Sample32* channels[] = {left.data(), right.data()};
+    AudioBusBuffers output {};
+    output.numChannels = 2;
+    output.channelBuffers32 = channels;
+    ProcessData data {};
+    data.processMode = kOffline;
+    data.symbolicSampleSize = kSample32;
+    data.numSamples = static_cast<int32>(left.size());
+    data.numOutputs = 1;
+    data.outputs = &output;
+
+    constexpr ParamID kPatchParameter = 4;
+    constexpr int kPatchCount = 128;
+
+    // Give the sidecar time to boot before sending anything meaningful:
+    // engine startup takes a handful of blocks, and events sent before it
+    // reaches LIFECYCLE_RUNNING are not guaranteed to be consumed.
+    ParameterChanges statusOut {2};
+    data.outputParameterChanges = &statusOut;
+    bool sawReady = false;
+    int errorCode = 0;
+    const auto pollStatus = [&] {
+        for (int32 queueIndex = 0;
+             queueIndex < statusOut.getParameterCount(); ++queueIndex)
+        {
+            auto* queue = statusOut.getParameterData(queueIndex);
+            if (queue == nullptr || queue->getPointCount() == 0)
+                continue;
+            int32 sampleOffset = 0;
+            ParamValue value = 0.0;
+            if (queue->getPoint(queue->getPointCount() - 1, sampleOffset,
+                                 value) != kResultTrue)
+                continue;
+            if (queue->getParameterId() == 2U && value >= 1.0)
+                sawReady = true;
+            if (queue->getParameterId() == 3U)
+                errorCode = static_cast<int>(value * 255.0 + 0.5);
+        }
+        statusOut.clearQueue();
+    };
+    for (int block = 0; block < 64; ++block)
+    {
+        if (!ok(processor->process(data)))
+            return false;
+        pollStatus();
+    }
+
+    // The shared-memory pipeline buffers several blocks deep (see
+    // Processor::getLatencySamples), so a parameter change submitted now
+    // doesn't reach the rendered output until that many samples later.
+    const auto latencyBlocks =
+        static_cast<int>(processor->getLatencySamples() / left.size()) + 4;
+
+    const auto rmsAtProgram = [&](int program) -> double {
+        ParameterChanges patchChange {1};
+        int32 queueIndex = 0;
+        int32 pointIndex = 0;
+        auto* queue = patchChange.addParameterData(kPatchParameter, queueIndex);
+        const auto normalized =
+            static_cast<ParamValue>(program) / static_cast<ParamValue>(kPatchCount - 1);
+        if (queue == nullptr ||
+            queue->addPoint(0, normalized, pointIndex) != kResultTrue)
+            return -1.0;
+        data.inputParameterChanges = &patchChange;
+        if (!ok(processor->process(data)))
+            return -1.0;
+        data.inputParameterChanges = nullptr;
+
+        for (int block = 0; block < latencyBlocks; ++block)
+        {
+            if (!ok(processor->process(data)))
+                return -1.0;
+            pollStatus();
+        }
+
+        double acc = 0.0;
+        for (int block = 0; block < 4; ++block)
+        {
+            if (!ok(processor->process(data)))
+                return -1.0;
+            pollStatus();
+            for (auto sample : left)
+                acc += static_cast<double>(sample) * sample;
+        }
+        return std::sqrt(acc / (4 * left.size()));
+    };
+
+    const auto rmsLow = rmsAtProgram(16);
+    const auto rmsHigh = rmsAtProgram(112);
+    data.outputParameterChanges = nullptr;
+
+    const bool stopped = ok(processor->setProcessing(false)) &&
+                         ok(component->setActive(false));
+    processor = nullptr;
+    const bool terminated = ok(component->terminate());
+    component = nullptr;
+    setScriptPath({});
+    std::error_code ignored;
+    (void)std::filesystem::remove(sourcePath, ignored);
+
+    std::cout << "PATCH_SELECT ready=" << (sawReady ? 1 : 0)
+              << " error=" << errorCode << " rms_at_16=" << rmsLow
+              << " rms_at_112=" << rmsHigh << '\n';
+    // amplitude scales linearly with program index, so RMS should too
+    // (within a comfortable margin for the one-block parameter-apply
+    // delay and float32 quantisation).
+    const auto expectedRatio = 112.0 / 16.0;
+    const auto actualRatio = rmsLow > 1e-6 ? rmsHigh / rmsLow : -1.0;
+    return stopped && terminated && sawReady && errorCode == 0 &&
+          rmsLow > 0.0 && rmsHigh > rmsLow &&
+          std::abs(actualRatio - expectedRatio) < expectedRatio * 0.25;
+}
+
 bool transportDiscontinuityGatesVoices(const PluginFactory& factory,
                                        const ClassInfo& classInfo,
                                        FUnknown* host)
@@ -1527,7 +1700,7 @@ int main(int argc, char** argv)
         (!mode.empty() && mode != "--expect-micropython" &&
          mode != "--expect-embedded-state" && mode != "--expect-reload-fade" &&
          mode != "--expect-macro-resync" && mode != "--expect-transport" &&
-         mode != "--expect-effect-audio" &&
+         mode != "--expect-effect-audio" && mode != "--expect-patch-select" &&
          mode != "--effect-script" && mode != "--instrument-script" &&
          !renderMode))
     {
@@ -1535,6 +1708,7 @@ int main(int argc, char** argv)
                      "[--expect-micropython|--expect-embedded-state|"
                      "--expect-reload-fade|--expect-macro-resync|"
                      "--expect-transport|--expect-effect-audio|"
+                     "--expect-patch-select|"
                      "--effect-script <script.py>|"
                      "--instrument-script <script.py>|"
                      "--render-reference <out.pcm>]\n";
@@ -1545,9 +1719,11 @@ int main(int argc, char** argv)
     const bool macroResync = mode == "--expect-macro-resync";
     const bool transportMode = mode == "--expect-transport";
     const bool effectMode = mode == "--expect-effect-audio";
+    const bool patchSelectMode = mode == "--expect-patch-select";
     const bool expectMicroPython = mode == "--expect-micropython" ||
                                    embeddedState || renderMode ||
-                                   effectMode || scriptProbe || instrumentProbe;
+                                   effectMode || scriptProbe || instrumentProbe ||
+                                   patchSelectMode;
 
     std::string error;
     const auto modulePath = std::filesystem::weakly_canonical(argv[1]).string();
@@ -1626,6 +1802,15 @@ int main(int argc, char** argv)
             }
             std::cout << "HOOK instrument.script OK\n";
         }
+        else if (patchSelectMode)
+        {
+            if (!patchSelectDeliversProgramChange(factory, classInfo, host))
+            {
+                std::cerr << "HOOK patch.select FAIL\n";
+                return 5;
+            }
+            std::cout << "HOOK patch.select OK\n";
+        }
         else if (transportMode)
         {
             if (!transportDiscontinuityGatesVoices(factory, classInfo, host))
@@ -1670,7 +1855,7 @@ int main(int argc, char** argv)
         const bool defaultSuite = !embeddedState && !reloadFade &&
                                   !macroResync && !transportMode &&
                                   !renderMode && !effectMode && !scriptProbe &&
-                                  !instrumentProbe;
+                                  !instrumentProbe && !patchSelectMode;
         if (defaultSuite)
             std::cout << "HOOK state.roundtrip OK: legacy_v1=1 malformed=4\n";
 

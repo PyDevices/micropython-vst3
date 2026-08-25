@@ -142,3 +142,43 @@ possible in a scripting model that otherwise builds each note's graph
 once at note-on. Table generation (`make_table`, mostly) uses `ulab`
 where it's a measured ~10x win, with a plain-Python fallback so
 `test-instruments-lib.py` still runs without it.
+
+## Patches
+
+A patch is a named preset of the 16 macro values, selected live by MIDI
+Program Change (0-127 - VST3 has no native program-change input event,
+so the host maps an incoming Program Change message onto the plug-in's
+`kIsProgramChange`-flagged "Patch" parameter, which the processor turns
+into an `EVENT_PROGRAM_CHANGE` event data0=index/value0=normalized).
+
+The convention (see `minimoog.py` for the reference implementation):
+patches live in the instrument's own file, as a `PATCHES` dict next to
+the macro defaults:
+
+```python
+PATCHES = {
+    0: ("Init", (0.8, 0.35, 0.25, ...)),   # 16 values, macro order
+    1: ("Deep Bass", (0.9, 0.2, 0.35, ...)),
+}
+```
+
+and `handle_event`'s `EVENT_PROGRAM_CHANGE` branch looks the index up
+and re-dispatches each value through the script's own `EVENT_PARAMETER`
+handling, so the patch format never has to know how a script scales a
+normalized macro value into its own units - that logic already exists
+once, in the script:
+
+```python
+elif event_type == vstaudio.EVENT_PROGRAM_CHANGE:
+    patch = PATCHES.get(data0)
+    if patch is not None:
+        for macro_index, macro_value in enumerate(patch[1]):
+            handle_event(vstaudio.EVENT_PARAMETER, channel, note_id,
+                         macro_index, macro_value, 0.0, sample_position)
+```
+
+Indices are sparse on purpose - give one an entry only when you have a
+patch worth naming there. A script with no `PATCHES` dict, or no entry
+for the index it receives, just leaves its macros wherever they already
+are. Only `minimoog.py` has real patches so far; adding them to the rest
+of the library is future work, not yet done.

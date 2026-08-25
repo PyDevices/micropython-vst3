@@ -725,6 +725,7 @@ static const mp_rom_map_elem_t vstaudio_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_EVENT_PARAMETER), MP_ROM_INT(MPVST_EVENT_PARAMETER) },
     { MP_ROM_QSTR(MP_QSTR_EVENT_CHANNEL_PRESSURE), MP_ROM_INT(MPVST_EVENT_CHANNEL_PRESSURE) },
     { MP_ROM_QSTR(MP_QSTR_EVENT_TRANSPORT), MP_ROM_INT(MPVST_EVENT_TRANSPORT) },
+    { MP_ROM_QSTR(MP_QSTR_EVENT_PROGRAM_CHANGE), MP_ROM_INT(MPVST_EVENT_PROGRAM_CHANGE) },
     { MP_ROM_QSTR(MP_QSTR_transport), MP_ROM_PTR(&vstaudio_transport_obj) },
 };
 static MP_DEFINE_CONST_DICT(vstaudio_module_globals, vstaudio_module_globals_table);

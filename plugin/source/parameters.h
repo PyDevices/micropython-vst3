@@ -11,6 +11,12 @@ constexpr Steinberg::Vst::ParamID kBypassParameter = 0;
 constexpr Steinberg::Vst::ParamID kReloadParameter = 1;
 constexpr Steinberg::Vst::ParamID kEngineReadyParameter = 2;
 constexpr Steinberg::Vst::ParamID kEngineErrorParameter = 3;
+// Doubles as the ProgramListID for the patch program list (see
+// Controller::initialize): VST3 has no native "program change" input
+// event, so a host maps an incoming MIDI Program Change message onto
+// this kIsProgramChange-flagged parameter instead.
+constexpr Steinberg::Vst::ParamID kPatchParameter = 4;
+constexpr std::size_t kPatchCount = 128;
 constexpr Steinberg::Vst::ParamID kFirstMacroParameter = 100;
 constexpr std::size_t kMacroParameterCount = 16;
 constexpr Steinberg::Vst::ParamID kFirstMidiParameter = 0x10000;

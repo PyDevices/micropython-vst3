@@ -214,7 +214,23 @@ std::uint32_t Processor::collectParameterChanges (IParameterChanges* changes,
             kResultTrue)
             continue;
 
-        if (id == kBypassParameter)
+        if (id == kPatchParameter)
+        {
+            const auto bounded = std::clamp (value, 0.0, 1.0);
+            const auto index = static_cast<std::int32_t> (
+                bounded * static_cast<double> (kPatchCount - 1) + 0.5);
+            if (frameCount > 0 && count < events_.size ())
+            {
+                mpvst_event event {};
+                event.sample_position = std::clamp<int32> (sampleOffset, 0,
+                                                            frameCount - 1);
+                event.type = MPVST_EVENT_PROGRAM_CHANGE;
+                event.data0 = index;
+                event.value0 = static_cast<float> (bounded);
+                events_[count++] = event;
+            }
+        }
+        else if (id == kBypassParameter)
         {
             bypass_.store (value >= 0.5 ? 1U : 0U, std::memory_order_relaxed);
         }

@@ -16,6 +16,10 @@ public:
         Steinberg::int32 busIndex, Steinberg::int16 channel,
         Steinberg::Vst::CtrlNumber midiControllerNumber,
         Steinberg::Vst::ParamID& id) override;
+    Steinberg::tresult PLUGIN_API getUnitByBus (
+        Steinberg::Vst::MediaType type, Steinberg::Vst::BusDirection dir,
+        Steinberg::int32 busIndex, Steinberg::int32 channel,
+        Steinberg::Vst::UnitID& unitId) override;
 
     OBJ_METHODS (Controller, Steinberg::Vst::EditControllerEx1)
     DEFINE_INTERFACES

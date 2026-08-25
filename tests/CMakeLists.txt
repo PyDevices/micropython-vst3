@@ -65,6 +65,8 @@ if(TARGET mpvst-stage-micropython-engine)
         $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-micropython)
     add_test(NAME mpvst_effect_audio_smoke COMMAND mpvst_smoke_host
         $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-effect-audio)
+    add_test(NAME mpvst_patch_select_smoke COMMAND mpvst_smoke_host
+        $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-patch-select)
     # Every class in the shared effects library, through the real sidecar.
     find_package(Python3 COMPONENTS Interpreter)
     if(Python3_FOUND)
