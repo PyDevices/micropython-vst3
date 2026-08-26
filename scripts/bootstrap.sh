@@ -32,10 +32,10 @@ else
 fi
 
 log "installing REAPER (best-effort; not required for the build/test below)"
-if ! "$repo_dir/scripts/install-reaper-portable.sh"; then
+if ! "$repo_dir/reaper/install-reaper-portable.sh"; then
     log "REAPER install did not complete - see the message above for a manual fallback." \
-        "The rest of bootstrap continues without it; tools/daw-matrix/ and" \
-        "tools/piece/launch.sh need it, the core build/test does not."
+        "The rest of bootstrap continues without it; reaper/ and" \
+        "reaper.sh need it, the core build/test does not."
 fi
 
 log "configuring and building"

@@ -125,8 +125,8 @@ REAPER is driven headlessly by a startup ReaScript. Install the packaged
 plug-in first, because the matrix exercises the installed bundle:
 
 ```bash
-./tools/daw-matrix/run-reaper-matrix.sh --platform windows
-./tools/daw-matrix/run-reaper-matrix.sh --platform linux
+./reaper/matrix/run-reaper-matrix.sh --platform windows
+./reaper/matrix/run-reaper-matrix.sh --platform linux
 ```
 
 REAPER is installed at `C:\Users\bradb\REAPER` and `~/opt/REAPER`; its resource

@@ -3,15 +3,16 @@
 # the offline CPython preview, the REAPER bounce through the real
 # plug-in, and the section-by-section comparison of the two.
 #
-#   ./tools/piece/render-all.sh                   every piece
-#   ./tools/piece/render-all.sh --piece automata  just one
+#   ./reaper/render-all.sh                   every piece
+#   ./reaper/render-all.sh --piece automata  just one
 #
 # Needs the plug-in installed for the current platform first:
 #   ./scripts/install-plugin-windows.sh
 set -euo pipefail
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-repo_dir=$(cd "$script_dir/../.." && pwd)
+repo_dir=$(cd "$script_dir/.." && pwd)
+composition_dir="$repo_dir/tools/composition"
 soundtrack_dir="$repo_dir/soundtrack"
 # render_preview.py and verify_song.py need numpy plus the audioif
 # wheel - this repo's own .venv (pydevices-audioif from TestPyPI) if
@@ -39,17 +40,17 @@ if [[ ${#pieces[@]} -eq 0 ]]; then
     # Every directory under soundtrack/ holding a composition.py.
     while IFS= read -r name; do
         pieces+=("$name")
-    done < <("$venv_python" "$script_dir/piece.py" --list)
+    done < <("$venv_python" "$composition_dir/piece.py" --list)
 fi
 
 for piece in "${pieces[@]}"; do
     echo
     echo "################ $piece ################"
     echo "--- offline preview ---"
-    "$venv_python" "$script_dir/render_preview.py" --piece "$piece"
+    "$venv_python" "$composition_dir/render_preview.py" --piece "$piece"
 
     echo "--- REAPER bounce + verification ---"
-    "$script_dir/launch.sh" --render --piece "$piece"
+    "$repo_dir/reaper.sh" --render --piece "$piece"
 done
 
 echo

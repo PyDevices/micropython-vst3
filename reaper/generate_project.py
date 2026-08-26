@@ -18,8 +18,9 @@ import uuid
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-SOUNDTRACK = SCRIPT_DIR.parent.parent / "soundtrack"
-sys.path.insert(0, str(SCRIPT_DIR))
+REPO_DIR = SCRIPT_DIR.parent
+SOUNDTRACK = REPO_DIR / "soundtrack"
+sys.path.insert(0, str(REPO_DIR / "tools" / "composition"))
 from piece import load_piece, patch_macros, piece_arg  # noqa: E402
 
 PIECE, ARGV = piece_arg(sys.argv[1:])

@@ -9,32 +9,23 @@ a fresh clone (including REAPER), see [`../scripts/`](../scripts/README.md).
 ## Composing a piece
 
 `../soundtrack/` is example content, not infrastructure - it might be
-renamed, restructured, or replaced independently of this. The tooling
-that generates, renders, and verifies a piece lives here instead:
+renamed, restructured, or replaced independently of this. Two scripts
+here can resolve and render a piece with no DAW involved at all - neither
+one imports or knows about REAPER:
 
-- **`piece/piece.py`** - resolves a piece name (case-insensitive) to its
-  `composition.py` and `instruments/` under `../soundtrack/`. The one
+- **`composition/piece.py`** - resolves a piece name (case-insensitive) to
+  its `composition.py` and `instruments/` under `../soundtrack/`. The one
   place that hardcodes that location.
-- **`piece/generate_project.py [--piece NAME] [out.RPP]`** - writes a
-  complete REAPER project with every track's instrument script embedded
-  directly in synthesized VST3 state, so it opens with no build pass.
-- **`piece/render_preview.py [--piece NAME] [out.wav] [--stems DIR]`** -
-  offline render through `preview/` (needs the `audioif` wheel's venv:
+- **`composition/render_preview.py [--piece NAME] [out.wav] [--stems DIR]`**
+  - offline render through `preview/` (needs the `audioif` wheel's venv:
   this repo's own `.venv` if set up - `pip install pydevices-audioif` from
   TestPyPI, plus `numpy` - else a sibling `audioif` checkout's, e.g.
   `../../audioif/.venv/bin/python`); reports peaks, RMS per section, and
   simultaneous-track counts.
-- **`piece/verify_song.py --piece NAME <bounce.wav> <preview.wav>`** -
-  compares a REAPER bounce against the offline preview section by section.
-- **`piece/render-all.sh [--piece NAME]`** - the whole pipeline for every
-  piece with no interaction: offline preview, REAPER bounce through the
-  real plug-in, section-by-section comparison of the two. Needs the
-  plug-in installed first (`../scripts/install-plugin-windows.sh`).
-- **`piece/launch.sh [--play|--render] [--piece NAME]`** - drives REAPER
-  headlessly to either play a piece through the speakers or bounce and
-  verify it. `--play` leaves REAPER open and playing.
-- **`piece/reaper/`** - the self-deleting autoplay/verify Lua scripts
-  `launch.sh` installs as REAPER's startup script.
+
+Turning a piece into a real REAPER project, and driving REAPER itself, is
+a separate, deletable concern - see [`../reaper/README.md`](../reaper/README.md)
+and the root [`../reaper.sh`](../reaper.sh) entry point.
 
 ## Testing
 
@@ -63,11 +54,12 @@ that generates, renders, and verifies a piece lives here instead:
 - **`smoke_host/`** - the C++ host used by every `--expect-*`/`--*-script`
   probe above and by the ctest suite in `../tests/`. Loads the built
   bundle directly (no DAW) and drives it through the real VST3 processor.
-- **`daw-matrix/`** - drives the instrument+effect chain through a real
-  copy of REAPER with no GUI interaction (`run-reaper-matrix.sh`), for
-  the things only a real DAW host can exercise: FX chain add/remove,
-  parameter automation, project save/reload, macro resync. See
-  `run-reaper-matrix.sh`'s header for the platform-specific setup.
+
+The one test that needs a real DAW - FX chain add/remove, parameter
+automation, project save/reload, macro resync - lives in
+[`../reaper/matrix/`](../reaper/README.md) instead of here, for the same
+reason `composition/` and `reaper/` are split: everything above this line
+runs with no DAW at all.
 
 None of the `preview`-based tools prove a script sounds like the
 hardware it's named after, or like anything in particular - only that it

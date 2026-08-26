@@ -13,15 +13,14 @@ for that). Every script here is idempotent: safe to rerun.
 - **`build-micropython-engine.sh [--port windows|unix]`** - builds the
   MicroPython sidecar engine (defaults to the Windows engine, the
   shipping product; `--port unix` builds the same module set for Linux).
-- **`install-reaper-portable.sh [--platform linux|windows]`** -
-  downloads and portable-installs the pinned REAPER build
-  `tools/daw-matrix/` and `tools/piece/launch.sh` expect. Not needed for
-  the core build/test, only for that DAW-driven tooling. The Windows
-  install needs one UAC prompt approved by a human - it isn't fully
-  unattended.
 - **`install-plugin-windows.sh [--no-build]`** - builds the Windows VST3
-  bundle and installs it into the per-user VST3 directory a DAW scans,
-  which is where `tools/piece/` and `tools/daw-matrix/` expect it.
+  bundle and installs it into the per-user VST3 directory any DAW scans.
+
+REAPER itself is a separate, deletable concern - its installer
+(`install-reaper-portable.sh`) now lives in
+[`../reaper/`](../reaper/README.md) alongside everything else that needs
+it, not here. `bootstrap.sh` still calls it as one step of a fresh-clone
+setup.
 - **`package-linux.sh`** / **`package-windows.sh`** - assemble the
   release archive for each platform's VST3 bundle.
 - **`check-cross-platform-parity.sh`** - renders a fixed score through

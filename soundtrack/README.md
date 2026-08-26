@@ -9,8 +9,11 @@ pieces also own private `instruments/`; newer compositions can opt into the
 shared `../lib/instruments/` collection and put shared `../lib/effects/`
 processors after any instrument. Nothing else here is infrastructure, and the
 directory might be renamed, restructured, or replaced independently of the
-tooling that generates, renders, and verifies a piece. That tooling lives in
-`../tools/piece/`, documented in [`../tools/README.md`](../tools/README.md).
+tooling that generates, renders, and verifies a piece. Resolving and
+previewing a piece offline lives in `../tools/composition/`, documented in
+[`../tools/README.md`](../tools/README.md); turning it into a real REAPER
+project and driving REAPER itself lives in `../reaper/` and the root
+`../reaper.sh`, documented in [`../reaper/README.md`](../reaper/README.md).
 
 ## Frozen patches and the shared library
 
@@ -85,15 +88,15 @@ part of the hardware.
 ## Listening
 
 ```bash
-../tools/piece/launch.sh                      # play Perihelion through the speakers
-../tools/piece/launch.sh --piece automata     # play Automata
-../tools/piece/launch.sh --piece velvetcircuit # play Velvet Circuit
-../tools/piece/launch.sh --piece aureliaoverture # play Aurelia Overture
-../tools/piece/launch.sh --render --piece automata   # headless verified bounce
-../tools/piece/launch.sh --render --piece velvetcircuit # render/verify it
-../tools/piece/launch.sh --render --piece aureliaoverture # render/verify it
-../tools/piece/launch.sh --piece neonmeridian        # play Neon Meridian
-../tools/piece/launch.sh --render --piece neonmeridian # render/verify it
+../reaper.sh                      # play Perihelion through the speakers
+../reaper.sh --piece automata     # play Automata
+../reaper.sh --piece velvetcircuit # play Velvet Circuit
+../reaper.sh --piece aureliaoverture # play Aurelia Overture
+../reaper.sh --render --piece automata   # headless verified bounce
+../reaper.sh --render --piece velvetcircuit # render/verify it
+../reaper.sh --render --piece aureliaoverture # render/verify it
+../reaper.sh --piece neonmeridian        # play Neon Meridian
+../reaper.sh --render --piece neonmeridian # render/verify it
 ```
 
 Play mode regenerates the project under `C:\Users\bradb\Music\<Title>\`,

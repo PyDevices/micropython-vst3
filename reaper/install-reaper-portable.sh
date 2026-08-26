@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Download and portable-install the pinned REAPER build used by
-# tools/daw-matrix/ and tools/piece/launch.sh. Idempotent - skips if the
-# expected binary already exists.
+# reaper/matrix/ and reaper.sh. Idempotent - skips if the expected binary
+# already exists.
 #
-#   ./scripts/install-reaper-portable.sh [--platform linux|windows]
+#   ./reaper/install-reaper-portable.sh [--platform linux|windows]
 #
 # Defaults to installing for both linux and windows when run under WSL
 # (both are reachable from here); pass --platform to install just one.
-# REAPER_EXE / REAPER_RESOURCE (same env vars tools/daw-matrix/ and
-# tools/piece/launch.sh read) override the install location.
+# REAPER_EXE / REAPER_RESOURCE (same env vars reaper/matrix/ and
+# reaper.sh read) override the install location.
 set -euo pipefail
 
 REAPER_VERSION=779

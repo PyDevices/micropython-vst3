@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Drive the DAW matrix in REAPER without GUI interaction.
 #
-#   ./tools/daw-matrix/run-reaper-matrix.sh [--platform windows|linux]
+#   ./reaper/matrix/run-reaper-matrix.sh [--platform windows|linux]
 #
-# REAPER runs tools/daw-matrix/matrix.lua as its startup script, exercises the
+# REAPER runs reaper/matrix/matrix.lua as its startup script, exercises the
 # Phase 6 exit criteria against the installed VST3 bundle, renders WAV files,
 # and quits. verify_renders.py then checks the rendered PCM.
 set -euo pipefail
@@ -17,7 +17,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-matrix_dir="$repo_dir/tools/daw-matrix"
+matrix_dir="$repo_dir/reaper/matrix"
 timeout_seconds=${MATRIX_TIMEOUT:-660}
 
 # to_native prints a path the way REAPER's own process will see it, which is
@@ -28,7 +28,7 @@ if [[ "$platform" == windows ]]; then
     mpvst_load_windows_paths || exit 1
     reaper_exe=${REAPER_EXE:-$WIN_USERPROFILE/REAPER/reaper.exe}
     # Portable REAPER (reaper.ini beside reaper.exe) keeps its resource
-    # directory there, not in AppData. See tools/piece/launch.sh.
+    # directory there, not in AppData. See ../../reaper.sh.
     if [[ -n "${REAPER_RESOURCE:-}" ]]; then
         reaper_resource=$REAPER_RESOURCE
     elif [[ -f "$(dirname "$reaper_exe")/reaper.ini" ]]; then

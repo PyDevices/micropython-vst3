@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Build a soundtrack piece's project and hand it to REAPER on Windows.
+# The one entry point for anything that needs REAPER. Everything else this
+# repo does - building the plug-in, writing an instrument, previewing a
+# composition offline - works without this file or the reaper/ directory
+# beside it; both exist purely to drive REAPER, and both can be deleted as
+# a unit by anyone who doesn't use it.
 #
-#   ./launch.sh            regenerate the project, open REAPER, and play it
+#   ./reaper.sh            regenerate the project, open REAPER, and play it
 #                          through the speakers (REAPER stays open)
-#   ./launch.sh --render   headless verification render instead: bounce the
+#   ./reaper.sh --render   headless verification render instead: bounce the
 #                          whole piece offline, check every engine and the
 #                          automation, and compare against the preview.
 #                          Writes build/<Title>.wav and, beside it, the
@@ -24,9 +28,10 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-repo_dir=$(cd "$script_dir/../.." && pwd)
+repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 soundtrack_dir=$(cd "$repo_dir/soundtrack" && pwd)
+composition_dir="$repo_dir/tools/composition"
+reaper_dir="$repo_dir/reaper"
 # verify_song.py needs numpy plus the audioif wheel - this repo's own
 # .venv (pydevices-audioif from TestPyPI) if set up, else the sibling
 # audioif checkout's.
@@ -38,7 +43,7 @@ fi
 # Windows folder locations are queried, never assembled from a username:
 # a profile need not live under C:\Users, and Roaming AppData is often
 # redirected. REAPER_EXE / REAPER_RESOURCE / MPVST_VST3_DIR override.
-source "$script_dir/../../scripts/lib/windows-paths.sh"
+source "$repo_dir/scripts/lib/windows-paths.sh"
 mpvst_load_windows_paths || exit 1
 reaper_exe=${REAPER_EXE:-$WIN_USERPROFILE/REAPER/reaper.exe}
 # REAPER runs "portable" when a reaper.ini sits beside the executable, and
@@ -62,7 +67,7 @@ test -d "$bundle" || { echo "error: MicroPythonVST3.vst3 not installed at $bundl
 
 read -r title render_seconds n_tracks n_instances n_envs <<< "$(python3 - <<PYEOF
 import sys
-sys.path.insert(0, "$script_dir")
+sys.path.insert(0, "$composition_dir")
 from piece import load_piece
 C, _ = load_piece("$piece")
 units = [unit for track in C.TRACKS
@@ -84,7 +89,7 @@ stop_reaper() {
 if [[ "$mode" == play ]]; then
     project_dir="$WIN_MUSIC/$title"
     mkdir -p "$project_dir"
-    python3 "$script_dir/generate_project.py" --piece "$piece" "$project_dir/$title.RPP"
+    python3 "$reaper_dir/generate_project.py" --piece "$piece" "$project_dir/$title.RPP"
     project_native=$(wslpath -w "$project_dir/$title.RPP")
 
     echo "Stopping any running REAPER instance..."
@@ -92,7 +97,7 @@ if [[ "$mode" == play ]]; then
     sleep 2
 
     mkdir -p "$reaper_resource/Scripts"
-    cp "$script_dir/reaper/autoplay.lua" "$reaper_resource/Scripts/__startup.lua"
+    cp "$reaper_dir/scripts/autoplay.lua" "$reaper_resource/Scripts/__startup.lua"
 
     launcher="$WIN_TEMP/mpvst_play_$piece.ps1"
     cat > "$launcher" <<PS1
@@ -130,10 +135,10 @@ rm -rf "$work_unix"
 mkdir -p "$work_unix"
 work_native=$(wslpath -w "$work_unix")
 
-python3 "$script_dir/generate_project.py" --piece "$piece" "$work_unix/$title.RPP"
+python3 "$reaper_dir/generate_project.py" --piece "$piece" "$work_unix/$title.RPP"
 
 mkdir -p "$reaper_resource/Scripts"
-cp "$script_dir/reaper/verify.lua" "$reaper_resource/Scripts/__startup.lua"
+cp "$reaper_dir/scripts/verify.lua" "$reaper_resource/Scripts/__startup.lua"
 
 echo "Stopping any running REAPER instance..."
 stop_reaper
@@ -200,7 +205,7 @@ if [ -f "$bounce" ]; then
     echo "wrote $soundtrack_dir/build/$title.RPP"
     echo
     echo "=== bounce vs preview ==="
-    "$venv_python" "$script_dir/verify_song.py" \
+    "$venv_python" "$reaper_dir/verify_song.py" \
         --piece "$piece" \
         "$soundtrack_dir/build/$title.wav" \
         "$soundtrack_dir/build/${piece}_preview.wav"

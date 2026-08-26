@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build and install the Windows VST3 bundle into the per-user VST3
 # directory a DAW scans (%LOCALAPPDATA%\Programs\Common\VST3), which is
-# where tools/piece/launch.sh and tools/daw-matrix/ expect to find it.
+# where reaper.sh and reaper/matrix/ expect to find it.
 #
 #   ./scripts/install-plugin-windows.sh [--no-build]
 #
