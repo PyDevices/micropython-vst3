@@ -31,9 +31,9 @@ set(SMTG_CREATE_PLUGIN_LINK OFF CACHE BOOL "" FORCE)
 
 set(public_sdk_SOURCE_DIR "${VST3_SDK_ROOT}/public.sdk")
 add_subdirectory("${VST3_SDK_ROOT}" "${CMAKE_BINARY_DIR}/vst3sdk" EXCLUDE_FROM_ALL)
-add_subdirectory(protocol)
-add_subdirectory(runtime)
-add_subdirectory(plugin)
+add_subdirectory(src/protocol)
+add_subdirectory(src/runtime)
+add_subdirectory(src/plugin)
 
 include(CTest)
 if(BUILD_TESTING)

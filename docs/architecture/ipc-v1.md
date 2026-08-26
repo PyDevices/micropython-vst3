@@ -1,7 +1,7 @@
 # IPC protocol v1 design
 
 This document fixes the rules for Phase 2. The canonical exact structure sizes,
-offsets, and compile-time checks are in `protocol/include/mpvst/protocol.h`.
+offsets, and compile-time checks are in `src/protocol/include/mpvst/protocol.h`.
 
 ## Compatibility
 
