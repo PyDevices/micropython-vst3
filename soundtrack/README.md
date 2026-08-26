@@ -99,5 +99,7 @@ part of the hardware.
 Play mode regenerates the project under `C:\Users\bradb\Music\<Title>\`,
 opens REAPER with a self-deleting autoplay startup script, and leaves
 REAPER open. Render mode bounces the piece offline through the installed
-plug-in, checks every engine and envelope, writes `build/<Title>.wav`,
+plug-in, checks every engine and envelope, writes `build/<Title>.wav`
+alongside the `build/<Title>.RPP` that produced it (the exact project
+REAPER rendered, so the two can never drift),
 and compares it section by section against the CPython preview.

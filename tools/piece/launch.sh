@@ -5,7 +5,9 @@
 #                          through the speakers (REAPER stays open)
 #   ./launch.sh --render   headless verification render instead: bounce the
 #                          whole piece offline, check every engine and the
-#                          automation, and compare against the preview
+#                          automation, and compare against the preview.
+#                          Writes build/<Title>.wav and, beside it, the
+#                          build/<Title>.RPP that produced it.
 #
 # The project embeds every instrument script in plug-in state, so REAPER
 # needs no environment beyond MPVST_HEAP_BYTES for the sidecars.
@@ -153,6 +155,12 @@ bounce="$work_unix/${piece}_bounce.wav"
 if [ -f "$bounce" ]; then
     mkdir -p "$soundtrack_dir/build"
     cp "$bounce" "$soundtrack_dir/build/$title.wav"
+    # Keep the project next to the bounce it produced. This is the exact
+    # file REAPER rendered, not a fresh generate_project.py run, so the
+    # pair can never drift: open the .RPP and you get that .wav back.
+    cp "$work_unix/$title.RPP" "$soundtrack_dir/build/$title.RPP"
+    echo "wrote $soundtrack_dir/build/$title.wav"
+    echo "wrote $soundtrack_dir/build/$title.RPP"
     echo
     echo "=== bounce vs preview ==="
     "$script_dir/../../../audioif/.venv/bin/python" "$script_dir/verify_song.py" \
