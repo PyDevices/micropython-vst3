@@ -18,7 +18,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 SOUNDTRACK = SCRIPT_DIR.parent.parent / "soundtrack"
 sys.path.insert(0, str(SCRIPT_DIR))
-sys.path.insert(0, str(SCRIPT_DIR.parent / "preview"))
+sys.path.insert(0, str(SCRIPT_DIR.parent))
 
 import numpy as np  # noqa: E402
 

@@ -43,7 +43,7 @@ fi
 # Windows folder locations are queried, never assembled from a username:
 # a profile need not live under C:\Users, and Roaming AppData is often
 # redirected. REAPER_EXE / REAPER_RESOURCE / MPVST_VST3_DIR override.
-source "$repo_dir/scripts/lib/windows-paths.sh"
+source "$repo_dir/scripts/windows-paths.sh"
 mpvst_load_windows_paths || exit 1
 reaper_exe=${REAPER_EXE:-$WIN_USERPROFILE/REAPER/reaper.exe}
 # REAPER runs "portable" when a reaper.ini sits beside the executable, and

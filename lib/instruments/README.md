@@ -93,7 +93,7 @@ tools exist, both driving the actual script through actual `synthio`/
 
 - **`../../tools/test-instruments-lib.py`** - fast, no compiled engine or
   VST3 host needed. Runs every script (or the ones you name) against
-  `../../tools/preview/harness.py`, a CPython stand-in for the sidecar
+  `../../tools/harness.py`, a CPython stand-in for the sidecar
   built on the `audioif` wheel. Sweeps every declared macro through
   `0.0/0.5/1.0` under held notes, then checks a fresh instance produces
   non-silent audio at default settings. This is what you run while

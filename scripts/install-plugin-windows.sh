@@ -15,7 +15,7 @@ repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 build=1
 [[ "${1:-}" == "--no-build" ]] && build=0
 
-source "$repo_dir/scripts/lib/windows-paths.sh"
+source "$repo_dir/scripts/windows-paths.sh"
 mpvst_load_windows_paths || exit 1
 
 win_build=${MPVST_WIN_BUILD:-$WIN_TEMP/micropython-vst3-build}

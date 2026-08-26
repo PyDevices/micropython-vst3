@@ -17,7 +17,7 @@ one imports or knows about REAPER:
   its `composition.py` and `instruments/` under `../soundtrack/`. The one
   place that hardcodes that location.
 - **`composition/render_preview.py [--piece NAME] [out.wav] [--stems DIR]`**
-  - offline render through `preview/` (needs the `audioif` wheel's venv:
+  - offline render through `harness.py` (needs the `audioif` wheel's venv:
   this repo's own `.venv` if set up - `pip install pydevices-audioif` from
   TestPyPI, plus `numpy` - else a sibling `audioif` checkout's, e.g.
   `../../audioif/.venv/bin/python`); reports peaks, RMS per section, and
@@ -29,14 +29,16 @@ and the root [`../reaper.sh`](../reaper.sh) entry point.
 
 ## Testing
 
-- **`preview/`** - a CPython stand-in for the sidecar, built on the
-  `audioif` wheel (the same `synthio`/`audiocore` DSP the real engine
-  runs). Lets any instrument or effect script run without the compiled
-  engine or a VST3 host, in milliseconds instead of the seconds a full
-  plug-in load takes. `harness.py` provides `InstrumentRun`; `vstaudio.py`
-  is the shim module scripts see as `import vstaudio`.
+- **`harness.py`** and **`vstaudio.py`** - a CPython stand-in for the
+  sidecar, built on the `audioif` wheel (the same `synthio`/`audiocore`
+  DSP the real engine runs). Lets any instrument or effect script run
+  without the compiled engine or a VST3 host, in milliseconds instead of
+  the seconds a full plug-in load takes. `harness.py` provides
+  `InstrumentRun` and `EffectRun`; `vstaudio.py` is the shim module
+  scripts see as `import vstaudio`. A sibling `audioif` checkout, when
+  present, is preferred over any installed wheel.
 - **`test-instruments-lib.py`** - runs every `lib/instruments/*.py`
-  script against `preview/`: sweeps each declared macro through
+  script against `harness.py`: sweeps each declared macro through
   `0.0/0.5/1.0` under held notes, then checks a fresh instance produces
   audible output at default settings. No engine or VST3 host needed;
   a full pass over all 53 scripts takes single-digit seconds. Registered

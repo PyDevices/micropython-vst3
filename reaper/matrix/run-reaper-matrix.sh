@@ -23,8 +23,8 @@ timeout_seconds=${MATRIX_TIMEOUT:-660}
 # to_native prints a path the way REAPER's own process will see it, which is
 # only a translation on Windows.
 if [[ "$platform" == windows ]]; then
-    # Queried, never assembled from a username: see scripts/lib/windows-paths.sh.
-    source "$repo_dir/scripts/lib/windows-paths.sh"
+    # Queried, never assembled from a username: see scripts/windows-paths.sh.
+    source "$repo_dir/scripts/windows-paths.sh"
     mpvst_load_windows_paths || exit 1
     reaper_exe=${REAPER_EXE:-$WIN_USERPROFILE/REAPER/reaper.exe}
     # Portable REAPER (reaper.ini beside reaper.exe) keeps its resource

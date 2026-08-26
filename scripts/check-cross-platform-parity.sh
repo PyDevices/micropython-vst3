@@ -10,7 +10,7 @@ set -euo pipefail
 
 repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 linux_build=${LINUX_BUILD:-"$repo_dir/.build-linux"}
-source "$repo_dir/scripts/lib/windows-paths.sh"
+source "$repo_dir/scripts/windows-paths.sh"
 mpvst_load_windows_paths || exit 1
 windows_build_unix=${WINDOWS_BUILD_UNIX:-$WIN_TEMP/micropython-vst3-build}
 windows_build_win=${WINDOWS_BUILD_WIN:-$(wslpath -w "$windows_build_unix")}

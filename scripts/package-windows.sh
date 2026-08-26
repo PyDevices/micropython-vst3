@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-source "$repo_dir/scripts/lib/windows-paths.sh"
+source "$repo_dir/scripts/windows-paths.sh"
 mpvst_load_windows_paths || exit 1
 build_dir=${1:-$WIN_TEMP/micropython-vst3-build}
 bundle="$build_dir/VST3/Release/MicroPythonVST3.vst3"

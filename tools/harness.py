@@ -19,8 +19,11 @@ import struct
 import sys
 from pathlib import Path
 
-TOOLS_DIR = Path(__file__).resolve().parent.parent
+TOOLS_DIR = Path(__file__).resolve().parent
 REPO_DIR = TOOLS_DIR.parent
+# A sibling audioif checkout, when present, wins over any installed
+# pydevices-audioif wheel: it is the source these scripts are developed
+# against. Falls through to the wheel in .venv when there is no sibling.
 AUDIOIF_DIR = REPO_DIR.parent / "audioif"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))

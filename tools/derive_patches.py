@@ -31,7 +31,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO / "tools" / "preview"))
+sys.path.insert(0, str(REPO / "tools"))
 
 import vstaudio  # noqa: E402
 

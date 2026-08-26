@@ -65,8 +65,8 @@ install_windows() {
         return 0
     fi
     # REAPER_EXE is a WSL path. The profile location is queried rather than
-    # assembled from a username: see scripts/lib/windows-paths.sh.
-    source "$repo_dir/scripts/lib/windows-paths.sh"
+    # assembled from a username: see scripts/windows-paths.sh.
+    source "$repo_dir/scripts/windows-paths.sh"
     mpvst_load_windows_paths || return 1
     local exe="${REAPER_EXE:-$WIN_USERPROFILE/REAPER/reaper.exe}"
     if [[ -x "$exe" ]]; then

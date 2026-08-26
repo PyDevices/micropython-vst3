@@ -25,7 +25,7 @@ both platforms.
 | `src/` | the C++ that builds the plug-in: `plugin/` (VST3 classes), `protocol/` (the shared-memory wire format), `runtime/` (shared memory and child processes) |
 | `usermods/vstaudio/` | the MicroPython C module that gives scripts their audio API |
 | `lib/` | everything staged into the bundle beside the engine: `instruments/`, `effects/`, the bootstrap, and the default instrument |
-| `tools/` | developer tooling - `composition/` and `preview/` for pieces, plus the library test sweeps |
+| `tools/` | developer tooling - `composition/` for pieces, the `harness.py` CPython sidecar stand-in, and the library test sweeps |
 | `tests/` | the ctest suite and `smoke_host/`, a minimal VST3 host that loads the bundle with no DAW |
 | `scripts/` | build, packaging and setup automation |
 | `reaper/` + `reaper.sh` | everything that drives REAPER. Deletable as a unit; nothing outside it depends on it |

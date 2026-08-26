@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run every lib/instruments/*.py script through the real synthio DSP.
 
-Uses tools/preview/harness.py (the audioif CPython wheel, no compiled
+Uses tools/harness.py (the audioif CPython wheel, no compiled
 engine or VST3 host needed) to catch exactly the class of bug that
 py_compile can't: API misuse that only raises once a note is actually
 played (e.g. an invalid kwarg to synthio.Note/Math), and macros that are
@@ -28,7 +28,7 @@ from pathlib import Path
 
 REPO_DIR = Path(__file__).resolve().parent.parent
 INSTRUMENTS_DIR = REPO_DIR / "lib" / "instruments"
-sys.path.insert(0, str(Path(__file__).resolve().parent / "preview"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import harness  # noqa: E402
 import vstaudio  # noqa: E402
