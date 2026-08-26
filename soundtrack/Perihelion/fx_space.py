@@ -5,7 +5,9 @@ and a hall. Macro 1 is the reverb mix, macro 2 the echo send, macro 3
 the tone."""
 
 import vstaudio
-from effects import LowPass, Reverb, TapeDelay
+from audioeffects import configure, LowPass, Reverb, TapeDelay
+
+configure(vstaudio.sample_rate())
 
 tone = LowPass(vstaudio.input(), frequency=4200.0)
 tape = TapeDelay(tone.output, time_ms=375.0, feedback=0.4, mix=0.25)

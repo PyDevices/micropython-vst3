@@ -169,7 +169,9 @@ def room_rack(name, preset, mix, extra=""):
     room_source = "width.output" if extra else "source"
     source = ("# mpvst-macro-labels: Room 01 | Room 02 | Room 03 | Room 04\n"
               "import vstaudio\n"
-              "from effects import Reverb%s\n"
+              "from audioeffects import configure, Reverb%s\n"
+              "\n"
+              "configure(vstaudio.sample_rate())\n"
               "source = vstaudio.input()\n%s"
               "room = Reverb(%s, preset='%s', mix=%.3f)\n"
               "vstaudio.output(room.output)\n" %

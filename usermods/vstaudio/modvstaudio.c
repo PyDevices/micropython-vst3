@@ -696,18 +696,13 @@ static mp_obj_t vstaudio_run(mp_obj_t reload_callback) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(vstaudio_run_obj, vstaudio_run);
 
-extern const mp_obj_type_t vstaudio_dynamics_type;
-extern const mp_obj_type_t vstaudio_splitter_type;
-
+// Dynamics and Splitter used to live here, in vstaudio_dsp.c. They are
+// audioif's `audiodynamics.Dynamics` and `audioroute.Splitter` now - the
+// same DSP, compiled from audioif/src/shared/ into every target it
+// supports rather than into this plug-in alone. What is left here is the
+// host binding, which is all a VST3 sidecar ever had to provide.
 static const mp_rom_map_elem_t vstaudio_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_vstaudio) },
-    { MP_ROM_QSTR(MP_QSTR_Dynamics), MP_ROM_PTR(&vstaudio_dynamics_type) },
-    { MP_ROM_QSTR(MP_QSTR_Splitter), MP_ROM_PTR(&vstaudio_splitter_type) },
-    { MP_ROM_QSTR(MP_QSTR_DYN_COMPRESS), MP_ROM_INT(0) },
-    { MP_ROM_QSTR(MP_QSTR_DYN_LIMIT), MP_ROM_INT(1) },
-    { MP_ROM_QSTR(MP_QSTR_DYN_EXPAND), MP_ROM_INT(2) },
-    { MP_ROM_QSTR(MP_QSTR_DYN_GATE), MP_ROM_INT(3) },
-    { MP_ROM_QSTR(MP_QSTR_DYN_TRANSIENT), MP_ROM_INT(4) },
     { MP_ROM_QSTR(MP_QSTR_configure), MP_ROM_PTR(&vstaudio_configure_obj) },
     { MP_ROM_QSTR(MP_QSTR_sample_rate), MP_ROM_PTR(&vstaudio_sample_rate_obj) },
     { MP_ROM_QSTR(MP_QSTR_output), MP_ROM_PTR(&vstaudio_output_obj) },

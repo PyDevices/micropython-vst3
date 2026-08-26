@@ -144,7 +144,9 @@ CHASE_CHORDS = [
 def rack(name, imports, body):
     source = ("# mpvst-macro-labels: Rack 01 | Rack 02 | Rack 03 | Rack 04\n"
               "import vstaudio\n"
-              "from effects import %s\n"
+              "from audioeffects import configure, %s\n"
+              "\n"
+              "configure(vstaudio.sample_rate())\n"
               "source = vstaudio.input()\n%s\n" % (imports, body))
     return {"name": name, "source": source, "macros": {}, "macro_env": {}}
 

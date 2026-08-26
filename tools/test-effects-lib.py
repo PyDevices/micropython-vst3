@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run every effects-library class through the real sidecar.
+"""Run every audioeffects class through the real sidecar.
 
 For each public class this writes a tiny script that builds the effect
 from vstaudio.input() with default-ish arguments, runs it through the
@@ -23,62 +23,63 @@ LOUD_IN = 0.353553
 # checks: "pass" output present both halves; "squeeze" loud reduced >=3 dB;
 # "mute_quiet" quiet half near-silent while loud passes; "wet" loud present.
 CASES = {
-    "Compressor": ("effects.Compressor(src, threshold_db=-24, ratio=4)",
+    "Compressor": ("audioeffects.Compressor(src, threshold_db=-24, ratio=4)",
                    "squeeze"),
-    "Compressor_fet": ("effects.Compressor(src, threshold_db=-20, ratio=8,"
+    "Compressor_fet": ("audioeffects.Compressor(src, threshold_db=-20, ratio=8,"
                        " character='fet')", "squeeze"),
-    "Limiter": ("effects.Limiter(src, ceiling_db=-12)", "squeeze"),
-    "Expander": ("effects.Expander(src, threshold_db=-20, ratio=3)",
+    "Limiter": ("audioeffects.Limiter(src, ceiling_db=-12)", "squeeze"),
+    "Expander": ("audioeffects.Expander(src, threshold_db=-20, ratio=3)",
                  "mute_quiet"),
-    "NoiseGate": ("effects.NoiseGate(src, threshold_db=-24)", "mute_quiet"),
-    "DeEsser": ("effects.DeEsser(src, threshold_db=-40, frequency=150)",
+    "NoiseGate": ("audioeffects.NoiseGate(src, threshold_db=-24)", "mute_quiet"),
+    "DeEsser": ("audioeffects.DeEsser(src, threshold_db=-40, frequency=150)",
                 "squeeze"),
-    "TransientShaper": ("effects.TransientShaper(src, attack_db=6,"
+    "TransientShaper": ("audioeffects.TransientShaper(src, attack_db=6,"
                         " sustain_db=-3)", "pass"),
-    "MultibandCompressor": ("effects.MultibandCompressor(src)", "pass"),
-    "ParametricEQ": ("effects.ParametricEQ(src, bands=[(220, -12, 2)])",
+    "MultibandCompressor": ("audioeffects.MultibandCompressor(src)", "pass"),
+    "ParametricEQ": ("audioeffects.ParametricEQ(src, bands=[(220, -12, 2)])",
                      "squeeze"),
-    "GraphicEQ": ("effects.GraphicEQ(src,"
+    "GraphicEQ": ("audioeffects.GraphicEQ(src,"
                   " [0, 0, -9, -9, 0, 0, 0, 0, 0, 0])", "pass"),
-    "DynamicEQ": ("effects.DynamicEQ(src, frequency=220,"
+    "DynamicEQ": ("audioeffects.DynamicEQ(src, frequency=220,"
                   " threshold_db=-30)", "pass"),
-    "LowPass": ("effects.LowPass(src, frequency=2000)", "pass"),
-    "HighPass": ("effects.HighPass(src, frequency=1000)", "kill"),
-    "BandPass": ("effects.BandPass(src, frequency=220, q=2)", "pass"),
-    "Notch": ("effects.Notch(src, frequency=220, q=1)", "squeeze"),
-    "LadderFilter": ("effects.LadderFilter(src, cutoff=3000,"
+    "LowPass": ("audioeffects.LowPass(src, frequency=2000)", "pass"),
+    "HighPass": ("audioeffects.HighPass(src, frequency=1000)", "kill"),
+    "BandPass": ("audioeffects.BandPass(src, frequency=220, q=2)", "pass"),
+    "Notch": ("audioeffects.Notch(src, frequency=220, q=1)", "squeeze"),
+    "LadderFilter": ("audioeffects.LadderFilter(src, cutoff=3000,"
                      " resonance=0.3)", "pass"),
-    "CombFilter": ("effects.CombFilter(src, frequency=440)", "pass"),
-    "Reverb": ("effects.Reverb(src, preset='hall', mix=0.4)", "pass"),
-    "Reverb_spring": ("effects.Reverb(src, preset='spring', mix=0.4)",
+    "CombFilter": ("audioeffects.CombFilter(src, frequency=440)", "pass"),
+    "Reverb": ("audioeffects.Reverb(src, preset='hall', mix=0.4)", "pass"),
+    "Reverb_spring": ("audioeffects.Reverb(src, preset='spring', mix=0.4)",
                       "pass"),
-    "DigitalDelay": ("effects.DigitalDelay(src)", "pass"),
-    "SlapbackDelay": ("effects.SlapbackDelay(src)", "pass"),
-    "TapeDelay": ("effects.TapeDelay(src)", "pass"),
-    "PingPongDelay": ("effects.PingPongDelay(src)", "pass"),
-    "MultiTapDelay": ("effects.MultiTapDelay(src)", "pass"),
-    "Chorus": ("effects.Chorus(src)", "pass"),
-    "Flanger": ("effects.Flanger(src)", "pass"),
-    "Phaser": ("effects.Phaser(src)", "pass"),
-    "Tremolo": ("effects.Tremolo(src)", "pass"),
-    "AutoPan": ("effects.AutoPan(src)", "pass"),
-    "Vibrato": ("effects.Vibrato(src)", "pass"),
-    "Rotary": ("effects.Rotary(src, speed='fast')", "pass"),
-    "Overdrive": ("effects.Overdrive(src, drive=0.5)", "pass"),
-    "Distortion": ("effects.Distortion(src)", "pass"),
-    "Fuzz": ("effects.Fuzz(src)", "pass"),
-    "Saturation": ("effects.Saturation(src)", "pass"),
-    "Bitcrusher": ("effects.Bitcrusher(src, crush=0.5)", "pass"),
-    "Exciter": ("effects.Exciter(src)", "pass"),
-    "PitchShifter": ("effects.PitchShifter(src, semitones=7)", "pass"),
-    "Harmonizer": ("effects.Harmonizer(src)", "pass"),
-    "Octaver": ("effects.Octaver(src, down=0.6)", "pass"),
-    "StereoWidener": ("effects.StereoWidener(src)", "pass"),
+    "DigitalDelay": ("audioeffects.DigitalDelay(src)", "pass"),
+    "SlapbackDelay": ("audioeffects.SlapbackDelay(src)", "pass"),
+    "TapeDelay": ("audioeffects.TapeDelay(src)", "pass"),
+    "PingPongDelay": ("audioeffects.PingPongDelay(src)", "pass"),
+    "MultiTapDelay": ("audioeffects.MultiTapDelay(src)", "pass"),
+    "Chorus": ("audioeffects.Chorus(src)", "pass"),
+    "Flanger": ("audioeffects.Flanger(src)", "pass"),
+    "Phaser": ("audioeffects.Phaser(src)", "pass"),
+    "Tremolo": ("audioeffects.Tremolo(src)", "pass"),
+    "AutoPan": ("audioeffects.AutoPan(src)", "pass"),
+    "Vibrato": ("audioeffects.Vibrato(src)", "pass"),
+    "Rotary": ("audioeffects.Rotary(src, speed='fast')", "pass"),
+    "Overdrive": ("audioeffects.Overdrive(src, drive=0.5)", "pass"),
+    "Distortion": ("audioeffects.Distortion(src)", "pass"),
+    "Fuzz": ("audioeffects.Fuzz(src)", "pass"),
+    "Saturation": ("audioeffects.Saturation(src)", "pass"),
+    "Bitcrusher": ("audioeffects.Bitcrusher(src, crush=0.5)", "pass"),
+    "Exciter": ("audioeffects.Exciter(src)", "pass"),
+    "PitchShifter": ("audioeffects.PitchShifter(src, semitones=7)", "pass"),
+    "Harmonizer": ("audioeffects.Harmonizer(src)", "pass"),
+    "Octaver": ("audioeffects.Octaver(src, down=0.6)", "pass"),
+    "StereoWidener": ("audioeffects.StereoWidener(src)", "pass"),
 }
 
 TEMPLATE = """import vstaudio
-import effects
+import audioeffects
 
+audioeffects.configure(vstaudio.sample_rate())
 src = vstaudio.input()
 fx = {ctor}
 vstaudio.output(fx.output)
