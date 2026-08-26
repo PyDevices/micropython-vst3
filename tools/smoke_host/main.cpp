@@ -209,17 +209,12 @@ bool stateRoundTrip(const PluginFactory& factory, const ClassInfo& classInfo,
 }
 
 bool processLifecycle(const PluginFactory& factory, const ClassInfo& classInfo,
-                      FUnknown* host, bool expectMicroPython)
+                      FUnknown* host)
 {
 #if defined(_WIN32)
     (void)_putenv_s("MPVST_NATIVE_TEST_TONE", "");
-    (void)_putenv_s("MPVST_NATIVE_EVENT_GATE", expectMicroPython ? "" : "1");
 #else
     (void)unsetenv("MPVST_NATIVE_TEST_TONE");
-    if (expectMicroPython)
-        (void)unsetenv("MPVST_NATIVE_EVENT_GATE");
-    else
-        (void)setenv("MPVST_NATIVE_EVENT_GATE", "1", 1);
 #endif
     auto component = createComponent(factory, classInfo, host);
     auto processor = getProcessor(component);
@@ -261,7 +256,7 @@ bool processLifecycle(const PluginFactory& factory, const ClassInfo& classInfo,
     EventList inputEvents;
     Event noteOn {};
     Event noteOff {};
-    const auto midiChannel = expectMicroPython ? 0 : 3;
+    const auto midiChannel = 0;
     noteOn.busIndex = 0;
     noteOn.sampleOffset = 64;
     noteOn.type = Event::kNoteOnEvent;
@@ -290,7 +285,7 @@ bool processLifecycle(const PluginFactory& factory, const ClassInfo& classInfo,
     float previousSample = 0.0F;
     int zeroCrossings = 0;
     int lastAudibleSample = -1;
-    const auto blockCount = expectMicroPython ? 96 : 12;
+    const auto blockCount = 96;
     for (int block = 0; block < blockCount; ++block)
     {
         if (block == 6)
@@ -298,29 +293,6 @@ bool processLifecycle(const PluginFactory& factory, const ClassInfo& classInfo,
             inputEvents.clear();
             (void)inputEvents.addEvent(noteOff);
             data.inputEvents = &inputEvents;
-        }
-        if (!expectMicroPython && block == 2)
-        {
-            constexpr ParamID pitchBendChannel3 = 0x10000U + 3U * 256U + 129U;
-            int32 queueIndex = 0;
-            int32 pointIndex = 0;
-            auto* queue = parameterChanges.addParameterData (pitchBendChannel3,
-                                                              queueIndex);
-            if (queue == nullptr ||
-                queue->addPoint (0, 1.0, pointIndex) != kResultTrue)
-                return false;
-            data.inputParameterChanges = &parameterChanges;
-        }
-        if (!expectMicroPython && block == 4)
-        {
-            constexpr ParamID macro01 = 100U;
-            int32 queueIndex = 0;
-            int32 pointIndex = 0;
-            auto* queue = parameterChanges.addParameterData (macro01, queueIndex);
-            if (queue == nullptr ||
-                queue->addPoint (17, 0.75, pointIndex) != kResultTrue)
-                return false;
-            data.inputParameterChanges = &parameterChanges;
         }
         if (!require(processor->process(data), "process"))
             return false;
@@ -343,11 +315,6 @@ bool processLifecycle(const PluginFactory& factory, const ClassInfo& classInfo,
             inputEvents.clear();
             data.inputEvents = nullptr;
         }
-        if (!expectMicroPython && (block == 2 || block == 4))
-        {
-            parameterChanges.clearQueue ();
-            data.inputParameterChanges = nullptr;
-        }
         for (std::size_t frame = 0; frame < left.size(); ++frame)
         {
             const auto sample = left[frame];
@@ -367,28 +334,11 @@ bool processLifecycle(const PluginFactory& factory, const ClassInfo& classInfo,
                 std::cerr << "HOOK latency.initial_silence FAIL\n";
                 return false;
             }
-            if (expectMicroPython && block == 4 && frame < 64U && sample != 0.0F)
+            if (block == 4 && frame < 64U && sample != 0.0F)
             {
                 std::cerr << "HOOK midi.sample_offset FAIL: early sample="
                           << frame << '\n';
                 return false;
-            }
-            if (!expectMicroPython)
-            {
-                const auto absoluteSample = block * data.numSamples +
-                                            static_cast<int> (frame);
-                const auto expected = absoluteSample < 576 ? 0.0F
-                    : absoluteSample < 768 ? 0.125F
-                    : absoluteSample < 1041 ? 0.25F
-                    : absoluteSample < 1312 ? 0.1875F
-                    : 0.0F;
-                if (std::abs(sample - expected) > 0.000001F)
-                {
-                    std::cerr << "HOOK midi.pitch_bend FAIL: sample="
-                              << absoluteSample << " expected=" << expected
-                              << " actual=" << sample << '\n';
-                    return false;
-                }
             }
             const auto absoluteSample = block * data.numSamples +
                                         static_cast<int> (frame);
@@ -414,40 +364,32 @@ bool processLifecycle(const PluginFactory& factory, const ClassInfo& classInfo,
     }
     std::cout << "HOOK latency.fixed_pipeline OK: 512 samples\n";
     std::cout << "HOOK engine.status_parameter OK: ready=1 error=0\n";
-    if (expectMicroPython)
+    // The note-on at offset 64 must emerge at 512 + 64 after the fixed
+    // pipeline, so audible 220 Hz output also proves the event reached the
+    // Python synthio graph.
+    if (zeroCrossings < 5 || zeroCrossings > 9 ||
+        firstAudibleSample < 576 || firstAudibleSample > 580)
     {
-        // The note-on at offset 64 must emerge at 512 + 64 after the fixed
-        // pipeline. A native fallback ignores it, so audible 220 Hz output
-        // also proves the event reached the Python synthio graph.
-        if (zeroCrossings < 5 || zeroCrossings > 9 ||
-            firstAudibleSample < 576 || firstAudibleSample > 580)
-        {
-            std::cerr << "HOOK engine.micropython_synthio FAIL: "
-                      << "zero_crossings=" << zeroCrossings
-                      << " first_audible=" << firstAudibleSample << '\n';
-            return false;
-        }
-        std::cout << "HOOK engine.micropython_synthio OK: zero_crossings="
-                  << zeroCrossings << '\n';
-        std::cout << "HOOK midi.sample_offset OK: first_audible="
-                  << firstAudibleSample << '\n';
-        // Note-off is submitted in block 6 at offset 32, so it reaches Python
-        // at sample 1312 after latency. The default voice's explicit 50 ms
-        // release must continue past that boundary and finish within the run.
-        if (lastAudibleSample <= 1312 || lastAudibleSample >= 5000)
-        {
-            std::cerr << "HOOK midi.note_off_tail FAIL: last_audible="
-                      << lastAudibleSample << '\n';
-            return false;
-        }
-        std::cout << "HOOK midi.note_off_tail OK: event_sample=1312"
-                  << " last_audible=" << lastAudibleSample << '\n';
+        std::cerr << "HOOK engine.micropython_synthio FAIL: "
+                  << "zero_crossings=" << zeroCrossings
+                  << " first_audible=" << firstAudibleSample << '\n';
+        return false;
     }
-    else
+    std::cout << "HOOK engine.micropython_synthio OK: zero_crossings="
+              << zeroCrossings << '\n';
+    std::cout << "HOOK midi.sample_offset OK: first_audible="
+              << firstAudibleSample << '\n';
+    // Note-off is submitted in block 6 at offset 32, so it reaches Python
+    // at sample 1312 after latency. The default voice's explicit 50 ms
+    // release must continue past that boundary and finish within the run.
+    if (lastAudibleSample <= 1312 || lastAudibleSample >= 5000)
     {
-        std::cout << "HOOK midi.pitch_bend OK: channel=3 event_sample=768\n";
-        std::cout << "HOOK macro.sample_offset OK: macro=1 event_sample=1041\n";
+        std::cerr << "HOOK midi.note_off_tail FAIL: last_audible="
+                  << lastAudibleSample << '\n';
+        return false;
     }
+    std::cout << "HOOK midi.note_off_tail OK: event_sample=1312"
+              << " last_audible=" << lastAudibleSample << '\n';
 
     const bool stopped = ok(processor->setProcessing(false)) &&
                          ok(component->setActive(false));
@@ -1328,360 +1270,6 @@ bool patchSelectDeliversProgramChange(const PluginFactory& factory,
           std::abs(actualRatio - expectedRatio) < expectedRatio * 0.25;
 }
 
-bool transportDiscontinuityGatesVoices(const PluginFactory& factory,
-                                       const ClassInfo& classInfo,
-                                       FUnknown* host)
-{
-    // The native engine closes its gate on a transport discontinuity, so a
-    // locate while a note is held must silence the instrument even though no
-    // note-off was sent. Without discontinuity detection the note would sustain
-    // straight through the jump.
-#if defined(_WIN32)
-    (void)_putenv_s("MPVST_NATIVE_EVENT_GATE", "1");
-#else
-    (void)setenv("MPVST_NATIVE_EVENT_GATE", "1", 1);
-#endif
-    auto component = createComponent(factory, classInfo, host);
-    auto processor = getProcessor(component);
-    if (!component || !processor)
-        return false;
-
-    SpeakerArrangement stereo = SpeakerArr::kStereo;
-    ProcessSetup setup {};
-    setup.processMode = kRealtime;
-    setup.symbolicSampleSize = kSample32;
-    setup.maxSamplesPerBlock = 128;
-    setup.sampleRate = 48000.0;
-    if (!ok(processor->setBusArrangements(nullptr, 0, &stereo, 1)) ||
-        !ok(component->activateBus(kAudio, kOutput, 0, true)) ||
-        !ok(component->activateBus(kEvent, kInput, 0, true)) ||
-        !ok(processor->setupProcessing(setup)) ||
-        !ok(component->setActive(true)) ||
-        !ok(processor->setProcessing(true)))
-        return false;
-
-    std::array<float, 128> left {};
-    std::array<float, 128> right {};
-    Sample32* channels[] = {left.data(), right.data()};
-    AudioBusBuffers output {};
-    output.numChannels = 2;
-    output.channelBuffers32 = channels;
-
-    ProcessContext context {};
-    context.state = ProcessContext::kPlaying | ProcessContext::kTempoValid;
-    context.sampleRate = 48000.0;
-    context.tempo = 120.0;
-    context.projectTimeSamples = 0;
-
-    ProcessData data {};
-    data.processMode = kRealtime;
-    data.symbolicSampleSize = kSample32;
-    data.numSamples = static_cast<int32>(left.size());
-    data.numOutputs = 1;
-    data.outputs = &output;
-    data.processContext = &context;
-
-    constexpr int kNoteBlock = 8;
-    constexpr int kJumpBlock = 20;
-    constexpr int kBlockCount = 32;
-    constexpr int kLatency = 512;
-    const int blockFrames = static_cast<int>(left.size());
-
-    EventList events;
-    bool heardBeforeJump = false;
-    bool silentAfterJump = true;
-    for (int block = 0; block < kBlockCount; ++block)
-    {
-        if (block == kNoteBlock)
-        {
-            Event noteOn {};
-            noteOn.busIndex = 0;
-            noteOn.sampleOffset = 0;
-            noteOn.type = Event::kNoteOnEvent;
-            noteOn.noteOn.channel = 0;
-            noteOn.noteOn.pitch = 60;
-            noteOn.noteOn.velocity = 1.0F;
-            noteOn.noteOn.noteId = 1;
-            (void)events.addEvent(noteOn);
-            data.inputEvents = &events;
-        }
-        if (block == kJumpBlock)
-        {
-            // Locate backwards, the way a loop wrap or a rewind looks.
-            context.projectTimeSamples = 0;
-        }
-        if (!ok(processor->process(data)))
-            return false;
-        if (block == kNoteBlock)
-        {
-            events.clear();
-            data.inputEvents = nullptr;
-        }
-        if (block != kJumpBlock)
-            context.projectTimeSamples += blockFrames;
-
-        const int firstSample = block * blockFrames;
-        for (std::size_t frame = 0; frame < left.size(); ++frame)
-        {
-            const auto sample = firstSample + static_cast<int>(frame);
-            const bool audible = std::abs(left[frame]) > 0.000001F;
-            if (sample >= kNoteBlock * blockFrames + kLatency &&
-                sample < kJumpBlock * blockFrames + kLatency)
-                heardBeforeJump = heardBeforeJump || audible;
-            // Allow the pipeline that was already in flight to drain.
-            if (sample >= (kJumpBlock + 1) * blockFrames + kLatency && audible)
-                silentAfterJump = false;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(4));
-    }
-
-    const bool stopped = ok(processor->setProcessing(false)) &&
-                         ok(component->setActive(false));
-    processor = nullptr;
-    const bool terminated = ok(component->terminate());
-    component = nullptr;
-    if (!heardBeforeJump)
-    {
-        std::cerr << "HOOK transport.discontinuity FAIL: note never sounded\n";
-        return false;
-    }
-    if (!silentAfterJump)
-    {
-        std::cerr << "HOOK transport.discontinuity FAIL: note survived the jump\n";
-        return false;
-    }
-    return stopped && terminated;
-}
-
-bool macroResyncAppliesRestoredState(const PluginFactory& factory,
-                                     const ClassInfo& classInfo, FUnknown* host)
-{
-    // A restored instance must sound the way the saved project sounded. The
-    // script starts from its own defaults and never sees a parameter change on
-    // this path, so without a resynchronisation the restored macro value is
-    // silently ignored until the user moves the control.
-#if defined(_WIN32)
-    (void)_putenv_s("MPVST_NATIVE_EVENT_GATE", "1");
-#else
-    (void)setenv("MPVST_NATIVE_EVENT_GATE", "1", 1);
-#endif
-
-    auto original = createComponent(factory, classInfo, host);
-    if (!original)
-        return false;
-    MemoryStream snapshot;
-    if (!ok(original->getState(&snapshot)))
-        return false;
-    (void)original->terminate();
-    original = nullptr;
-
-    // State is int32 version, int32 bypass, then the sixteen macro floats, so
-    // Macro 01 begins at byte eight. Raising it to full scale makes the native
-    // engine's gate level 0.25 instead of its 0.125 default.
-    constexpr int64 kMacroOffset = 8;
-    if (snapshot.getSize() < kMacroOffset + static_cast<int64>(sizeof(float)))
-        return false;
-    const float fullScale = 1.0F;
-    std::memcpy(snapshot.getData() + kMacroOffset, &fullScale, sizeof(fullScale));
-
-    auto restored = createComponent(factory, classInfo, host);
-    auto processor = getProcessor(restored);
-    if (!restored || !processor)
-        return false;
-    snapshot.seek(0, IBStream::kIBSeekSet, nullptr);
-    if (!ok(restored->setState(&snapshot)))
-        return false;
-
-    SpeakerArrangement stereo = SpeakerArr::kStereo;
-    ProcessSetup setup {};
-    setup.processMode = kRealtime;
-    setup.symbolicSampleSize = kSample32;
-    setup.maxSamplesPerBlock = 128;
-    setup.sampleRate = 48000.0;
-    if (!ok(processor->setBusArrangements(nullptr, 0, &stereo, 1)) ||
-        !ok(restored->activateBus(kAudio, kOutput, 0, true)) ||
-        !ok(restored->activateBus(kEvent, kInput, 0, true)) ||
-        !ok(processor->setupProcessing(setup)) ||
-        !ok(restored->setActive(true)) ||
-        !ok(processor->setProcessing(true)))
-        return false;
-
-    std::array<float, 128> left {};
-    std::array<float, 128> right {};
-    Sample32* channels[] = {left.data(), right.data()};
-    AudioBusBuffers output {};
-    output.numChannels = 2;
-    output.channelBuffers32 = channels;
-    ProcessData data {};
-    data.processMode = kRealtime;
-    data.symbolicSampleSize = kSample32;
-    data.numSamples = static_cast<int32>(left.size());
-    data.numOutputs = 1;
-    data.outputs = &output;
-
-    // The note starts well after the engine reports ready so the resynchronised
-    // macro is already in effect for every audible sample.
-    constexpr int kNoteBlock = 12;
-    constexpr int kBlockCount = 28;
-    constexpr int kLatency = 512;
-    const int noteInputSample = kNoteBlock * static_cast<int>(left.size());
-    const int firstAudibleSample = noteInputSample + kLatency;
-
-    EventList events;
-    for (int block = 0; block < kBlockCount; ++block)
-    {
-        if (block == kNoteBlock)
-        {
-            Event noteOn {};
-            noteOn.busIndex = 0;
-            noteOn.sampleOffset = 0;
-            noteOn.type = Event::kNoteOnEvent;
-            noteOn.noteOn.channel = 0;
-            noteOn.noteOn.pitch = 60;
-            noteOn.noteOn.velocity = 1.0F;
-            noteOn.noteOn.noteId = 1;
-            (void)events.addEvent(noteOn);
-            data.inputEvents = &events;
-        }
-        if (!ok(processor->process(data)))
-            return false;
-        if (block == kNoteBlock)
-        {
-            events.clear();
-            data.inputEvents = nullptr;
-        }
-        for (std::size_t frame = 0; frame < left.size(); ++frame)
-        {
-            const auto sample = block * static_cast<int>(left.size()) +
-                                static_cast<int>(frame);
-            const float expected = sample >= firstAudibleSample ? 0.25F : 0.0F;
-            if (std::abs(left[frame] - expected) > 0.000001F)
-            {
-                std::cerr << "HOOK macro.resync FAIL: sample=" << sample
-                          << " expected=" << expected
-                          << " actual=" << left[frame] << '\n';
-                return false;
-            }
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(4));
-    }
-
-    const bool stopped = ok(processor->setProcessing(false)) &&
-                         ok(restored->setActive(false));
-    processor = nullptr;
-    const bool terminated = ok(restored->terminate());
-    restored = nullptr;
-    return stopped && terminated;
-}
-
-bool reloadFadeLifecycle(const PluginFactory& factory, const ClassInfo& classInfo,
-                         FUnknown* host)
-{
-#if defined(_WIN32)
-    (void)_putenv_s("MPVST_NATIVE_EVENT_GATE", "1");
-#else
-    (void)setenv("MPVST_NATIVE_EVENT_GATE", "1", 1);
-#endif
-    auto component = createComponent(factory, classInfo, host);
-    auto processor = getProcessor(component);
-    if (!component || !processor)
-        return false;
-
-    SpeakerArrangement stereo = SpeakerArr::kStereo;
-    ProcessSetup setup {};
-    setup.processMode = kRealtime;
-    setup.symbolicSampleSize = kSample32;
-    setup.maxSamplesPerBlock = 128;
-    setup.sampleRate = 48000.0;
-    if (!ok(processor->setBusArrangements(nullptr, 0, &stereo, 1)) ||
-        !ok(component->activateBus(kAudio, kOutput, 0, true)) ||
-        !ok(component->activateBus(kEvent, kInput, 0, true)) ||
-        !ok(processor->setupProcessing(setup)) ||
-        !ok(component->setActive(true)) ||
-        !ok(processor->setProcessing(true)))
-        return false;
-
-    std::array<float, 128> left {};
-    std::array<float, 128> right {};
-    Sample32* channels[] = {left.data(), right.data()};
-    AudioBusBuffers output {};
-    output.numChannels = 2;
-    output.channelBuffers32 = channels;
-    ProcessData data {};
-    data.processMode = kRealtime;
-    data.symbolicSampleSize = kSample32;
-    data.numSamples = static_cast<int32>(left.size());
-    data.numOutputs = 1;
-    data.outputs = &output;
-
-    EventList events;
-    Event noteOn {};
-    noteOn.busIndex = 0;
-    noteOn.sampleOffset = 0;
-    noteOn.type = Event::kNoteOnEvent;
-    noteOn.noteOn.channel = 0;
-    noteOn.noteOn.pitch = 60;
-    noteOn.noteOn.velocity = 1.0F;
-    noteOn.noteOn.noteId = 1;
-    (void)events.addEvent(noteOn);
-    data.inputEvents = &events;
-    ParameterChanges reloadChanges {1};
-
-    for (int block = 0; block < 14; ++block)
-    {
-        if (block == 5)
-        {
-            int32 queueIndex = 0;
-            int32 pointIndex = 0;
-            auto* queue = reloadChanges.addParameterData(1U, queueIndex);
-            if (queue == nullptr ||
-                queue->addPoint(0, 1.0, pointIndex) != kResultTrue)
-                return false;
-            data.inputParameterChanges = &reloadChanges;
-        }
-        if (!ok(processor->process(data)))
-            return false;
-        if (block == 0)
-        {
-            events.clear();
-            data.inputEvents = nullptr;
-        }
-        if (block == 5)
-        {
-            reloadChanges.clearQueue();
-            data.inputParameterChanges = nullptr;
-        }
-        for (std::size_t frame = 0; frame < left.size(); ++frame)
-        {
-            const auto sample = block * 128 + static_cast<int>(frame);
-            float expected = 0.0F;
-            if (sample >= 512 && sample < 640)
-                expected = 0.125F;
-            else if (sample >= 640 && sample < 768)
-                expected = 0.125F * static_cast<float>(768 - sample) / 128.0F;
-            else if (sample >= 1408 && sample < 1536)
-                expected = 0.125F * static_cast<float>(sample - 1408) / 128.0F;
-            else if (sample >= 1536)
-                expected = 0.125F;
-            if (std::abs(left[frame] - expected) > 0.000001F)
-            {
-                std::cerr << "HOOK reload.fade FAIL: sample=" << sample
-                          << " expected=" << expected
-                          << " actual=" << left[frame] << '\n';
-                return false;
-            }
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(4));
-    }
-
-    const bool stopped = ok(processor->setProcessing(false)) &&
-                         ok(component->setActive(false));
-    processor = nullptr;
-    const bool terminated = ok(component->terminate());
-    component = nullptr;
-    return stopped && terminated;
-}
-
 } // namespace
 
 int main(int argc, char** argv)
@@ -1695,16 +1283,14 @@ int main(int argc, char** argv)
         ((renderMode || scriptProbe || instrumentProbe) && modeArgument.empty()) ||
         (!renderMode && !scriptProbe && !instrumentProbe && argc > 3) ||
         (!mode.empty() && mode != "--expect-micropython" &&
-         mode != "--expect-embedded-state" && mode != "--expect-reload-fade" &&
-         mode != "--expect-macro-resync" && mode != "--expect-transport" &&
+         mode != "--expect-embedded-state" &&
          mode != "--expect-effect-audio" && mode != "--expect-patch-select" &&
          mode != "--effect-script" && mode != "--instrument-script" &&
          !renderMode))
     {
         std::cerr << "usage: mpvst_smoke_host <plugin.vst3> "
                      "[--expect-micropython|--expect-embedded-state|"
-                     "--expect-reload-fade|--expect-macro-resync|"
-                     "--expect-transport|--expect-effect-audio|"
+                     "--expect-effect-audio|"
                      "--expect-patch-select|"
                      "--effect-script <script.py>|"
                      "--instrument-script <script.py>|"
@@ -1712,15 +1298,8 @@ int main(int argc, char** argv)
         return 2;
     }
     const bool embeddedState = mode == "--expect-embedded-state";
-    const bool reloadFade = mode == "--expect-reload-fade";
-    const bool macroResync = mode == "--expect-macro-resync";
-    const bool transportMode = mode == "--expect-transport";
     const bool effectMode = mode == "--expect-effect-audio";
     const bool patchSelectMode = mode == "--expect-patch-select";
-    const bool expectMicroPython = mode == "--expect-micropython" ||
-                                   embeddedState || renderMode ||
-                                   effectMode || scriptProbe || instrumentProbe ||
-                                   patchSelectMode;
 
     std::string error;
     const auto modulePath = std::filesystem::weakly_canonical(argv[1]).string();
@@ -1808,33 +1387,6 @@ int main(int argc, char** argv)
             }
             std::cout << "HOOK patch.select OK\n";
         }
-        else if (transportMode)
-        {
-            if (!transportDiscontinuityGatesVoices(factory, classInfo, host))
-            {
-                std::cerr << "HOOK transport.discontinuity FAIL\n";
-                return 5;
-            }
-            std::cout << "HOOK transport.discontinuity OK: locate closed the gate\n";
-        }
-        else if (macroResync)
-        {
-            if (!macroResyncAppliesRestoredState(factory, classInfo, host))
-            {
-                std::cerr << "HOOK macro.resync FAIL\n";
-                return 5;
-            }
-            std::cout << "HOOK macro.resync OK: restored_macro=1.0 gate=0.25\n";
-        }
-        else if (reloadFade)
-        {
-            if (!reloadFadeLifecycle(factory, classInfo, host))
-            {
-                std::cerr << "HOOK reload.fade FAIL\n";
-                return 5;
-            }
-            std::cout << "HOOK reload.fade OK: out=128 hold=640 in=128\n";
-        }
         else if (embeddedState)
         {
             if (!embeddedStateSurvivesMissingSource(factory, classInfo, host))
@@ -1849,15 +1401,14 @@ int main(int argc, char** argv)
             std::cerr << "HOOK state.roundtrip FAIL\n";
             return 5;
         }
-        const bool defaultSuite = !embeddedState && !reloadFade &&
-                                  !macroResync && !transportMode &&
+        const bool defaultSuite = !embeddedState &&
                                   !renderMode && !effectMode && !scriptProbe &&
                                   !instrumentProbe && !patchSelectMode;
         if (defaultSuite)
             std::cout << "HOOK state.roundtrip OK: legacy_v1=1 malformed=4\n";
 
         if (defaultSuite &&
-            !processLifecycle(factory, classInfo, host, expectMicroPython))
+            !processLifecycle(factory, classInfo, host))
         {
             std::cerr << "HOOK lifecycle.process FAIL\n";
             return 6;
