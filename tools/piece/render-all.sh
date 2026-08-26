@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Produce every soundtrack deliverable end to end, with no interaction:
 # the offline CPython preview, the REAPER bounce through the real
-# plug-in, the section-by-section comparison of the two, and a 16-bit
-# copy for everyday playback.
+# plug-in, and the section-by-section comparison of the two.
 #
 #   ./tools/piece/render-all.sh                   every piece
 #   ./tools/piece/render-all.sh --piece automata  just one
@@ -14,9 +13,9 @@ set -euo pipefail
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo_dir=$(cd "$script_dir/../.." && pwd)
 soundtrack_dir="$repo_dir/soundtrack"
-# render_preview.py, verify_song.py and make_playable.py need numpy plus
-# the audioif wheel - this repo's own .venv (pydevices-audioif from
-# TestPyPI) if it's been set up, else the sibling audioif checkout's.
+# render_preview.py and verify_song.py need numpy plus the audioif
+# wheel - this repo's own .venv (pydevices-audioif from TestPyPI) if
+# it's been set up, else the sibling audioif checkout's.
 if [[ -x "$repo_dir/.venv/bin/python" ]]; then
     venv_python="$repo_dir/.venv/bin/python"
 else
@@ -51,9 +50,6 @@ for piece in "${pieces[@]}"; do
 
     echo "--- REAPER bounce + verification ---"
     "$script_dir/launch.sh" --render --piece "$piece"
-
-    echo "--- 16-bit playback copy ---"
-    "$venv_python" "$script_dir/make_playable.py" --piece "$piece"
 done
 
 echo

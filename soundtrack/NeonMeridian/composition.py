@@ -506,8 +506,11 @@ TRACKS = [
         # every eighth, and any portamento at all smears the drive.
         # Osc2/Osc3 sit about six cents either side of the root: enough for
         # the Model D's thickness, not enough to blur the pitch centre.
+        # Noise Mix (7) off - the Model D mixes noise into the voice, and an
+        # unset 0.5 put hiss under every bass note.
         "macros": {0: 0.7, 1: 0.35, 2: 0.35, 3: 0.55, 4: 0.0, 5: 0.62,
-                   6: 0.4, 8: 0.0, 9: 0.35, 10: 0.6, 11: 0.15, 15: 0.3},
+                   6: 0.4, 7: 0.0, 8: 0.0, 9: 0.35, 10: 0.6, 11: 0.15,
+                   12: 0.05, 13: 0.35, 14: 0.3, 15: 0.3},
         "vol": [(bar(21), 0.9), (bar(29), 1.0), (bar(53), 1.08),
                 (bar(72), 1.0)],
         "macro_env": {
@@ -538,8 +541,13 @@ TRACKS = [
     {
         "name": "Juno Pad", "script": "juno106.py", "gain_db": -6.0,
         "pan": 0.0, "notes": pad_notes(),
-        "macros": {0: 0.7, 1: 0.42, 2: 0.22, 3: 0.4, 5: 0.72, 6: 0.3,
-                   8: 0.35, 11: 0.35, 12: 0.5, 13: 0.8, 14: 0.55},
+        # Noise Level (4) off: the Juno's noise source is mixed per voice, so
+        # an unset 0.5 put four noise oscillators under every pad chord.
+        # HPF (7) stays low so the sub-oscillator keeps its weight, and the
+        # LFO (9) is slow - it is wired to cutoff with a fixed depth here.
+        "macros": {0: 0.7, 1: 0.42, 2: 0.22, 3: 0.4, 4: 0.0, 5: 0.72,
+                   6: 0.3, 7: 0.1, 8: 0.35, 9: 0.2, 10: 0.35, 11: 0.35,
+                   12: 0.5, 13: 0.8, 14: 0.55, 15: 0.4},
         "vol": [(bar(1), 0.55), (bar(9), 0.85), (bar(21), 0.8),
                 (bar(45), 0.95), (bar(53), 0.85), (bar(73), 0.9),
                 (bar(76, 4.0), 0.7)],
@@ -587,8 +595,12 @@ TRACKS = [
     {
         "name": "Prophet Lead", "script": "prophet5.py", "gain_db": -7.5,
         "pan": 0.06, "notes": lead_notes(),
-        "macros": {0: 0.7, 1: 0.5, 2: 0.3, 3: 0.5, 5: 0.62, 7: 0.35,
-                   8: 0.05, 9: 0.4, 10: 0.7, 14: 0.35, 15: 0.12},
+        # Poly Mod (4) and Sync (6) pinned off. Poly Mod multiplies osc B's
+        # frequency, so an unset 0.5 detuned it by most of a semitone and
+        # made the lead sound sour no matter what Osc2 Detune said.
+        "macros": {0: 0.7, 1: 0.5, 2: 0.3, 3: 0.5, 4: 0.0, 5: 0.62,
+                   6: 0.0, 7: 0.35, 8: 0.05, 9: 0.4, 10: 0.7, 11: 0.05,
+                   12: 0.4, 13: 0.5, 14: 0.35, 15: 0.12},
         "vol": [(bar(29), 0.85), (bar(37), 0.95), (bar(53), 1.1),
                 (bar(61), 1.1), (bar(69), 0.9), (bar(73), 0.75)],
         "macro_env": {
@@ -604,8 +616,14 @@ TRACKS = [
         # Vibrato Depth (12) is pinned off. Unset macros arrive at 0.5, and
         # half-depth DX7 vibrato is ~12 cents of wobble - the last thing a
         # bell motif stating the theme should have.
-        "macros": {0: 0.55, 1: 0.4, 2: 0.5, 3: 0.2, 7: 0.7, 9: 0.05,
-                   10: 0.55, 11: 0.15, 12: 0.0},
+        # Mod Ratio (2) is quantised to whole numbers - an unset 0.5 put the
+        # modulator on the 6th harmonic, which is where the clang came from.
+        # Ratio 3 with less FM, less brightness and no tremolo gives a tine
+        # that states the motif instead of fighting it. Vibrato (12) stays
+        # off; Tremolo Depth (11) is ring modulation here, so off as well.
+        "macros": {0: 0.55, 1: 0.25, 2: 0.2, 3: 0.1, 4: 0.45, 5: 0.25,
+                   6: 0.15, 7: 0.7, 8: 0.3, 9: 0.05, 10: 0.35, 11: 0.0,
+                   12: 0.0, 13: 0.4, 14: 0.3, 15: 0.5},
         "vol": [(bar(3), 0.8), (bar(45), 1.0), (bar(57), 0.7),
                 (bar(73), 1.0)],
         "macro_env": {10: [(bar(3), 0.45), (bar(45), 0.6), (bar(73), 0.5)]},
