@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools" / "composition"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 from piece import load_piece, piece_arg  # noqa: E402
 
 PIECE, ARGV = piece_arg(sys.argv[1:])

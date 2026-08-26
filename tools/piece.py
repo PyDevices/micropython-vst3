@@ -35,7 +35,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
-SOUNDTRACK_DIR = Path(__file__).resolve().parent.parent.parent / "soundtrack"
+SOUNDTRACK_DIR = Path(__file__).resolve().parent.parent / "soundtrack"
 
 
 def available_pieces():

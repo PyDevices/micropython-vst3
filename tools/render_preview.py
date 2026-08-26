@@ -16,9 +16,9 @@ import wave
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-SOUNDTRACK = SCRIPT_DIR.parent.parent / "soundtrack"
+SOUNDTRACK = SCRIPT_DIR.parent / "soundtrack"
+# piece.py and harness.py are both siblings now, so one entry covers both.
 sys.path.insert(0, str(SCRIPT_DIR))
-sys.path.insert(0, str(SCRIPT_DIR.parent))
 
 import numpy as np  # noqa: E402
 

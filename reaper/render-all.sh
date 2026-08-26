@@ -12,7 +12,7 @@ set -euo pipefail
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo_dir=$(cd "$script_dir/.." && pwd)
-composition_dir="$repo_dir/tools/composition"
+composition_dir="$repo_dir/tools"
 soundtrack_dir="$repo_dir/soundtrack"
 # render_preview.py and verify_song.py need numpy plus the audioif
 # wheel - this repo's own .venv (pydevices-audioif from TestPyPI) if

@@ -30,7 +30,7 @@ done
 
 repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 soundtrack_dir=$(cd "$repo_dir/soundtrack" && pwd)
-composition_dir="$repo_dir/tools/composition"
+composition_dir="$repo_dir/tools"
 reaper_dir="$repo_dir/reaper"
 # verify_song.py needs numpy plus the audioif wheel - this repo's own
 # .venv (pydevices-audioif from TestPyPI) if set up, else the sibling

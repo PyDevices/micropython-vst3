@@ -13,10 +13,10 @@ renamed, restructured, or replaced independently of this. Two scripts
 here can resolve and render a piece with no DAW involved at all - neither
 one imports or knows about REAPER:
 
-- **`composition/piece.py`** - resolves a piece name (case-insensitive) to
+- **`piece.py`** - resolves a piece name (case-insensitive) to
   its `composition.py` and `instruments/` under `../soundtrack/`. The one
   place that hardcodes that location.
-- **`composition/render_preview.py [--piece NAME] [out.wav] [--stems DIR]`**
+- **`render_preview.py [--piece NAME] [out.wav] [--stems DIR]`**
   - offline render through `harness.py` (needs the `audioif` wheel's venv:
   this repo's own `.venv` if set up - `pip install pydevices-audioif` from
   TestPyPI, plus `numpy` - else a sibling `audioif` checkout's, e.g.
@@ -63,8 +63,8 @@ it by hand when running these two scripts yourself.
 The one test that needs a real DAW - FX chain add/remove, parameter
 automation, project save/reload, macro resync - lives in
 [`../reaper/matrix/`](../reaper/README.md) instead of here, for the same
-reason `composition/` and `reaper/` are split: everything above this line
-runs with no DAW at all.
+reason `tools/` and `reaper/` are split at all: everything in this
+directory runs with no DAW.
 
 None of the `preview`-based tools prove a script sounds like the
 hardware it's named after, or like anything in particular - only that it

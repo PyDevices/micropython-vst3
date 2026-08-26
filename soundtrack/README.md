@@ -10,7 +10,7 @@ shared `../lib/instruments/` collection and put shared `../lib/effects/`
 processors after any instrument. Nothing else here is infrastructure, and the
 directory might be renamed, restructured, or replaced independently of the
 tooling that generates, renders, and verifies a piece. Resolving and
-previewing a piece offline lives in `../tools/composition/`, documented in
+previewing a piece offline lives in `../tools/`, documented in
 [`../tools/README.md`](../tools/README.md); turning it into a real REAPER
 project and driving REAPER itself lives in `../reaper/` and the root
 `../reaper.sh`, documented in [`../reaper/README.md`](../reaper/README.md).
