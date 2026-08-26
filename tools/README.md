@@ -51,9 +51,12 @@ and the root [`../reaper.sh`](../reaper.sh) entry point.
   asserts the behavior it promises (squeezes, mutes, or passes a
   quiet/loud sine pair) through the real Effect class. Registered as
   `mpvst_effects_library`.
-- **`smoke_host/`** - the C++ host used by every `--expect-*`/`--*-script`
-  probe above and by the ctest suite in `../tests/`. Loads the built
-  bundle directly (no DAW) and drives it through the real VST3 processor.
+The two scripts above take a `smoke_host` path because they drive
+[`../tests/smoke_host/`](../tests/) - a minimal C++ VST3 host that loads
+the built bundle directly (no DAW) and runs one script through the real
+processor. It lives with the tests because it is built only under
+`BUILD_TESTING`; `ctest` passes its path automatically, and you only name
+it by hand when running these two scripts yourself.
 
 The one test that needs a real DAW - FX chain add/remove, parameter
 automation, project save/reload, macro resync - lives in

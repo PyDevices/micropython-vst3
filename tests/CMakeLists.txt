@@ -1,3 +1,8 @@
+# The minimal VST3 host the smoke tests and the script probes drive. Built
+# first so mpvst_smoke_host exists by the time the add_test calls below
+# reference it.
+add_subdirectory(smoke_host)
+
 add_executable(mpvst_protocol_tests protocol_tests.cpp)
 target_link_libraries(mpvst_protocol_tests PRIVATE mpvst_protocol)
 target_compile_features(mpvst_protocol_tests PRIVATE cxx_std_17)

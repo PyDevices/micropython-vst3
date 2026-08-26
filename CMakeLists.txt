@@ -47,6 +47,5 @@ add_subdirectory(src/plugin)
 
 include(CTest)
 if(BUILD_TESTING)
-    add_subdirectory(tools/smoke_host)
     add_subdirectory(tests)
 endif()
