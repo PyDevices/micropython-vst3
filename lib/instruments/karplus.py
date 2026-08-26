@@ -40,10 +40,15 @@ def karplus_strong_table(hz, damping, pluck_pos, seed=1234):
     # Pluck position: subtracting a delayed copy of the burst from itself
     # is the classic extended-KS "pick position" filter - it carves a comb
     # notch wherever the string was plucked, same as a real string being
-    # picked nearer the bridge vs. the middle
+    # picked nearer the bridge vs. the middle. Read from a separate copy:
+    # reading buf itself while writing it means buf[i - p] is already the
+    # once-subtracted value for every i >= p (i - p < i), so the filter
+    # compounds into an unintended recursive comb instead of the single
+    # clean +/-1 notch described above.
+    src = list(buf)
     p = 1 + int(pluck_pos * (delay_len - 2))
     for i in range(delay_len):
-        buf[i] -= 0.5 * buf[i - p]
+        buf[i] -= 0.5 * src[i - p]
     fb = 0.90 + damping * 0.09 # feedback loss per lap; closer to 1 rings longer
     # The pluck-position comb above subtracts each sample from one already
     # updated earlier in the same pass (i - p < i whenever i >= p), so it
@@ -77,7 +82,26 @@ def karplus_strong_table(hz, damping, pluck_pos, seed=1234):
     out = array.array("h", bytearray(KS_TABLE_LEN * 2))
     for i in range(KS_TABLE_LEN):
         out[i] = int(vals[i] * scale)
-    return out
+
+    # Which lap to loop, for the caller to mark as the sustain via
+    # waveform_loop_start/end (see the note in handle_event on why the
+    # whole table can't just be looped as-is). Pick the LATEST lap that
+    # still stays safely above int16's noise floor, rather than always
+    # the table's final lap: fb decays every lap, and a short delay_len
+    # fits far more laps into the fixed KS_TABLE_LEN budget than a long
+    # one (182 laps at a high pitch vs 11 at a low one), so the same fb
+    # that leaves plenty of headroom for a low note can decay a high
+    # note's last lap to exact silence before the loop ever reaches it.
+    laps_available = KS_TABLE_LEN // delay_len
+    settle_laps = laps_available - 1
+    if 0.0 < fb < 1.0:
+        headroom_laps = int(math.log(1.0 / 2000.0) / math.log(fb))
+        if headroom_laps < settle_laps:
+            settle_laps = headroom_laps
+    if settle_laps < 0:
+        settle_laps = 0
+    loop_start = settle_laps * delay_len
+    return out, loop_start, loop_start + delay_len
 
 synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
 vstaudio.output(synth)
@@ -129,7 +153,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         # 1. The string itself: a genuine Karplus-Strong delay/feedback
         # loop rendered into a table, so the ring is real comb-filtered
         # decay, not a static harmonic wavetable
-        ks_wave = karplus_strong_table(hz, damping, pluck_pos)
+        ks_wave, ks_loop_start, ks_loop_end = karplus_strong_table(hz, damping, pluck_pos)
         env_body = synthio.Envelope(attack_time=0.001, decay_time=decay_time, release_time=0.3, attack_level=1.0, sustain_level=0.0)
         lp_body = synthio.Biquad(synthio.FilterMode.LOW_PASS, 400.0 + body_res * 3000.0, Q=1.0 + body_res * 2.0)
 
@@ -138,7 +162,21 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         hp_pick = synthio.Biquad(synthio.FilterMode.HIGH_PASS, 1000.0 + pick_hard * 4000.0, Q=0.5)
 
         notes = []
-        notes.append(synthio.Note(hz, waveform=ks_wave, envelope=env_body, filter=lp_body, amplitude=amp * 0.8))
+        # synthio always plays a Note's waveform as if the ENTIRE buffer
+        # were one cycle at hz (dds_rate is proportional to hz * (loop_end
+        # - loop_start), full length by default). KS_TABLE_LEN packs many
+        # decaying laps of a delay_len-sample period into one 8192-sample
+        # buffer, so left at the default loop bounds the whole buffer got
+        # squeezed into one period: measured 5.8x the requested pitch and
+        # 97% of the energy off the requested note's own harmonic series -
+        # a real, inharmonic "ringing" no macro could ever reach, since
+        # none of them touch table length. loop_start/loop_end instead
+        # mark one settled lap - by construction one true period of the
+        # string - as the loop; everything before it plays once, as the
+        # decaying attack transient, at the correct real-time rate.
+        notes.append(synthio.Note(hz, waveform=ks_wave, envelope=env_body, filter=lp_body, amplitude=amp * 0.8,
+                                  waveform_loop_start=ks_loop_start,
+                                  waveform_loop_end=ks_loop_end))
         if pick_hard > 0.01:
             notes.append(synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env_pick, filter=hp_pick, amplitude=amp * pick_hard * 0.3))
 
