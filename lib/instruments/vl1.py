@@ -35,7 +35,11 @@ vstaudio.output(synth)
 volume = 0.8
 breath = 0.8
 embouchure = 0.5
-growl_rate = 5.0
+# Normalised 0..1, not Hz: the macro sets this straight from value0 and the
+# LFO reads rate = 1.0 + growl_rate * 20.0. Written as 5.0 it meant 5 Hz,
+# which is both unreachable from the macro and a 101 Hz "growl". 0.2 gives
+# the 5 Hz that was plainly intended.
+growl_rate = 0.2
 growl_depth = 0.0
 amp_a = 0.1
 amp_d = 0.5
@@ -122,4 +126,34 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         elif data0 == 8: amp_r = 0.01 + value0 * 4.0
         elif data0 == 9: master_tune = 0.95 + value0 * 0.1
 
-vstaudio.on_event(handle_event)
+# Patch 1 (Program Change 0) is the sound this script's module-level
+# defaults describe, so a fresh instance and Patch 1 are the same thing.
+# piece.py also reads it: a macro a composition does not set resolves here
+# rather than to 0.5. Derived by tools/derive_patches.py - see that file
+# before editing these numbers by hand.
+PATCHES = {
+    0: ("Init", (
+        0.8, 0.8, 0.5, 0.2, 0, 0.099, 0.15, 0.8, 0.0725, 0.5)),
+}
+
+
+def _apply_patch(index, channel=0, note_id=-1, sample_position=0):
+    patch = PATCHES.get(index)
+    if patch is None:
+        return
+    for macro_index, macro_value in enumerate(patch[1]):
+        handle_event(vstaudio.EVENT_PARAMETER, channel, note_id,
+                     macro_index, macro_value, 0.0, sample_position)
+
+
+def _dispatch(event_type, channel, note_id, data0, value0, value1,
+              sample_position):
+    if event_type == vstaudio.EVENT_PROGRAM_CHANGE:
+        _apply_patch(data0, channel, note_id, sample_position)
+        return
+    handle_event(event_type, channel, note_id, data0, value0, value1,
+                 sample_position)
+
+
+vstaudio.on_event(_dispatch)
+

@@ -130,4 +130,35 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         elif data0 == 9: amp_r = 0.01 + value0 * 4.0
         elif data0 == 10: master_tune = 0.95 + value0 * 0.1
 
-vstaudio.on_event(handle_event)
+# Patch 1 (Program Change 0) is the sound this script's module-level
+# defaults describe, so a fresh instance and Patch 1 are the same thing.
+# piece.py also reads it: a macro a composition does not set resolves here
+# rather than to 0.5. Derived by tools/derive_patches.py - see that file
+# before editing these numbers by hand.
+PATCHES = {
+    0: ("Init", (
+        0.8, 0.333333, 0.80103, 0.142857, 0.5, 0.0245, 0.15, 0.0245,
+        0.8, 0.0725, 0.5)),
+}
+
+
+def _apply_patch(index, channel=0, note_id=-1, sample_position=0):
+    patch = PATCHES.get(index)
+    if patch is None:
+        return
+    for macro_index, macro_value in enumerate(patch[1]):
+        handle_event(vstaudio.EVENT_PARAMETER, channel, note_id,
+                     macro_index, macro_value, 0.0, sample_position)
+
+
+def _dispatch(event_type, channel, note_id, data0, value0, value1,
+              sample_position):
+    if event_type == vstaudio.EVENT_PROGRAM_CHANGE:
+        _apply_patch(data0, channel, note_id, sample_position)
+        return
+    handle_event(event_type, channel, note_id, data0, value0, value1,
+                 sample_position)
+
+
+vstaudio.on_event(_dispatch)
+

@@ -20,7 +20,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 SOUNDTRACK = SCRIPT_DIR.parent.parent / "soundtrack"
 sys.path.insert(0, str(SCRIPT_DIR))
-from piece import load_piece, piece_arg  # noqa: E402
+from piece import load_piece, patch_macros, piece_arg  # noqa: E402
 
 PIECE, ARGV = piece_arg(sys.argv[1:])
 C, INSTRUMENTS = load_piece(PIECE)
@@ -141,10 +141,18 @@ def fx_block(vst_line, header_words, script_source, macros, macro_env):
 
 def track_block(track):
     check_no_same_pitch_overlap(track)
-    script = (INSTRUMENTS / track["script"]).read_bytes()
-    macros = {i: C.macro_value(track, i, 0.0) for i in range(16)}
-    for i, v in track["macros"].items():
-        macros.setdefault(i, v)
+    script_path = INSTRUMENTS / track["script"]
+    script = script_path.read_bytes()
+    # A macro the composition does not mention resolves to the instrument's
+    # Patch 1, not to 0.5. All sixteen are written into plug-in state, so
+    # "unset" is not an option - the only question is whose value it gets.
+    patch, _patch_name = patch_macros(script_path)
+    macros = {}
+    for i in range(16):
+        if i in track["macros"] or i in track["macro_env"]:
+            macros[i] = C.macro_value(track, i, 0.0)
+        else:
+            macros[i] = patch.get(i, 0.5)
 
     item_len = C.beats_to_seconds(C.TOTAL_BEATS)
     lines = ["  <TRACK %s" % guid(),

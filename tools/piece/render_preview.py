@@ -22,7 +22,7 @@ sys.path.insert(0, str(SCRIPT_DIR.parent / "preview"))
 
 import numpy as np  # noqa: E402
 
-from piece import load_piece, piece_arg  # noqa: E402
+from piece import load_piece, patch_macros, piece_arg  # noqa: E402
 from harness import EffectRun, InstrumentRun  # noqa: E402
 import vstaudio as shim  # noqa: E402
 
@@ -71,8 +71,15 @@ def timesig_at_beat(beat):
 def build_events(track):
     """(sample_position, type, data0, value0) for one track, sorted."""
     events = []
+    # Match generate_project.py exactly: a macro the composition does not
+    # mention resolves to the instrument's Patch 1, not to 0.5. If these two
+    # disagree the preview stops being a usable check on the bounce.
+    patch, _patch_name = patch_macros(INSTRUMENTS / track["script"])
     for index in range(16):
-        value = C.macro_value(track, index, 0.0)
+        if index in track["macros"] or index in track["macro_env"]:
+            value = C.macro_value(track, index, 0.0)
+        else:
+            value = patch.get(index, 0.5)
         events.append((0, 6, index, value))
     for start, dur, pitch, vel in track["notes"]:
         s0 = int(C.beats_to_seconds(start) * SR)

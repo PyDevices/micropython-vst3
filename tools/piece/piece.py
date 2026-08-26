@@ -30,6 +30,7 @@ one MicroPython Effect script after the instrument and uses the same macros /
 macro_env shape as an instrument.
 """
 
+import ast
 import importlib.util
 import sys
 from pathlib import Path
@@ -61,6 +62,48 @@ def load_piece(name="perihelion"):
     if not instruments.is_absolute():
         instruments = (piece_dir / instruments).resolve()
     return module, instruments
+
+
+def patch_macros(script_path):
+    """Patch 1's macro values for an instrument, as {index: value}.
+
+    Every instrument must declare PATCHES; Patch 1 (Program Change 0) is
+    the sound its module-level defaults describe. A macro a composition
+    does not set resolves here rather than to 0.5, because 0.5 is the
+    middle of a range - not "off", and not what the instrument's author
+    intended. Half-open noise, half-open poly-mod and a modulator parked
+    on the 6th harmonic all came from resolving to 0.5.
+
+    Read with ast rather than by importing: this runs under plain python3
+    during project generation, where synthio and numpy are not available.
+    Use tools/derive_patches.py to produce or refresh a PATCHES block.
+    """
+    path = Path(script_path)
+    try:
+        tree = ast.parse(path.read_text(), str(path))
+    except SyntaxError as exc:
+        raise SystemExit("%s: cannot parse: %s" % (path.name, exc))
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(t, ast.Name) and t.id == "PATCHES"
+                   for t in node.targets):
+            continue
+        try:
+            patches = ast.literal_eval(node.value)
+            name, values = patches[0]
+        except Exception:                                  # noqa: BLE001
+            raise SystemExit(
+                "%s: PATCHES is not a literal {index: (name, values)} map"
+                % path.name)
+        return {i: float(v) for i, v in enumerate(values)}, name
+    raise SystemExit(
+        "%s declares no PATCHES.\n"
+        "Every instrument must define Patch 1 - it is what an unset macro\n"
+        "resolves to, and without it every unset macro falls back to 0.5,\n"
+        "which is the middle of a range rather than the intended sound.\n"
+        "Generate one with:  tools/derive_patches.py --write %s"
+        % (path.name, path.name))
 
 
 def piece_arg(argv):
