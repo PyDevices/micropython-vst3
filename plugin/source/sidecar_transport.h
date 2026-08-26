@@ -106,7 +106,7 @@ public:
     bool requestReload() noexcept;
 
 private:
-    static std::string nativeEnginePath();
+    static std::string enginePath();
     bool launchEngine();
     bool resetMappingForRestart() noexcept;
     void supervise() noexcept;

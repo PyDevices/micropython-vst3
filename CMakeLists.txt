@@ -33,7 +33,6 @@ set(public_sdk_SOURCE_DIR "${VST3_SDK_ROOT}/public.sdk")
 add_subdirectory("${VST3_SDK_ROOT}" "${CMAKE_BINARY_DIR}/vst3sdk" EXCLUDE_FROM_ALL)
 add_subdirectory(protocol)
 add_subdirectory(runtime)
-add_subdirectory(engine)
 add_subdirectory(plugin)
 
 include(CTest)

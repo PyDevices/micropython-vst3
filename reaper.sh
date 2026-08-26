@@ -82,7 +82,7 @@ stop_reaper() {
     # Force-killing REAPER orphans its sidecar engine processes, so stop
     # those explicitly as well.
     powershell.exe -NoProfile -Command \
-        "Get-Process reaper,micropython-vst-engine,micropython-vst-native-engine -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue" \
+        "Get-Process reaper,micropython-vst-engine -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue" \
         >/dev/null 2>&1 || true
 }
 

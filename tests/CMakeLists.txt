@@ -11,34 +11,6 @@ endif()
 
 add_test(NAME mpvst_protocol_tests COMMAND mpvst_protocol_tests)
 
-add_executable(mpvst_sidecar_tests sidecar_tests.cpp)
-target_link_libraries(mpvst_sidecar_tests PRIVATE mpvst_protocol mpvst_runtime)
-target_compile_features(mpvst_sidecar_tests PRIVATE cxx_std_17)
-
-if(MSVC)
-    target_compile_options(mpvst_sidecar_tests PRIVATE /W4 /permissive-)
-else()
-    target_compile_options(mpvst_sidecar_tests PRIVATE
-        -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion)
-endif()
-
-add_test(NAME mpvst_sidecar_tests COMMAND mpvst_sidecar_tests
-    $<TARGET_FILE:micropython-vst-native-engine>)
-
-add_executable(mpvst_transport_tests transport_tests.cpp)
-target_link_libraries(mpvst_transport_tests PRIVATE mpvst_sidecar_transport)
-target_compile_features(mpvst_transport_tests PRIVATE cxx_std_17)
-
-if(MSVC)
-    target_compile_options(mpvst_transport_tests PRIVATE /W4 /permissive-)
-else()
-    target_compile_options(mpvst_transport_tests PRIVATE
-        -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion)
-endif()
-
-add_test(NAME mpvst_transport_tests COMMAND mpvst_transport_tests
-    $<TARGET_FILE:micropython-vst-native-engine>)
-
 # These need a real MicroPython sidecar, which is staged on any platform that
 # has one built.
 if(TARGET mpvst-stage-micropython-engine)
@@ -94,32 +66,6 @@ if(Python3_FOUND)
         ${CMAKE_SOURCE_DIR}/tools/test-instruments-lib.py)
     set_tests_properties(mpvst_instruments_library PROPERTIES TIMEOUT 300)
 endif()
-
-add_test(NAME mpvst_lifecycle_smoke COMMAND mpvst_smoke_host
-    $<TARGET_FILE_DIR:MicroPythonVST3>/../..)
-add_test(NAME mpvst_reload_fade_smoke COMMAND mpvst_smoke_host
-    $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-reload-fade)
-add_test(NAME mpvst_macro_resync_smoke COMMAND mpvst_smoke_host
-    $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-macro-resync)
-add_test(NAME mpvst_transport_discontinuity_smoke COMMAND mpvst_smoke_host
-    $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-transport)
-
-add_executable(mpvst_soak_tests soak_tests.cpp)
-target_link_libraries(mpvst_soak_tests PRIVATE mpvst_sidecar_transport)
-target_compile_features(mpvst_soak_tests PRIVATE cxx_std_17)
-
-if(MSVC)
-    target_compile_options(mpvst_soak_tests PRIVATE /W4 /permissive-)
-else()
-    target_compile_options(mpvst_soak_tests PRIVATE
-        -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion)
-endif()
-
-# The short soak guards the scenario itself. Run mpvst_soak_tests directly with
-# a longer duration for the multi-minute soaks.
-add_test(NAME mpvst_soak_short COMMAND mpvst_soak_tests
-    $<TARGET_FILE:micropython-vst-native-engine> 5)
-set_tests_properties(mpvst_soak_short PROPERTIES TIMEOUT 120)
 
 # Fuzz targets. The portable driver runs on every toolchain as an ordinary
 # test; MPVST_ENABLE_LIBFUZZER builds the same entry points for clang's

@@ -31,15 +31,12 @@ using VST3::Hosting::PluginFactory;
 
 bool ok(tresult result) { return result == kResultOk || result == kResultTrue; }
 
-bool selectBundledEngine(const std::filesystem::path& bundle,
-                         bool expectMicroPython)
+bool selectBundledEngine(const std::filesystem::path& bundle)
 {
 #if defined(_WIN32)
-    const auto wanted = expectMicroPython ? "micropython-vst-engine.exe"
-                                          : "micropython-vst-native-engine.exe";
+    const auto wanted = "micropython-vst-engine.exe";
 #else
-    const auto wanted = expectMicroPython ? "micropython-vst-engine"
-                                          : "micropython-vst-native-engine";
+    const auto wanted = "micropython-vst-engine";
 #endif
     for (const auto& entry : std::filesystem::recursive_directory_iterator(bundle))
     {
@@ -1727,7 +1724,7 @@ int main(int argc, char** argv)
 
     std::string error;
     const auto modulePath = std::filesystem::weakly_canonical(argv[1]).string();
-    if (!selectBundledEngine(modulePath, expectMicroPython))
+    if (!selectBundledEngine(modulePath))
     {
         std::cerr << "HOOK engine.select FAIL\n";
         return 3;

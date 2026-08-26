@@ -84,7 +84,7 @@ cp "$matrix_dir/matrix.lua" "$reaper_resource/Scripts/__startup.lua"
 stop_reaper() {
     if [[ "$platform" == windows ]]; then
         powershell.exe -NoProfile -Command \
-            "Get-Process reaper,micropython-vst-engine,micropython-vst-native-engine -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue" \
+            "Get-Process reaper,micropython-vst-engine -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue" \
             >/dev/null 2>&1 || true
     else
         pkill -x reaper >/dev/null 2>&1 || true

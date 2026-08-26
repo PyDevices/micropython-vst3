@@ -30,13 +30,6 @@ target_link_libraries(${MPVST_PLUGIN_TARGET}
         sdk
 )
 
-add_custom_target(mpvst-stage-native-engine ALL
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:micropython-vst-native-engine>
-        $<TARGET_FILE_DIR:${MPVST_PLUGIN_TARGET}>
-    DEPENDS ${MPVST_PLUGIN_TARGET} micropython-vst-native-engine
-    COMMENT "Bundling the native Phase 2 sidecar")
-
 if(WIN32)
     set(MPVST_ENGINE_DEFAULT
         "${CMAKE_SOURCE_DIR}/.deps/engine/micropython-vst-engine.exe")

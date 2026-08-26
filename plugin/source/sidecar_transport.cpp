@@ -73,13 +73,13 @@ SidecarTransport::~SidecarTransport() { stop(); }
 
 std::string SidecarTransport::initialScriptSource()
 {
-    const auto enginePath = nativeEnginePath();
-    if (std::filesystem::path(enginePath).stem().string() !=
+    const auto engine = enginePath();
+    if (std::filesystem::path(engine).stem().string() !=
         "micropython-vst-engine")
         return {};
     const auto overridePath = environmentValue("MPVST_SCRIPT_PATH");
     const auto path = overridePath.empty()
-        ? std::filesystem::path(enginePath).parent_path() / "default_instrument.py"
+        ? std::filesystem::path(engine).parent_path() / "default_instrument.py"
         : std::filesystem::path(overridePath);
     return readScript(path);
 }
@@ -92,8 +92,8 @@ void SidecarTransport::setScriptSource(std::string source, ScriptOrigin origin)
 
 std::string SidecarTransport::developerScriptPath()
 {
-    const auto enginePath = nativeEnginePath();
-    if (std::filesystem::path(enginePath).stem().string() !=
+    const auto engine = enginePath();
+    if (std::filesystem::path(engine).stem().string() !=
         "micropython-vst-engine")
         return {};
     const auto overridePath = environmentValue("MPVST_SCRIPT_PATH");
@@ -127,7 +127,7 @@ void SidecarTransport::configure(double sampleRate, std::uint32_t maxFrames,
     latencySamples_ = latencySamples;
 }
 
-std::string SidecarTransport::nativeEnginePath()
+std::string SidecarTransport::enginePath()
 {
     const auto overridePath = environmentValue("MPVST_ENGINE_PATH");
     if (!overridePath.empty())
@@ -137,7 +137,7 @@ std::string SidecarTransport::nativeEnginePath()
     HMODULE module = nullptr;
     if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
                                 GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                            reinterpret_cast<LPCSTR>(&SidecarTransport::nativeEnginePath),
+                            reinterpret_cast<LPCSTR>(&SidecarTransport::enginePath),
                             &module))
         return {};
     std::string path(32768U, '\0');
@@ -147,20 +147,14 @@ std::string SidecarTransport::nativeEnginePath()
         return {};
     path.resize(length);
     const auto directory = std::filesystem::path(path).parent_path();
-    const auto micropythonEngine = directory / "micropython-vst-engine.exe";
-    if (std::filesystem::exists(micropythonEngine))
-        return micropythonEngine.string();
-    return (directory / "micropython-vst-native-engine.exe").string();
+    return (directory / "micropython-vst-engine.exe").string();
 #else
     Dl_info information {};
-    if (dladdr(reinterpret_cast<const void*>(&SidecarTransport::nativeEnginePath),
+    if (dladdr(reinterpret_cast<const void*>(&SidecarTransport::enginePath),
                &information) == 0 || information.dli_fname == nullptr)
         return {};
     const auto directory = std::filesystem::path(information.dli_fname).parent_path();
-    const auto micropythonEngine = directory / "micropython-vst-engine";
-    if (std::filesystem::exists(micropythonEngine))
-        return micropythonEngine.string();
-    return (directory / "micropython-vst-native-engine").string();
+    return (directory / "micropython-vst-engine").string();
 #endif
 }
 
@@ -219,11 +213,11 @@ bool SidecarTransport::start()
 
 bool SidecarTransport::launchEngine()
 {
-    const auto enginePath = nativeEnginePath();
+    const auto engine = enginePath();
     std::vector<std::string> arguments;
-    if (std::filesystem::path(enginePath).stem().string() == "micropython-vst-engine")
+    if (std::filesystem::path(engine).stem().string() == "micropython-vst-engine")
     {
-        const auto directory = std::filesystem::path(enginePath).parent_path();
+        const auto directory = std::filesystem::path(engine).parent_path();
         const auto scriptOverride = environmentValue("MPVST_SCRIPT_PATH");
         std::string selectedScript;
         const auto developerPath = scriptOrigin_ == ScriptOrigin::DeveloperFile
@@ -278,8 +272,8 @@ bool SidecarTransport::launchEngine()
     {
         arguments = {mappingName_, std::to_string(mappingBytes_)};
     }
-    if (enginePath.empty() || !std::filesystem::exists(enginePath) ||
-        !child_.start(enginePath, arguments))
+    if (engine.empty() || !std::filesystem::exists(engine) ||
+        !child_.start(engine, arguments))
         return false;
 
     const auto deadline = std::chrono::steady_clock::now() +

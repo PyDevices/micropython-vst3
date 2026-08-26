@@ -46,7 +46,7 @@ fi
 # and each sidecar holds micropython-vst-engine.exe open, so orphaned
 # engines (left behind when a host is force-killed) block it too.
 powershell.exe -NoProfile -Command \
-    "Get-Process reaper,micropython-vst-engine,micropython-vst-native-engine -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue" \
+    "Get-Process reaper,micropython-vst-engine -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue" \
     >/dev/null 2>&1 || true
 sleep 1
 
