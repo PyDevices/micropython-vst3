@@ -79,9 +79,19 @@ def vst_chunk_lines(script_source, macros, header_words=INSTRUMENT_HEADER):
     return lines
 
 
-def midi_events(notes):
-    """Sorted (tick, order, bytes) with note-offs before note-ons."""
+def midi_events(notes, programs=()):
+    """Sorted (tick, order, bytes) with note-offs before note-ons.
+
+    Program changes sort ahead of everything at the same tick, so a note
+    landing on the switch is played by the patch being switched to. VST3
+    has no program-change event, so the host turns this MIDI message into
+    a change of the kIsProgramChange-flagged Patch parameter, which the
+    processor forwards to the script as EVENT_PROGRAM_CHANGE.
+    """
     events = []
+    for start, program in programs:
+        tick = int(round(start * PPQ))
+        events.append((tick, -1, "c0 %02x" % (program & 0x7F)))
     for start, dur, pitch, vel in notes:
         v = max(1, min(127, round(vel * 127)))
         on = int(round(start * PPQ))
@@ -214,7 +224,8 @@ def track_block(track):
               "        CCINTERP 32",
               "        POOLEDEVTS %s" % guid()]
     cursor = 0
-    for tick, _order, message in midi_events(track["notes"]):
+    for tick, _order, message in midi_events(track["notes"],
+                                              track.get("programs", ())):
         lines.append("        E %d %s" % (tick - cursor, message))
         cursor = tick
     end_tick = int(round(C.TOTAL_BEATS * PPQ))

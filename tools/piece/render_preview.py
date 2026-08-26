@@ -100,7 +100,16 @@ def build_events(track):
                 events.append((s, 6, index, value))
                 prev = value
             s += BLOCK
-    events.sort(key=lambda e: (e[0], e[1]))
+    for start, program in track.get("programs", ()):
+        events.append((int(C.beats_to_seconds(start) * SR), 9, program, 0.0))
+    # Order at a shared sample position, matching the plug-in: parameter
+    # values first, then a program change (which replaces all sixteen of
+    # them), then note-offs, then note-ons. Getting this wrong is silent -
+    # with the program change ahead of the initial macro block, the patch
+    # was applied and then immediately overwritten by the fallback, and
+    # the preview disagreed with the bounce by 3.5 dB.
+    order = {6: 0, 9: 1, 0: 2, 1: 3}
+    events.sort(key=lambda e: (e[0], order[e[1]]))
     return events
 
 
@@ -121,6 +130,8 @@ def render_track(track, total_frames):
                 run.deliver(1, 0, -1, data0, value0, 0.0, cursor)
             elif etype == 0:
                 run.deliver(2, 0, -1, data0, 0.0, 0.0, cursor)
+            elif etype == 9:
+                run.deliver(9, 0, -1, data0, value0, 0.0, cursor)
             else:
                 run.deliver(6, 0, -1, data0, value0, 0.0, cursor)
             ei += 1
