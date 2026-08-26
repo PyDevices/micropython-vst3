@@ -8,3 +8,4 @@ dist/
 *.suo
 *.VC.db
 __pycache__/
+.venv/
