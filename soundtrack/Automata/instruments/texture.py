@@ -1,107 +1,82 @@
 # mpvst-macro-labels: Air | Space
-#
-# Air texture: band-passed noise breathing very slowly under everything,
-# felt more than heard. Macro 1 places the band, macro 2 the room.
+"""Air texture: band-passed noise breathing very slowly under everything,
+felt more than heard. Macro 1 places the band, macro 2 the room.
+"""
 
-import array
-import math
+MACRO_LABELS = (
+    "Air", "Space",
+)
+
+# Patch 0 is the sound this instrument's defaults describe, so a fresh
+# instance and patch 0 are the same thing - create() applies it. A macro
+# a caller does not set resolves here rather than to the middle of its
+# range.
+PATCHES = {
+    0: ('Init', (68, 95)),
+}
 
 import audiofreeverb
 import synthio
-import vstaudio
 
-SR = vstaudio.sample_rate()
-TAU = 2.0 * math.pi
+from audioinstruments._support import (
+    EVENT_NOTE_ON, EVENT_NOTE_OFF, EVENT_PARAMETER, key_of, logmap,
+    noise_table,
+)
+from audioinstruments._support import Instrument
 
-
-def noise_table(length=8192, seed=31415926):
-    out = array.array("h", bytearray(length * 2))
-    state = seed
-    for i in range(length):
-        state = (state * 1103515245 + 12345) & 0x7FFFFFFF
-        out[i] = ((state >> 15) & 0xFFFF) - 32768
-    return out
+NOISE = noise_table(seed=31415926)
 
 
-def logmap(v, lo, hi):
-    return lo * ((hi / lo) ** v)
+def create(sample_rate, transport=None):
+    SR = sample_rate
+    NOISE_HZ = SR / 8192.0
+    synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
+    verb = audiofreeverb.Freeverb(roomsize=0.92, damp=0.3, mix=0.5,
+                                  sample_rate=SR, channel_count=2,
+                                  bits_per_sample=16, samples_signed=True,
+                                  buffer_size=2048)
+    air = synthio.Math(synthio.MathOperation.SUM, 2300.0, 0.0, 0.0)
+    bp = synthio.Biquad(synthio.FilterMode.BAND_PASS, air, Q=0.6)
+    env = synthio.Envelope(attack_time=3.0, decay_time=0.5, release_time=4.0,
+                           attack_level=1.0, sustain_level=1.0)
+
+    verb.play(synth)
+
+    voices = {}
 
 
-NOISE = noise_table()
-NOISE_HZ = SR / 8192.0
-
-synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
-air = synthio.Math(synthio.MathOperation.SUM, 2300.0, 0.0, 0.0)
-bp = synthio.Biquad(synthio.FilterMode.BAND_PASS, air, Q=0.6)
-env = synthio.Envelope(attack_time=3.0, decay_time=0.5, release_time=4.0,
-                       attack_level=1.0, sustain_level=1.0)
-
-verb = audiofreeverb.Freeverb(roomsize=0.92, damp=0.3, mix=0.5,
-                              sample_rate=SR, channel_count=2,
-                              bits_per_sample=16, samples_signed=True,
-                              buffer_size=2048)
-verb.play(synth)
-
-voices = {}
 
 
-def key_of(channel, note_id, pitch):
-    return (channel, note_id if note_id >= 0 else pitch)
+    def handle_event(event_type, channel, note_id, data0, value0, value1,
+                     sample_position):
+        k = key_of(channel, note_id, data0)
+        if event_type == EVENT_NOTE_ON and value0 > 0.0:
+            old = voices.pop(k, None)
+            if old is not None:
+                synth.release(old)
+            breathe = synthio.LFO(rate=0.11, scale=0.35 * (0.1 + 0.2 * value0),
+                                  offset=0.1 + 0.2 * value0)
+            note = synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env,
+                                filter=bp, amplitude=breathe)
+            voices[k] = note
+            synth.press(note)
+        elif event_type in (EVENT_NOTE_OFF, EVENT_NOTE_ON):
+            old = voices.pop(k, None)
+            if old is not None:
+                synth.release(old)
+        elif event_type == EVENT_PARAMETER:
+            if data0 == 0:
+                air.a = logmap(value0, 900.0, 5200.0)
+            elif data0 == 1:
+                verb.mix = 0.2 + 0.4 * value0
+
+    instrument = Instrument(synth, handle_event, PATCHES, MACRO_LABELS,
+                            transport=transport, output=verb)
+    instrument.program_change(0)
+    return instrument
 
 
-def handle_event(event_type, channel, note_id, data0, value0, value1,
-                 sample_position):
-    k = key_of(channel, note_id, data0)
-    if event_type == vstaudio.EVENT_NOTE_ON and value0 > 0.0:
-        old = voices.pop(k, None)
-        if old is not None:
-            synth.release(old)
-        breathe = synthio.LFO(rate=0.11, scale=0.35 * (0.1 + 0.2 * value0),
-                              offset=0.1 + 0.2 * value0)
-        note = synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env,
-                            filter=bp, amplitude=breathe)
-        voices[k] = note
-        synth.press(note)
-    elif event_type in (vstaudio.EVENT_NOTE_OFF, vstaudio.EVENT_NOTE_ON):
-        old = voices.pop(k, None)
-        if old is not None:
-            synth.release(old)
-    elif event_type == vstaudio.EVENT_PARAMETER:
-        if data0 == 0:
-            air.a = logmap(value0, 900.0, 5200.0)
-        elif data0 == 1:
-            verb.mix = 0.2 + 0.4 * value0
+if __name__ == "__main__":
+    import mpvst_adapter
 
-
-# Patch 1 (Program Change 0) is the sound this script's module-level
-# defaults describe, so a fresh instance and Patch 1 are the same thing.
-# piece.py also reads it: a macro a composition does not set resolves here
-# rather than to 0.5. Derived by tools/derive_patches.py - see that file
-# before editing these numbers by hand.
-PATCHES = {
-    0: ("Init", (
-        0.534926, 0.75)),
-}
-
-
-def _apply_patch(index, channel=0, note_id=-1, sample_position=0):
-    patch = PATCHES.get(index)
-    if patch is None:
-        return
-    for macro_index, macro_value in enumerate(patch[1]):
-        handle_event(vstaudio.EVENT_PARAMETER, channel, note_id,
-                     macro_index, macro_value, 0.0, sample_position)
-
-
-def _dispatch(event_type, channel, note_id, data0, value0, value1,
-              sample_position):
-    if event_type == vstaudio.EVENT_PROGRAM_CHANGE:
-        _apply_patch(data0, channel, note_id, sample_position)
-        return
-    handle_event(event_type, channel, note_id, data0, value0, value1,
-                 sample_position)
-
-
-vstaudio.on_event(_dispatch)
-
-vstaudio.output(verb)
+    mpvst_adapter.attach(create)

@@ -1,155 +1,112 @@
 # mpvst-macro-labels: Cutoff | Motion | Space
-#
-# Analog dawn pad: two detuned saws panned wide through a slowly breathing
-# low-pass, chorus, and a large reverb. Macro 1 opens the filter, macro 2
-# deepens the internal filter motion, macro 3 pushes the pad into the room.
+"""Analog dawn pad: two detuned saws panned wide through a slowly breathing
+low-pass, chorus, and a large reverb. Macro 1 opens the filter, macro 2
+deepens the internal filter motion, macro 3 pushes the pad into the room.
+"""
 
-import array
-import math
+MACRO_LABELS = (
+    "Cutoff", "Motion", "Space",
+)
+
+# Patch 0 is the sound this instrument's defaults describe, so a fresh
+# instance and patch 0 are the same thing - create() applies it. A macro
+# a caller does not set resolves here rather than to the middle of its
+# range.
+PATCHES = {
+    0: ('Init', (53, 31, 64)),
+}
 
 import audiodelays
 import audiofreeverb
 import synthio
-import vstaudio
 
-SR = vstaudio.sample_rate()
-TAU = 2.0 * math.pi
+from audioinstruments._support import (
+    EVENT_NOTE_ON, EVENT_NOTE_OFF, EVENT_PARAMETER, key_of, logmap,
+    make_table,
+)
+from audioinstruments._support import Instrument
+from audioinstruments import _support
 
-
-def make_table(parts, length=2048, gain=32000):
-    vals = [0.0] * length
-    for mult, amp in parts:
-        step = TAU * mult / length
-        for i in range(length):
-            vals[i] += amp * math.sin(step * i)
-    peak = 0.0
-    for v in vals:
-        a = v if v >= 0.0 else -v
-        if a > peak:
-            peak = a
-    if peak <= 0.0:
-        peak = 1.0
-    out = array.array("h", bytearray(length * 2))
-    scale = gain / peak
-    for i in range(length):
-        out[i] = int(vals[i] * scale)
-    return out
-
-
-def logmap(v, lo, hi):
-    return lo * ((hi / lo) ** v)
-
-
-WARM_SAW = make_table([(n, 1.0 / (n ** 1.35)) for n in range(1, 19)])
+WARM_SAW = make_table([(n, 1.0 / (n ** 1.35)) for n in range(1, 19)], fast=False)
 DETUNE = 2.0 ** (8.0 / 1200.0)
 
-synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
-cut_base = synthio.Math(synthio.MathOperation.SUM, 900.0, 0.0, 0.0)
-motion_depth = synthio.Math(synthio.MathOperation.SUM, 260.0, 0.0, 0.0)
-breath = synthio.LFO(rate=0.07, scale=motion_depth, phase_offset=0.75)
-cut_sum = synthio.Math(synthio.MathOperation.SUM, cut_base, breath, 0.0)
-# The breath excursion can exceed a dark cutoff base; a negative filter
-# frequency destabilises the biquad, so clamp to the audible band.
-cutoff = synthio.Math(synthio.MathOperation.MID, cut_sum, 90.0, 9000.0)
-lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=1.05)
 
-env = synthio.Envelope(attack_time=1.2, decay_time=0.5, release_time=2.4,
-                       attack_level=1.0, sustain_level=0.85)
+def create(sample_rate, transport=None):
+    SR = sample_rate
+    synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
+    chorus = audiodelays.Chorus(max_delay_ms=40, delay_ms=17, voices=3, mix=0.35,
+                                sample_rate=SR, channel_count=2,
+                                bits_per_sample=16, samples_signed=True,
+                                buffer_size=2048)
+    verb = audiofreeverb.Freeverb(roomsize=0.88, damp=0.35, mix=0.3,
+                                  sample_rate=SR, channel_count=2,
+                                  bits_per_sample=16, samples_signed=True,
+                                  buffer_size=2048)
+    cut_base = synthio.Math(synthio.MathOperation.SUM, 900.0, 0.0, 0.0)
+    motion_depth = synthio.Math(synthio.MathOperation.SUM, 260.0, 0.0, 0.0)
+    breath = synthio.LFO(rate=0.07, scale=motion_depth, phase_offset=0.75)
+    cut_sum = synthio.Math(synthio.MathOperation.SUM, cut_base, breath, 0.0)
+    # The breath excursion can exceed a dark cutoff base; a negative filter
+    # frequency destabilises the biquad, so clamp to the audible band.
+    cutoff = synthio.Math(synthio.MathOperation.MID, cut_sum, 90.0, 9000.0)
+    lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=1.05)
 
-chorus = audiodelays.Chorus(max_delay_ms=40, delay_ms=17, voices=3, mix=0.35,
-                            sample_rate=SR, channel_count=2,
-                            bits_per_sample=16, samples_signed=True,
-                            buffer_size=2048)
-verb = audiofreeverb.Freeverb(roomsize=0.88, damp=0.35, mix=0.3,
-                              sample_rate=SR, channel_count=2,
-                              bits_per_sample=16, samples_signed=True,
-                              buffer_size=2048)
-chorus.play(synth)
-verb.play(chorus)
+    env = synthio.Envelope(attack_time=1.2, decay_time=0.5, release_time=2.4,
+                           attack_level=1.0, sustain_level=0.85)
 
-voices = {}
-MAX_VOICES = 5
-serial = 0
+    chorus.play(synth)
+    verb.play(chorus)
 
-
-def key_of(channel, note_id, pitch):
-    return (channel, note_id if note_id >= 0 else pitch)
-
-
-def release_voice(k):
-    voice = voices.pop(k, None)
-    if voice is not None:
-        for note in voice[0]:
-            synth.release(note)
+    voices = {}
+    MAX_VOICES = 5
+    serial = 0
 
 
-def steal_oldest():
-    oldest = None
-    for k in voices:
-        if oldest is None or voices[k][1] < voices[oldest][1]:
-            oldest = k
-    if oldest is not None:
-        release_voice(oldest)
 
 
-def handle_event(event_type, channel, note_id, data0, value0, value1,
-                 sample_position):
-    global serial
-    k = key_of(channel, note_id, data0)
-    if event_type == vstaudio.EVENT_NOTE_ON and value0 > 0.0:
-        release_voice(k)
-        if len(voices) >= MAX_VOICES:
-            steal_oldest()
-        hz = synthio.midi_to_hz(data0 + value1)
-        amp = 0.07 + 0.09 * value0
-        a = synthio.Note(hz * DETUNE, waveform=WARM_SAW, envelope=env,
-                         filter=lp, amplitude=amp, panning=-0.5)
-        b = synthio.Note(hz / DETUNE, waveform=WARM_SAW, envelope=env,
-                         filter=lp, amplitude=amp, panning=0.5)
-        serial += 1
-        voices[k] = ((a, b), serial)
-        synth.press(a)
-        synth.press(b)
-    elif event_type in (vstaudio.EVENT_NOTE_OFF, vstaudio.EVENT_NOTE_ON):
-        release_voice(k)
-    elif event_type == vstaudio.EVENT_PARAMETER:
-        if data0 == 0:
-            cut_base.a = logmap(value0, 260.0, 5200.0)
-        elif data0 == 1:
-            motion_depth.a = 40.0 + 900.0 * value0
-        elif data0 == 2:
-            verb.mix = 0.1 + 0.4 * value0
+    def release_voice(k):
+        _support.release_voice(voices, synth, k)
 
 
-# Patch 1 (Program Change 0) is the sound this script's module-level
-# defaults describe, so a fresh instance and Patch 1 are the same thing.
-# piece.py also reads it: a macro a composition does not set resolves here
-# rather than to 0.5. Derived by tools/derive_patches.py - see that file
-# before editing these numbers by hand.
-PATCHES = {
-    0: ("Init", (
-        0.414494, 0.244444, 0.5)),
-}
+    def steal_oldest():
+        _support.steal_oldest(voices, release_voice)
 
 
-def _apply_patch(index, channel=0, note_id=-1, sample_position=0):
-    patch = PATCHES.get(index)
-    if patch is None:
-        return
-    for macro_index, macro_value in enumerate(patch[1]):
-        handle_event(vstaudio.EVENT_PARAMETER, channel, note_id,
-                     macro_index, macro_value, 0.0, sample_position)
+    def handle_event(event_type, channel, note_id, data0, value0, value1,
+                     sample_position):
+        nonlocal serial
+        k = key_of(channel, note_id, data0)
+        if event_type == EVENT_NOTE_ON and value0 > 0.0:
+            release_voice(k)
+            if len(voices) >= MAX_VOICES:
+                steal_oldest()
+            hz = synthio.midi_to_hz(data0 + value1)
+            amp = 0.07 + 0.09 * value0
+            a = synthio.Note(hz * DETUNE, waveform=WARM_SAW, envelope=env,
+                             filter=lp, amplitude=amp, panning=-0.5)
+            b = synthio.Note(hz / DETUNE, waveform=WARM_SAW, envelope=env,
+                             filter=lp, amplitude=amp, panning=0.5)
+            serial += 1
+            voices[k] = ((a, b), serial)
+            synth.press(a)
+            synth.press(b)
+        elif event_type in (EVENT_NOTE_OFF, EVENT_NOTE_ON):
+            release_voice(k)
+        elif event_type == EVENT_PARAMETER:
+            if data0 == 0:
+                cut_base.a = logmap(value0, 260.0, 5200.0)
+            elif data0 == 1:
+                motion_depth.a = 40.0 + 900.0 * value0
+            elif data0 == 2:
+                verb.mix = 0.1 + 0.4 * value0
+
+    instrument = Instrument(synth, handle_event, PATCHES, MACRO_LABELS,
+                            transport=transport, output=verb)
+    instrument.program_change(0)
+    return instrument
 
 
-def _dispatch(event_type, channel, note_id, data0, value0, value1,
-              sample_position):
-    if event_type == vstaudio.EVENT_PROGRAM_CHANGE:
-        _apply_patch(data0, channel, note_id, sample_position)
-        return
-    handle_event(event_type, channel, note_id, data0, value0, value1,
-                 sample_position)
+if __name__ == "__main__":
+    import mpvst_adapter
 
-
-vstaudio.on_event(_dispatch)
-
-vstaudio.output(verb)
+    mpvst_adapter.attach(create)

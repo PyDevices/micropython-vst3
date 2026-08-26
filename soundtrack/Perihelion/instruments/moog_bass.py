@@ -1,147 +1,103 @@
 # mpvst-macro-labels: Cutoff | Resonance | Punch
-#
-# Ostinato Moog bass: saw plus a sub-octave square through a resonant
-# low-pass. Macro 1 sweeps the cutoff, macro 2 the resonance, macro 3 sets
-# how hard the per-note filter pluck opens. This is the automation star of
-# the score.
+"""Ostinato Moog bass: saw plus a sub-octave square through a resonant
+low-pass. Macro 1 sweeps the cutoff, macro 2 the resonance, macro 3 sets
+how hard the per-note filter pluck opens. This is the automation star of
+the score.
+"""
 
-import array
-import math
+MACRO_LABELS = (
+    "Cutoff", "Resonance", "Punch",
+)
 
-import synthio
-import vstaudio
-
-SR = vstaudio.sample_rate()
-TAU = 2.0 * math.pi
-
-
-def make_table(parts, length=2048, gain=32000):
-    vals = [0.0] * length
-    for mult, amp in parts:
-        step = TAU * mult / length
-        for i in range(length):
-            vals[i] += amp * math.sin(step * i)
-    peak = 0.0
-    for v in vals:
-        a = v if v >= 0.0 else -v
-        if a > peak:
-            peak = a
-    if peak <= 0.0:
-        peak = 1.0
-    out = array.array("h", bytearray(length * 2))
-    scale = gain / peak
-    for i in range(length):
-        out[i] = int(vals[i] * scale)
-    return out
-
-
-def logmap(v, lo, hi):
-    return lo * ((hi / lo) ** v)
-
-
-SAW = make_table([(n, 1.0 / n) for n in range(1, 29)])
-SQUARE = make_table([(n, 1.0 / n) for n in range(1, 16, 2)])
-
-# One-shot downward ramp used as the per-note filter pluck.
-FALL = array.array("h", (32767, 0))
-
-synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
-cutoff = synthio.Math(synthio.MathOperation.SUM, 700.0, 0.0, 0.0)
-resonance = synthio.Math(synthio.MathOperation.SUM, 1.4, 0.0, 0.0)
-punch = 1600.0
-
-env = synthio.Envelope(attack_time=0.006, decay_time=0.18,
-                       release_time=0.12, attack_level=1.0,
-                       sustain_level=0.55)
-
-voices = {}
-MAX_VOICES = 3
-serial = 0
-
-
-def key_of(channel, note_id, pitch):
-    return (channel, note_id if note_id >= 0 else pitch)
-
-
-def release_voice(k):
-    voice = voices.pop(k, None)
-    if voice is not None:
-        for note in voice[0]:
-            synth.release(note)
-
-
-def steal_oldest():
-    oldest = None
-    for k in voices:
-        if oldest is None or voices[k][1] < voices[oldest][1]:
-            oldest = k
-    if oldest is not None:
-        release_voice(oldest)
-
-
-def handle_event(event_type, channel, note_id, data0, value0, value1,
-                 sample_position):
-    global serial, punch
-    k = key_of(channel, note_id, data0)
-    if event_type == vstaudio.EVENT_NOTE_ON and value0 > 0.0:
-        release_voice(k)
-        if len(voices) >= MAX_VOICES:
-            steal_oldest()
-        hz = synthio.midi_to_hz(data0 + value1)
-        amp = 0.22 + 0.30 * value0
-        pluck = synthio.LFO(waveform=FALL, once=True, rate=4.0,
-                            scale=punch * (0.4 + 0.6 * value0),
-                            interpolate=True)
-        freq = synthio.Math(synthio.MathOperation.SUM, cutoff, pluck, 0.0)
-        flt = synthio.Biquad(synthio.FilterMode.LOW_PASS, freq, Q=resonance)
-        a = synthio.Note(hz, waveform=SAW, envelope=env, filter=flt,
-                         amplitude=amp, panning=-0.1, bend=0.001)
-        b = synthio.Note(hz * 0.5, waveform=SQUARE, envelope=env, filter=flt,
-                         amplitude=amp * 0.8, panning=0.1)
-        serial += 1
-        voices[k] = ((a, b), serial)
-        synth.press(a)
-        synth.press(b)
-    elif event_type in (vstaudio.EVENT_NOTE_OFF, vstaudio.EVENT_NOTE_ON):
-        release_voice(k)
-    elif event_type == vstaudio.EVENT_PARAMETER:
-        if data0 == 0:
-            cutoff.a = logmap(value0, 90.0, 5200.0)
-        elif data0 == 1:
-            resonance.a = 0.8 + 6.7 * value0
-        elif data0 == 2:
-            punch = 3600.0 * value0
-
-
-# Patch 1 (Program Change 0) is the sound this script's module-level
-# defaults describe, so a fresh instance and Patch 1 are the same thing.
-# piece.py also reads it: a macro a composition does not set resolves here
-# rather than to 0.5. Derived by tools/derive_patches.py - see that file
-# before editing these numbers by hand.
+# Patch 0 is the sound this instrument's defaults describe, so a fresh
+# instance and patch 0 are the same thing - create() applies it. A macro
+# a caller does not set resolves here rather than to the middle of its
+# range.
 PATCHES = {
-    0: ("Init", (
-        0.505662, 0.089552, 0.444444)),
+    0: ('Init', (64, 11, 56)),
 }
 
+import synthio
 
-def _apply_patch(index, channel=0, note_id=-1, sample_position=0):
-    patch = PATCHES.get(index)
-    if patch is None:
-        return
-    for macro_index, macro_value in enumerate(patch[1]):
-        handle_event(vstaudio.EVENT_PARAMETER, channel, note_id,
-                     macro_index, macro_value, 0.0, sample_position)
+from audioinstruments._support import (
+    EVENT_NOTE_ON, EVENT_NOTE_OFF, EVENT_PARAMETER, FALL, key_of, logmap,
+    make_table,
+)
+from audioinstruments._support import Instrument
+from audioinstruments import _support
 
+SAW = make_table([(n, 1.0 / n) for n in range(1, 29)], fast=False)
+SQUARE = make_table([(n, 1.0 / n) for n in range(1, 16, 2)], fast=False)
 
-def _dispatch(event_type, channel, note_id, data0, value0, value1,
-              sample_position):
-    if event_type == vstaudio.EVENT_PROGRAM_CHANGE:
-        _apply_patch(data0, channel, note_id, sample_position)
-        return
-    handle_event(event_type, channel, note_id, data0, value0, value1,
-                 sample_position)
+# One-shot downward ramp used as the per-note filter pluck.
 
 
-vstaudio.on_event(_dispatch)
+def create(sample_rate, transport=None):
+    SR = sample_rate
+    synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
+    cutoff = synthio.Math(synthio.MathOperation.SUM, 700.0, 0.0, 0.0)
+    resonance = synthio.Math(synthio.MathOperation.SUM, 1.4, 0.0, 0.0)
+    punch = 1600.0
 
-vstaudio.output(synth)
+    env = synthio.Envelope(attack_time=0.006, decay_time=0.18,
+                           release_time=0.12, attack_level=1.0,
+                           sustain_level=0.55)
+
+    voices = {}
+    MAX_VOICES = 3
+    serial = 0
+
+
+
+
+    def release_voice(k):
+        _support.release_voice(voices, synth, k)
+
+
+    def steal_oldest():
+        _support.steal_oldest(voices, release_voice)
+
+
+    def handle_event(event_type, channel, note_id, data0, value0, value1,
+                     sample_position):
+        nonlocal serial, punch
+        k = key_of(channel, note_id, data0)
+        if event_type == EVENT_NOTE_ON and value0 > 0.0:
+            release_voice(k)
+            if len(voices) >= MAX_VOICES:
+                steal_oldest()
+            hz = synthio.midi_to_hz(data0 + value1)
+            amp = 0.22 + 0.30 * value0
+            pluck = synthio.LFO(waveform=FALL, once=True, rate=4.0,
+                                scale=punch * (0.4 + 0.6 * value0),
+                                interpolate=True)
+            freq = synthio.Math(synthio.MathOperation.SUM, cutoff, pluck, 0.0)
+            flt = synthio.Biquad(synthio.FilterMode.LOW_PASS, freq, Q=resonance)
+            a = synthio.Note(hz, waveform=SAW, envelope=env, filter=flt,
+                             amplitude=amp, panning=-0.1, bend=0.001)
+            b = synthio.Note(hz * 0.5, waveform=SQUARE, envelope=env, filter=flt,
+                             amplitude=amp * 0.8, panning=0.1)
+            serial += 1
+            voices[k] = ((a, b), serial)
+            synth.press(a)
+            synth.press(b)
+        elif event_type in (EVENT_NOTE_OFF, EVENT_NOTE_ON):
+            release_voice(k)
+        elif event_type == EVENT_PARAMETER:
+            if data0 == 0:
+                cutoff.a = logmap(value0, 90.0, 5200.0)
+            elif data0 == 1:
+                resonance.a = 0.8 + 6.7 * value0
+            elif data0 == 2:
+                punch = 3600.0 * value0
+
+    instrument = Instrument(synth, handle_event, PATCHES, MACRO_LABELS,
+                            transport=transport)
+    instrument.program_change(0)
+    return instrument
+
+
+if __name__ == "__main__":
+    import mpvst_adapter
+
+    mpvst_adapter.attach(create)

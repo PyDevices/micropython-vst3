@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 from piece import load_piece  # noqa: E402
 
 C, _ = load_piece("automata")

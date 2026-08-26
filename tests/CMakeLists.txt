@@ -70,6 +70,13 @@ if(Python3_FOUND)
     add_test(NAME mpvst_instruments_library COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_SOURCE_DIR}/tools/test-instruments-lib.py)
     set_tests_properties(mpvst_instruments_library PROPERTIES TIMEOUT 300)
+
+    # lib/instruments/*.py are generated from audioinstruments and
+    # committed, because a REAPER project embeds the bytes of the script
+    # it loads. A stale shim would keep working and quietly disagree with
+    # the instrument about its macro labels, so regenerate and diff.
+    add_test(NAME mpvst_instrument_shims COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_SOURCE_DIR}/tools/generate_shims.py --check)
 endif()
 
 # Fuzz targets. The portable driver runs on every toolchain as an ordinary

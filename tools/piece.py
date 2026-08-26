@@ -32,10 +32,57 @@ macro_env shape as an instrument.
 
 import ast
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
-SOUNDTRACK_DIR = Path(__file__).resolve().parent.parent / "soundtrack"
+REPO_DIR = Path(__file__).resolve().parent.parent
+SOUNDTRACK_DIR = REPO_DIR / "soundtrack"
+
+#: Where audioinstruments lives. Same workspace-sibling rule the engine
+#: build and the plug-in's staging step use; the environment variable is
+#: the escape hatch for a checkout somewhere else.
+AUDIOIF_LIB = Path(os.environ.get("MPVST_AUDIOIF_LIB",
+                                  str(REPO_DIR.parent / "audioif" / "lib")))
+
+#: How a generated shim names the instrument module it loads. Anything
+#: holding a script path and needing the instrument behind it follows this
+#: line rather than guessing from the filename.
+MODULE_PREFIX = "# mpvst-module:"
+
+
+def module_of(script_path):
+    """The audioinstruments module a shim loads, or None for a real script.
+
+    Only the head of the file is read: a piece-private instrument is a
+    whole synthesizer, and this is called for every track of every piece.
+    """
+    with open(str(script_path)) as handle:
+        for _ in range(8):
+            line = handle.readline()
+            if not line:
+                break
+            if line.startswith(MODULE_PREFIX):
+                return line[len(MODULE_PREFIX):].strip()
+    return None
+
+
+def instrument_source(script_path):
+    """The file that actually declares an instrument's PATCHES.
+
+    For a generated shim that is the audioinstruments module it loads; for
+    a piece-private instrument it is the script itself.
+    """
+    name = module_of(script_path)
+    if name is None:
+        return Path(script_path)
+    source = AUDIOIF_LIB.joinpath(*name.split(".")).with_suffix(".py")
+    if not source.is_file():
+        raise SystemExit(
+            "%s loads %s, which is not at %s.\n"
+            "Set MPVST_AUDIOIF_LIB, or run scripts/fetch-sibling-repos.sh."
+            % (Path(script_path).name, name, source))
+    return source
 
 
 def available_pieces():
@@ -74,11 +121,17 @@ def patch_macros(script_path):
     intended. Half-open noise, half-open poly-mod and a modulator parked
     on the 6th harmonic all came from resolving to 0.5.
 
+    Patch values are stored as MIDI integers 0-127 - that is what a
+    keyboard, a sequencer and a saved patch all speak - and returned here
+    as the normalized floats plug-in state is written in.
+
     Read with ast rather than by importing: this runs under plain python3
     during project generation, where synthio and numpy are not available.
-    Use tools/derive_patches.py to produce or refresh a PATCHES block.
+    A generated shim declares no patches of its own, so the module it
+    loads is read instead. Use tools/derive_patches.py to produce or
+    refresh a PATCHES block.
     """
-    path = Path(script_path)
+    path = instrument_source(script_path)
     try:
         tree = ast.parse(path.read_text(), str(path))
     except SyntaxError as exc:
@@ -96,7 +149,13 @@ def patch_macros(script_path):
             raise SystemExit(
                 "%s: PATCHES is not a literal {index: (name, values)} map"
                 % path.name)
-        return {i: float(v) for i, v in enumerate(values)}, name
+        for value in values:
+            if not isinstance(value, int) or not 0 <= value <= 127:
+                raise SystemExit(
+                    "%s: patch value %r is not a MIDI integer 0-127.\n"
+                    "Refresh the block with tools/derive_patches.py --write."
+                    % (path.name, value))
+        return {i: v / 127.0 for i, v in enumerate(values)}, name
     raise SystemExit(
         "%s declares no PATCHES.\n"
         "Every instrument must define Patch 1 - it is what an unset macro\n"

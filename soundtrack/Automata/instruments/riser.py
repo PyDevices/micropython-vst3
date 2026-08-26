@@ -1,171 +1,119 @@
 # mpvst-macro-labels: Lift | Center | Space | Drop
-#
-# Riser and tape stop: a cluster of detuned saws plus band-passed noise.
-# Automate Lift 0..1 across the bars before a drop and cut the note at
-# the downbeat; automate Drop 0..1 while a chord holds and the whole
-# cluster falls two octaves like a tape machine losing power. Macro 2
-# places the noise band, macro 3 the room.
+"""Riser and tape stop: a cluster of detuned saws plus band-passed noise.
+Automate Lift 0..1 across the bars before a drop and cut the note at
+the downbeat; automate Drop 0..1 while a chord holds and the whole
+cluster falls two octaves like a tape machine losing power. Macro 2
+places the noise band, macro 3 the room.
+"""
 
-import array
-import math
+MACRO_LABELS = (
+    "Lift", "Center", "Space", "Drop",
+)
+
+# Patch 0 is the sound this instrument's defaults describe, so a fresh
+# instance and patch 0 are the same thing - create() applies it. A macro
+# a caller does not set resolves here rather than to the middle of its
+# range.
+PATCHES = {
+    0: ('Init', (0, 54, 57, 0)),
+}
 
 import audiofreeverb
 import synthio
-import vstaudio
 
-SR = vstaudio.sample_rate()
-TAU = 2.0 * math.pi
+from audioinstruments._support import (
+    EVENT_NOTE_ON, EVENT_NOTE_OFF, EVENT_PARAMETER, key_of, logmap,
+    make_table, noise_table,
+)
+from audioinstruments._support import Instrument
+from audioinstruments import _support
 
-
-def make_table(parts, length=2048, gain=32000):
-    vals = [0.0] * length
-    for mult, amp in parts:
-        step = TAU * mult / length
-        for i in range(length):
-            vals[i] += amp * math.sin(step * i)
-    peak = 0.0
-    for v in vals:
-        a = v if v >= 0.0 else -v
-        if a > peak:
-            peak = a
-    if peak <= 0.0:
-        peak = 1.0
-    out = array.array("h", bytearray(length * 2))
-    scale = gain / peak
-    for i in range(length):
-        out[i] = int(vals[i] * scale)
-    return out
+SAW = make_table([(n, 1.0 / n) for n in range(1, 19)], fast=False)
+NOISE = noise_table(seed=246813579)
 
 
-def noise_table(length=8192, seed=246813579):
-    out = array.array("h", bytearray(length * 2))
-    state = seed
-    for i in range(length):
-        state = (state * 1103515245 + 12345) & 0x7FFFFFFF
-        out[i] = ((state >> 15) & 0xFFFF) - 32768
-    return out
+def create(sample_rate, transport=None):
+    SR = sample_rate
+    NOISE_HZ = SR / 8192.0
+    synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
+    verb = audiofreeverb.Freeverb(roomsize=0.9, damp=0.35, mix=0.3,
+                                  sample_rate=SR, channel_count=2,
+                                  bits_per_sample=16, samples_signed=True,
+                                  buffer_size=2048)
+    # Lift raises the cluster by up to an octave and swells its level.
+    lift_bend = synthio.Math(synthio.MathOperation.SUM, 0.0, 0.0, 0.0)
+    drop_bend = synthio.Math(synthio.MathOperation.SUM, 0.0, 0.0, 0.0)
+    wobble = synthio.LFO(rate=6.5, scale=0.012)
+    updown = synthio.Math(synthio.MathOperation.SUM, lift_bend, drop_bend, 0.0)
+    bend_total = synthio.Math(synthio.MathOperation.SUM, updown, wobble, 0.0)
+    center = synthio.Math(synthio.MathOperation.SUM, 1800.0, 0.0, 0.0)
+    noise_bp = synthio.Biquad(synthio.FilterMode.BAND_PASS, center, Q=1.8)
+    cluster_lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, 2600.0, Q=1.1)
+
+    env = synthio.Envelope(attack_time=1.6, decay_time=0.4, release_time=0.35,
+                           attack_level=1.0, sustain_level=1.0)
+
+    verb.play(synth)
+
+    DETUNES = (0.995, 1.0, 1.006)
+    PANS = (-0.4, 0.0, 0.4)
+    voices = {}
+    MAX_VOICES = 2
+    serial = 0
 
 
-def logmap(v, lo, hi):
-    return lo * ((hi / lo) ** v)
 
 
-SAW = make_table([(n, 1.0 / n) for n in range(1, 19)])
-NOISE = noise_table()
-NOISE_HZ = SR / 8192.0
-
-synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
-# Lift raises the cluster by up to an octave and swells its level.
-lift_bend = synthio.Math(synthio.MathOperation.SUM, 0.0, 0.0, 0.0)
-drop_bend = synthio.Math(synthio.MathOperation.SUM, 0.0, 0.0, 0.0)
-wobble = synthio.LFO(rate=6.5, scale=0.012)
-updown = synthio.Math(synthio.MathOperation.SUM, lift_bend, drop_bend, 0.0)
-bend_total = synthio.Math(synthio.MathOperation.SUM, updown, wobble, 0.0)
-center = synthio.Math(synthio.MathOperation.SUM, 1800.0, 0.0, 0.0)
-noise_bp = synthio.Biquad(synthio.FilterMode.BAND_PASS, center, Q=1.8)
-cluster_lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, 2600.0, Q=1.1)
-
-env = synthio.Envelope(attack_time=1.6, decay_time=0.4, release_time=0.35,
-                       attack_level=1.0, sustain_level=1.0)
-
-verb = audiofreeverb.Freeverb(roomsize=0.9, damp=0.35, mix=0.3,
-                              sample_rate=SR, channel_count=2,
-                              bits_per_sample=16, samples_signed=True,
-                              buffer_size=2048)
-verb.play(synth)
-
-DETUNES = (0.995, 1.0, 1.006)
-PANS = (-0.4, 0.0, 0.4)
-voices = {}
-MAX_VOICES = 2
-serial = 0
+    def release_voice(k):
+        _support.release_voice(voices, synth, k)
 
 
-def key_of(channel, note_id, pitch):
-    return (channel, note_id if note_id >= 0 else pitch)
+    def steal_oldest():
+        _support.steal_oldest(voices, release_voice)
 
 
-def release_voice(k):
-    voice = voices.pop(k, None)
-    if voice is not None:
-        for note in voice[0]:
-            synth.release(note)
+    def handle_event(event_type, channel, note_id, data0, value0, value1,
+                     sample_position):
+        nonlocal serial
+        k = key_of(channel, note_id, data0)
+        if event_type == EVENT_NOTE_ON and value0 > 0.0:
+            release_voice(k)
+            if len(voices) >= MAX_VOICES:
+                steal_oldest()
+            hz = synthio.midi_to_hz(data0 + value1)
+            amp = 0.1 + 0.2 * value0
+            notes = []
+            for i in range(3):
+                notes.append(synthio.Note(hz * DETUNES[i], waveform=SAW,
+                                          envelope=env, filter=cluster_lp,
+                                          amplitude=amp, panning=PANS[i],
+                                          bend=bend_total))
+            notes.append(synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env,
+                                      filter=noise_bp, amplitude=amp * 1.3,
+                                      bend=updown))
+            serial += 1
+            voices[k] = (tuple(notes), serial)
+            for note in notes:
+                synth.press(note)
+        elif event_type in (EVENT_NOTE_OFF, EVENT_NOTE_ON):
+            release_voice(k)
+        elif event_type == EVENT_PARAMETER:
+            if data0 == 0:
+                lift_bend.a = value0
+            elif data0 == 1:
+                center.a = logmap(value0, 700.0, 6400.0)
+            elif data0 == 2:
+                verb.mix = 0.12 + 0.4 * value0
+            elif data0 == 3:
+                drop_bend.a = -2.2 * value0
+
+    instrument = Instrument(synth, handle_event, PATCHES, MACRO_LABELS,
+                            transport=transport, output=verb)
+    instrument.program_change(0)
+    return instrument
 
 
-def steal_oldest():
-    oldest = None
-    for k in voices:
-        if oldest is None or voices[k][1] < voices[oldest][1]:
-            oldest = k
-    if oldest is not None:
-        release_voice(oldest)
+if __name__ == "__main__":
+    import mpvst_adapter
 
-
-def handle_event(event_type, channel, note_id, data0, value0, value1,
-                 sample_position):
-    global serial
-    k = key_of(channel, note_id, data0)
-    if event_type == vstaudio.EVENT_NOTE_ON and value0 > 0.0:
-        release_voice(k)
-        if len(voices) >= MAX_VOICES:
-            steal_oldest()
-        hz = synthio.midi_to_hz(data0 + value1)
-        amp = 0.1 + 0.2 * value0
-        notes = []
-        for i in range(3):
-            notes.append(synthio.Note(hz * DETUNES[i], waveform=SAW,
-                                      envelope=env, filter=cluster_lp,
-                                      amplitude=amp, panning=PANS[i],
-                                      bend=bend_total))
-        notes.append(synthio.Note(NOISE_HZ, waveform=NOISE, envelope=env,
-                                  filter=noise_bp, amplitude=amp * 1.3,
-                                  bend=updown))
-        serial += 1
-        voices[k] = (tuple(notes), serial)
-        for note in notes:
-            synth.press(note)
-    elif event_type in (vstaudio.EVENT_NOTE_OFF, vstaudio.EVENT_NOTE_ON):
-        release_voice(k)
-    elif event_type == vstaudio.EVENT_PARAMETER:
-        if data0 == 0:
-            lift_bend.a = value0
-        elif data0 == 1:
-            center.a = logmap(value0, 700.0, 6400.0)
-        elif data0 == 2:
-            verb.mix = 0.12 + 0.4 * value0
-        elif data0 == 3:
-            drop_bend.a = -2.2 * value0
-
-
-# Patch 1 (Program Change 0) is the sound this script's module-level
-# defaults describe, so a fresh instance and Patch 1 are the same thing.
-# piece.py also reads it: a macro a composition does not set resolves here
-# rather than to 0.5. Derived by tools/derive_patches.py - see that file
-# before editing these numbers by hand.
-PATCHES = {
-    0: ("Init", (
-        0, 0.426784, 0.45, 0)),
-}
-
-
-def _apply_patch(index, channel=0, note_id=-1, sample_position=0):
-    patch = PATCHES.get(index)
-    if patch is None:
-        return
-    for macro_index, macro_value in enumerate(patch[1]):
-        handle_event(vstaudio.EVENT_PARAMETER, channel, note_id,
-                     macro_index, macro_value, 0.0, sample_position)
-
-
-def _dispatch(event_type, channel, note_id, data0, value0, value1,
-              sample_position):
-    if event_type == vstaudio.EVENT_PROGRAM_CHANGE:
-        _apply_patch(data0, channel, note_id, sample_position)
-        return
-    handle_event(event_type, channel, note_id, data0, value0, value1,
-                 sample_position)
-
-
-vstaudio.on_event(_dispatch)
-
-vstaudio.output(verb)
+    mpvst_adapter.attach(create)
