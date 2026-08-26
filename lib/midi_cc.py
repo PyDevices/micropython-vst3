@@ -1,59 +1,92 @@
-"""Range functions for every MIDI 1.0 Control Change code.
+"""Scaling functions for every MIDI 1.0 Control Change code.
 
 Source: "Table 3 - Control Change Messages and RPNs", MIDI Manufacturers
-Association, 2020. Every entry below is the spec's own definition; nothing
-here is invented to suit a particular instrument.
+Association, 2020. Which control each code means comes from the spec;
+nothing here is invented to suit a particular instrument.
 
-To use a scale function in your instrument file, bind it to the MIDI CC
-code you want:
 
-    from midi_cc import midi_cc_lut
-    volume_func = midi_cc_lut[7]
+Why these do not return 7-bit numbers
+-------------------------------------
+The spec lists every controller's range as 0-127 because MIDI is a wire
+protocol and 7 bits is what fits in a data byte. That is a property of the
+cable, not of the control. VST3 has no such limit: it normalises every
+parameter to a 0.0-1.0 float, and that is what the host sends us, what an
+automation lane records, and what the plug-in hands a macro.
 
-Then to use it:
+So the translation between the two is ours to choose, and we choose not to
+quantise:
 
-    volume = volume_func(0.25)
+  Resolution. Rounding a host's float to one of 128 steps would discard
+  resolution we were handed for free. A slow filter sweep quantised to 128
+  steps is audible as stair-stepping, and automation envelopes are exactly
+  where this library spends its time. Continuous controls therefore keep
+  full float precision end to end.
 
-x is always in the range 0.0 to 1.0 - that is what the VST3 host sends for
-a normalised parameter, and what the plug-in hands a macro. Each function
-converts that into the unit the spec defines for that controller, so the
-return type varies by what the controller actually is:
+  Centre. MIDI's centre detent is byte 64, which normalises to 64/127 =
+  0.50394, not 0.5. In VST3 the natural centre is exactly 0.5 - it is
+  where a host parks an untouched parameter and what a bipolar control's
+  default wants to be. A bipolar control here is therefore exactly neutral
+  at 0.5, not at 0.50394. Switches flip at 0.5 for the same reason, rather
+  than at the spec's byte-64 threshold.
 
-    float 0.0..1.0   continuous "amount" controllers (the spec gives these
-                     a 0-127 data range and no physical unit, so they come
-                     back as a fraction of full scale)
-    float -1.0..1.0  bipolar controllers, 0.0 at the centre detent (64)
-    int   0..127     raw data bytes - bank/program numbers, parameter
-                     numbers, LSBs, note numbers
-    bool             switches: the spec says <= 63 off, >= 64 on
-    None             messages that carry no value at all
+The exception is controls whose value is a *number* rather than a
+magnitude: bank and program numbers, parameter numbers, the note number in
+Portamento Control, a channel count, and every LSB. Those genuinely are
+7-bit integers - there is no such thing as bank 3.7 - so they are returned
+as int, quantised on purpose.
 
-The spec marks a number of codes "Undefined". They are included here as
-plain 0.0..1.0 pass-throughs, because undefined means free for
-manufacturer use, not unusable.
 
-ONE JUDGEMENT CALL: Sound Controllers 70-79 are bipolar below. This
-document gives them a 0-127 range and defers their defaults to MMA
-RP-021, which sets 64 to mean "no change from the sound's own value" -
-so they modify a preset rather than replace it. If you would rather they
-were absolute, change _sound_controller to _unit and nothing else moves.
+How to use this in an instrument
+--------------------------------
+Two stages, and the second one is yours. This module only converts the
+host's 0.0-1.0 into the control's own terms; turning that into something
+synthio accepts is the instrument's job, because only the instrument knows
+what its filter or envelope wants.
+
+    from midi_cc import cc_scale, BRIGHTNESS, CHANNEL_VOLUME
+
+    # Bind the scaler once, at import, named for the knob it drives.
+    brightness = cc_scale[BRIGHTNESS]
+    channel_volume = cc_scale[CHANNEL_VOLUME]
+
+    def handle_event(event_type, channel, note_id, data0, value0, ...):
+        if event_type == vstaudio.EVENT_PARAMETER:
+            if data0 == 1:
+                # brightness() gives -1..+1; map it onto the cutoff range
+                # this instrument actually wants, in Hz.
+                cutoff = 2000.0 * (4.0 ** brightness(value0))
+            elif data0 == 0:
+                volume = channel_volume(value0)      # already 0..1
+
+Assigning a CC code to a knob is a decision the instrument author makes.
+Nothing here forces a mapping - pick the code whose meaning matches the
+knob, then map its result to whatever synthio needs.
+
+
+Return types
+------------
+    float 0.0..1.0   continuous controllers the spec gives no unit to
+    float -1.0..1.0  bipolar controllers, exactly 0.0 at 0.5
+    int   0..127     values that really are 7-bit numbers (see above)
+    bool              switches; the spec's <= 63 off / >= 64 on, at 0.5
+    None              messages the spec says carry no value
+
+Codes the spec marks "Undefined" are present as plain pass-throughs.
+Undefined means free for manufacturer use, not unusable.
+
+ONE JUDGEMENT CALL: Sound Controllers 70-79 are bipolar. This table gives
+them a 0-127 range and defers their defaults to MMA RP-021, where 64 means
+"no change from the sound's own value" - so they modify a preset rather
+than replace it. That is also what makes 0.5 a safe value for a parameter
+nobody set. To make them absolute instead, change _sound_controller to
+_unit and nothing else moves.
 """
 
 # --- conversions -------------------------------------------------------------
 
 
-def _byte(x):
-    """0.0..1.0 -> the raw 7-bit data byte the spec describes, 0..127."""
-    if x < 0.0:
-        x = 0.0
-    elif x > 1.0:
-        x = 1.0
-    return int(x * 127.0 + 0.5)
-
-
 def _unit(x):
-    """0.0..1.0 -> fraction of full scale, for a 0-127 controller with no
-    physical unit in the spec."""
+    """0.0..1.0 -> 0.0..1.0, clamped. Full float precision, no quantising."""
     if x < 0.0:
         return 0.0
     if x > 1.0:
@@ -62,22 +95,31 @@ def _unit(x):
 
 
 def _bipolar(x):
-    """0.0..1.0 -> -1.0..+1.0 with the centre detent (byte 64) at exactly
-    0.0. The two halves are scaled separately because 64 does not sit at
-    the midpoint of 0..127."""
-    b = _byte(x)
-    if b < 64:
-        return (b - 64) / 64.0
-    return (b - 64) / 63.0
+    """0.0..1.0 -> -1.0..+1.0, exactly 0.0 at 0.5.
+
+    Deliberately centred on 0.5 rather than on MIDI's byte-64 detent
+    (0.50394): 0.5 is where a VST3 host leaves an untouched parameter.
+    """
+    return _unit(x) * 2.0 - 1.0
 
 
 def _switch(x):
-    """0.0..1.0 -> bool. The spec is explicit: <= 63 off, >= 64 on."""
-    return _byte(x) >= 64
+    """0.0..1.0 -> bool. The spec's <= 63 off / >= 64 on, at the VST3
+    half-way point rather than at 64/127."""
+    return _unit(x) >= 0.5
+
+
+def _byte(x):
+    """0.0..1.0 -> a 7-bit number, 0..127.
+
+    Only for controls whose value is a number rather than a magnitude:
+    bank/program/parameter/note numbers, channel counts, and LSBs.
+    """
+    return int(_unit(x) * 127.0 + 0.5)
 
 
 def _none(x):
-    """Channel Mode messages whose data byte is required to be 0."""
+    """Messages the spec says carry no value (their data byte is fixed)."""
     return None
 
 
@@ -85,10 +127,80 @@ def _none(x):
 _sound_controller = _bipolar
 
 
+# --- control numbers ---------------------------------------------------------
+
+BANK_SELECT = 0
+MODULATION_WHEEL = 1
+BREATH_CONTROLLER = 2
+FOOT_CONTROLLER = 4
+PORTAMENTO_TIME = 5
+DATA_ENTRY_MSB = 6
+CHANNEL_VOLUME = 7
+BALANCE = 8
+PAN = 10
+EXPRESSION = 11
+EFFECT_CONTROL_1 = 12
+EFFECT_CONTROL_2 = 13
+GENERAL_PURPOSE_1 = 16
+GENERAL_PURPOSE_2 = 17
+GENERAL_PURPOSE_3 = 18
+GENERAL_PURPOSE_4 = 19
+
+DAMPER_PEDAL = 64
+PORTAMENTO_ON_OFF = 65
+SOSTENUTO = 66
+SOFT_PEDAL = 67
+LEGATO_FOOTSWITCH = 68
+HOLD_2 = 69
+
+# Sound Controllers 1-10, with the spec's default meanings.
+SOUND_VARIATION = 70
+TIMBRE = 71                 # Harmonic Intensity - a resonance control
+RELEASE_TIME = 72
+ATTACK_TIME = 73
+BRIGHTNESS = 74             # the spec's name for a filter cutoff
+DECAY_TIME = 75
+VIBRATO_RATE = 76
+VIBRATO_DEPTH = 77
+VIBRATO_DELAY = 78
+SOUND_CONTROLLER_10 = 79
+
+GENERAL_PURPOSE_5 = 80
+GENERAL_PURPOSE_6 = 81
+GENERAL_PURPOSE_7 = 82
+GENERAL_PURPOSE_8 = 83
+PORTAMENTO_CONTROL = 84
+HIGH_RESOLUTION_VELOCITY_PREFIX = 88
+
+# Effects depths 1-5, with the spec's default and former meanings.
+REVERB_SEND = 91
+TREMOLO_DEPTH = 92          # "formerly Tremolo Depth"
+CHORUS_SEND = 93            # "formerly Chorus Depth"
+DETUNE_DEPTH = 94           # "formerly Celeste [Detune] Depth"
+PHASER_DEPTH = 95
+
+DATA_INCREMENT = 96
+DATA_DECREMENT = 97
+NRPN_LSB = 98
+NRPN_MSB = 99
+RPN_LSB = 100
+RPN_MSB = 101
+
+ALL_SOUND_OFF = 120
+RESET_ALL_CONTROLLERS = 121
+LOCAL_CONTROL = 122
+ALL_NOTES_OFF = 123
+OMNI_MODE_OFF = 124
+OMNI_MODE_ON = 125
+MONO_MODE_ON = 126
+POLY_MODE_ON = 127
+
+
 # --- the table ---------------------------------------------------------------
 
-# x is always in the range 0.0 to 1.0
-midi_cc_lut = {
+# Control code -> a function taking the host's 0.0-1.0 and returning the
+# control's own value. x is always in the range 0.0 to 1.0.
+cc_scale = {
     0: _byte,                      # Bank Select (MSB)
     1: _unit,                      # Modulation Wheel or Lever
     2: _unit,                      # Breath Controller
@@ -122,8 +234,8 @@ midi_cc_lut = {
     30: _unit,                     # Undefined
     31: _unit,                     # Undefined
 
-    # 32-63: LSB for Controls 0-31. These are the low 7 bits of a 14-bit
-    # value, so they are raw bytes, never fractions.
+    # 32-63: LSB for Controls 0-31 - the low 7 bits of a 14-bit value, so
+    # genuinely 7-bit numbers.
     32: _byte,                     # LSB for Control 0 (Bank Select)
     33: _byte,                     # LSB for Control 1 (Modulation Wheel)
     34: _byte,                     # LSB for Control 2 (Breath Controller)
@@ -157,12 +269,12 @@ midi_cc_lut = {
     62: _byte,                     # LSB for Control 30 (Undefined)
     63: _byte,                     # LSB for Control 31 (Undefined)
 
-    # 64-69: switches. <= 63 off, >= 64 on.
+    # 64-69: switches.
     64: _switch,                   # Damper Pedal on/off (Sustain)
     65: _switch,                   # Portamento On/Off
     66: _switch,                   # Sostenuto On/Off
     67: _switch,                   # Soft Pedal On/Off
-    68: _switch,                   # Legato Footswitch (>= 64 Legato)
+    68: _switch,                   # Legato Footswitch (on = Legato)
     69: _switch,                   # Hold 2
 
     # 70-79: Sound Controllers. Defaults per MMA RP-021; 64 is "no change".
@@ -189,7 +301,7 @@ midi_cc_lut = {
     89: _unit,                     # Undefined
     90: _unit,                     # Undefined
 
-    # 91-95: effect depths. 0 means none, so these stay unipolar.
+    # 91-95: effect depths. Zero means none, so these stay unipolar.
     91: _unit,                     # Effects 1 Depth (Reverb Send Level)
     92: _unit,                     # Effects 2 Depth (formerly Tremolo Depth)
     93: _unit,                     # Effects 3 Depth (Chorus Send Level)
@@ -238,41 +350,50 @@ midi_cc_lut = {
 
 # --- Registered Parameter Numbers -------------------------------------------
 
-# Table 3a. These are where the spec gives real physical units rather than
-# a bare 0-127, so the functions return cents and semitones directly.
-# Keyed by (MSB, LSB), the two values you send on CC 101 and CC 100.
-midi_rpn_lut = {
-    # MSB = +/- semitones, LSB = +/- cents. Returned in semitones over the
-    # 0..24 range hardware conventionally offers.
-    (0x00, 0x00): lambda x: _unit(x) * 24.0,        # Pitch Bend Sensitivity
+PITCH_BEND_SENSITIVITY = (0x00, 0x00)
+CHANNEL_FINE_TUNING = (0x00, 0x01)
+CHANNEL_COARSE_TUNING = (0x00, 0x02)
+TUNING_PROGRAM_CHANGE = (0x00, 0x03)
+TUNING_BANK_SELECT = (0x00, 0x04)
+MODULATION_DEPTH_RANGE = (0x00, 0x05)
+MPE_CONFIGURATION = (0x00, 0x06)
+RPN_NULL = (0x7F, 0x7F)
+
+# Table 3a. This is where the spec states real physical units rather than a
+# bare 0-127, so these return cents and semitones directly - no second
+# mapping needed in the instrument. Keyed by the (MSB, LSB) pair you would
+# send on CC 101 and CC 100.
+rpn_scale = {
+    # MSB = +/- semitones, LSB = +/- cents. Returned in semitones, over the
+    # 0-24 range hardware conventionally offers.
+    PITCH_BEND_SENSITIVITY: lambda x: _unit(x) * 24.0,
 
     # 00H 00H = -100 cents, 40H 00H = A440, 7FH 7FH = +100 cents.
-    (0x00, 0x01): lambda x: (_unit(x) * 2.0 - 1.0) * 100.0,  # Channel Fine Tuning
+    CHANNEL_FINE_TUNING: lambda x: _bipolar(x) * 100.0,
 
     # MSB only, resolution 100 cents: 00H = -6400 cents, 40H = A440,
-    # 7FH = +6300 cents. Returned in semitones.
-    (0x00, 0x02): lambda x: _byte(x) - 64,          # Channel Coarse Tuning
+    # 7FH = +6300 cents. Returned in semitones, and genuinely quantised -
+    # coarse tuning steps by whole semitones.
+    CHANNEL_COARSE_TUNING: lambda x: _byte(x) - 64,
 
-    (0x00, 0x03): _byte,                            # Tuning Program Change
-    (0x00, 0x04): _byte,                            # Tuning Bank Select
+    TUNING_PROGRAM_CHANGE: _byte,
+    TUNING_BANK_SELECT: _byte,
 
     # Defined by the GM2 spec; manufacturer-defined elsewhere.
-    (0x00, 0x05): _unit,                            # Modulation Depth Range
-    (0x00, 0x06): _byte,                            # MPE Configuration Message
+    MODULATION_DEPTH_RANGE: _unit,
+    MPE_CONFIGURATION: _byte,
 
-    # Setting RPN to 7FH,7FH disables data entry/increment/decrement until
-    # a new RPN or NRPN is selected.
-    (0x7F, 0x7F): _none,                            # Null Function Number
+    # Setting RPN to 7FH,7FH disables data entry, increment and decrement
+    # until a new RPN or NRPN is selected.
+    RPN_NULL: _none,
 }
 
 
 # --- names -------------------------------------------------------------------
 
 # The spec's own wording, for tooling that wants to label a control. Kept
-# separate from the table above so the table stays a pure code -> function
-# map. These are frozen constants from a 2020 publication of a 1983 spec,
-# so the duplication with the comments above cannot drift.
-midi_cc_names = {
+# apart from the table above so that stays a pure code -> function map.
+cc_name = {
     0: "Bank Select", 1: "Modulation Wheel or Lever", 2: "Breath Controller",
     4: "Foot Controller", 5: "Portamento Time", 6: "Data Entry MSB",
     7: "Channel Volume", 8: "Balance", 10: "Pan", 11: "Expression Controller",
@@ -311,8 +432,19 @@ midi_cc_names = {
     126: "Mono Mode On", 127: "Poly Mode On",
 }
 
+rpn_name = {
+    PITCH_BEND_SENSITIVITY: "Pitch Bend Sensitivity",
+    CHANNEL_FINE_TUNING: "Channel Fine Tuning",
+    CHANNEL_COARSE_TUNING: "Channel Coarse Tuning",
+    TUNING_PROGRAM_CHANGE: "Tuning Program Change",
+    TUNING_BANK_SELECT: "Tuning Bank Select",
+    MODULATION_DEPTH_RANGE: "Modulation Depth Range",
+    MPE_CONFIGURATION: "MPE Configuration Message",
+    RPN_NULL: "Null Function Number for RPN/NRPN",
+}
+
 for _cc in range(32, 64):
-    midi_cc_names.setdefault(_cc, "LSB for Control %d" % (_cc - 32))
+    cc_name.setdefault(_cc, "LSB for Control %d" % (_cc - 32))
 for _cc in range(128):
-    midi_cc_names.setdefault(_cc, "Undefined")
+    cc_name.setdefault(_cc, "Undefined")
 del _cc
