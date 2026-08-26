@@ -3,7 +3,7 @@
 set -euo pipefail
 
 repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-build_dir=${1:-"$repo_dir/build-linux"}
+build_dir=${1:-"$repo_dir/.build-linux"}
 bundle="$build_dir/VST3/Release/MicroPythonVST3.vst3"
 dist_dir="$repo_dir/dist"
 archive="$dist_dir/MicroPythonVST3-0.2.0-linux-x86_64.tar.gz"

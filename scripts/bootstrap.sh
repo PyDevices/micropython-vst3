@@ -39,10 +39,10 @@ if ! "$repo_dir/reaper/install-reaper-portable.sh"; then
 fi
 
 log "configuring and building"
-cmake -S "$repo_dir" -B "$repo_dir/build-linux" -G Ninja || die "cmake configure failed"
-cmake --build "$repo_dir/build-linux" || die "cmake build failed"
+cmake -S "$repo_dir" -B "$repo_dir/.build-linux" -G Ninja || die "cmake configure failed"
+cmake --build "$repo_dir/.build-linux" || die "cmake build failed"
 
 log "running the test suite"
-ctest --test-dir "$repo_dir/build-linux" --output-on-failure || die "ctest failed"
+ctest --test-dir "$repo_dir/.build-linux" --output-on-failure || die "ctest failed"
 
 log "done - workspace ready at $repo_dir"

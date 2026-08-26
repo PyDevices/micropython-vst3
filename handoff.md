@@ -92,8 +92,8 @@ platforms.
 Linux:
 
 ```bash
-cmake --build build-linux -j 4
-ctest --test-dir build-linux --output-on-failure
+cmake --build .build-linux -j 4
+ctest --test-dir .build-linux --output-on-failure
 ```
 
 Windows, from WSL:
@@ -117,7 +117,7 @@ rebuild the plug-in so the engine is restaged:
 ```
 
 The Linux CMake cache remembers the engine path. After switching engines,
-reconfigure with `cmake -S . -B build-linux -U MPVST_MICROPYTHON_ENGINE`.
+reconfigure with `cmake -S . -B .build-linux -U MPVST_MICROPYTHON_ENGINE`.
 
 ## DAW matrix
 
