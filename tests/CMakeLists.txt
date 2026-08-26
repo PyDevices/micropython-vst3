@@ -81,16 +81,19 @@ if(Python3_FOUND)
     # Defect linting for the Python half of the repository - the tools, the
     # instrument and effect scripts, the composition modules. Configured in
     # .flake8 to pyflakes-level checks only, so it reports bugs rather than
-    # layout. Only registered when flake8 is actually installed; there is no
-    # hosted CI for this repository, ctest is the gate.
-    execute_process(COMMAND ${Python3_EXECUTABLE} -m flake8 --version
-        RESULT_VARIABLE mpvst_flake8_missing
-        OUTPUT_QUIET ERROR_QUIET)
-    if(mpvst_flake8_missing EQUAL 0)
-        add_test(NAME mpvst_lint COMMAND ${Python3_EXECUTABLE} -m flake8
+    # layout. There is no hosted CI for this repository; ctest is the gate.
+    #
+    # The repository's own .venv is searched first, because a distribution
+    # Python is usually externally managed and cannot have flake8 installed
+    # into it. Skipped rather than failed when there is none - it is a lint,
+    # not a build dependency.
+    find_program(MPVST_FLAKE8 flake8 HINTS "${CMAKE_SOURCE_DIR}/.venv/bin")
+    if(MPVST_FLAKE8)
+        add_test(NAME mpvst_lint COMMAND ${MPVST_FLAKE8}
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
     else()
-        message(STATUS "flake8 not installed; skipping the mpvst_lint test")
+        message(STATUS "flake8 not found (try .venv/bin/pip install flake8); "
+                       "skipping the mpvst_lint test")
     endif()
 endif()
 
