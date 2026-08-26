@@ -74,12 +74,43 @@ Return types
 Codes the spec marks "Undefined" are present as plain pass-throughs.
 Undefined means free for manufacturer use, not unusable.
 
-ONE JUDGEMENT CALL: Sound Controllers 70-79 are bipolar. This table gives
-them a 0-127 range and defers their defaults to MMA RP-021, where 64 means
-"no change from the sound's own value" - so they modify a preset rather
-than replace it. That is also what makes 0.5 a safe value for a parameter
-nobody set. To make them absolute instead, change _sound_controller to
-_unit and nothing else moves.
+Why Sound Controllers 71-78 are bipolar
+---------------------------------------
+The MMA table gives these a flat 0-127 range and defers their defaults to
+MMA RP-021, which is not much to build on. So this was checked against
+shipping hardware instead. Roland's INTEGRA-7 MIDI implementation (2012)
+documents all eight identically:
+
+    Cutoff (Controller number 74)
+    vv = Cutoff value (relative change): 00H - 40H - 7FH (-64 - 0 - +63)
+    * The Cutoff Offset parameter (PART VIEW:OFFSET) will change.
+
+Every one of 71-78 says "relative change", spans -64 to +63 about a centre
+of 40H, and drives a parameter the machine itself calls an Offset. They
+modify the patch's own value rather than replacing it. That is why they
+are bipolar here, and it is what makes 0.5 a safe arrival value for a
+macro nobody set: the patch is heard exactly as designed.
+
+The same document confirms the rest of this table by contrast, which is
+the more useful result:
+
+    CC 91/93 Reverb and Chorus Send Level    "00H - 7FH (0 - 127)"
+    CC 80-83 General Purpose 5-8             "00H - 7FH (0 - 127)"
+
+Those are plain absolute levels, not relative - so the effect depths at
+91-95 stay unipolar, where zero means none. CC 84 is "kk = source note
+number", confirming it as an int rather than a magnitude, and CC 64-69 are
+"0-63 = OFF, 64-127 = ON", confirming the switches.
+
+CC 70 (Sound Variation) and CC 79 (undefined) are absolute. They sit in
+the 70-79 block but no device found documents them as relative changes,
+and the spec gives 79 no meaning at all.
+
+One deviation worth recording: RPN Channel Fine Tuning is +/-100 cents
+here, per the MMA table's own "00H 00H = -100 cents ... 7FH 7FH = +100
+cents". The INTEGRA-7 accepts only 20 00H - 60 00H, i.e. +/-50 cents. That
+is a device restricting the range, not disagreeing about it, so the
+general definition is what this module implements.
 """
 
 # --- conversions -------------------------------------------------------------
@@ -123,7 +154,10 @@ def _none(x):
     return None
 
 
-# Sound Controllers 70-79. See the judgement call in the module docstring.
+# Sound Controllers 71-78, the eight the spec gives default meanings to.
+# Relative, per RP-021 and confirmed against shipping hardware - see the
+# module docstring. 70 (Sound Variation) and 79 (undefined) are not in
+# this group: no device documents them as relative changes.
 _sound_controller = _bipolar
 
 
@@ -277,8 +311,11 @@ cc_scale = {
     68: _switch,                   # Legato Footswitch (on = Legato)
     69: _switch,                   # Hold 2
 
-    # 70-79: Sound Controllers. Defaults per MMA RP-021; 64 is "no change".
-    70: _sound_controller,         # Sound Controller 1 (Sound Variation)
+    # 70-79: Sound Controllers. 71-78 are relative: 64 is "no change",
+    # confirmed against Roland's INTEGRA-7 MIDI implementation, where each
+    # drives an explicit "Offset" parameter. 70 and 79 are not relative on
+    # any device found, so they stay absolute.
+    70: _unit,                     # Sound Controller 1 (Sound Variation)
     71: _sound_controller,         # Sound Controller 2 (Timbre/Harmonic Intens.)
     72: _sound_controller,         # Sound Controller 3 (Release Time)
     73: _sound_controller,         # Sound Controller 4 (Attack Time)
@@ -287,7 +324,7 @@ cc_scale = {
     76: _sound_controller,         # Sound Controller 7 (Vibrato Rate)
     77: _sound_controller,         # Sound Controller 8 (Vibrato Depth)
     78: _sound_controller,         # Sound Controller 9 (Vibrato Delay)
-    79: _sound_controller,         # Sound Controller 10 (default undefined)
+    79: _unit,                     # Sound Controller 10 (default undefined)
 
     80: _unit,                     # General Purpose Controller 5
     81: _unit,                     # General Purpose Controller 6
