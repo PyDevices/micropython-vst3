@@ -27,7 +27,15 @@ if [[ "$platform" == windows ]]; then
     source "$repo_dir/scripts/lib/windows-paths.sh"
     mpvst_load_windows_paths || exit 1
     reaper_exe=${REAPER_EXE:-$WIN_USERPROFILE/REAPER/reaper.exe}
-    reaper_resource=${REAPER_RESOURCE:-$WIN_APPDATA/REAPER}
+    # Portable REAPER (reaper.ini beside reaper.exe) keeps its resource
+    # directory there, not in AppData. See tools/piece/launch.sh.
+    if [[ -n "${REAPER_RESOURCE:-}" ]]; then
+        reaper_resource=$REAPER_RESOURCE
+    elif [[ -f "$(dirname "$reaper_exe")/reaper.ini" ]]; then
+        reaper_resource=$(dirname "$reaper_exe")
+    else
+        reaper_resource=$WIN_APPDATA/REAPER
+    fi
     work_unix=${WORK_DIR:-$WIN_TEMP/mpvst-matrix}
     to_native() { wslpath -w "$1"; }
     sep='\'

@@ -32,7 +32,18 @@ soundtrack_dir=$(cd "$script_dir/../../soundtrack" && pwd)
 source "$script_dir/../../scripts/lib/windows-paths.sh"
 mpvst_load_windows_paths || exit 1
 reaper_exe=${REAPER_EXE:-$WIN_USERPROFILE/REAPER/reaper.exe}
-reaper_resource=${REAPER_RESOURCE:-$WIN_APPDATA/REAPER}
+# REAPER runs "portable" when a reaper.ini sits beside the executable, and
+# then takes its resource directory from there rather than from AppData.
+# Guessing wrong fails silently and expensively: the startup hook lands in a
+# directory REAPER never reads, so it launches, sits there, and the render
+# times out having produced no report at all.
+if [[ -n "${REAPER_RESOURCE:-}" ]]; then
+    reaper_resource=$REAPER_RESOURCE
+elif [[ -f "$(dirname "$reaper_exe")/reaper.ini" ]]; then
+    reaper_resource=$(dirname "$reaper_exe")
+else
+    reaper_resource=$WIN_APPDATA/REAPER
+fi
 bundle=${MPVST_VST3_DIR:-$WIN_LOCALAPPDATA/Programs/Common/VST3}/MicroPythonVST3.vst3
 heap_bytes=${MPVST_HEAP_BYTES:-33554432}
 
@@ -136,10 +147,27 @@ echo "Launching headless verification render (timeout ${timeout_seconds}s)..."
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w "$launcher")" \
     >/dev/null 2>&1 || true
 
-deadline=$(( $(date +%s) + timeout_seconds ))
+# verify.lua writes BEGIN as its first act, so the report file appearing at
+# all is proof REAPER ran the hook. If nothing shows up once REAPER has had
+# a fair chance to boot, it never ran it - nearly always the wrong resource
+# directory - and sitting out the whole deadline turns a config error into a
+# long, silent wait.
+startup_grace=${MPVST_STARTUP_GRACE:-180}
+started=$(date +%s)
+deadline=$(( started + timeout_seconds ))
 while [ "$(date +%s)" -lt "$deadline" ]; do
-    if [ -f "$work_unix/report.txt" ] && grep -q '^DONE' "$work_unix/report.txt" 2>/dev/null; then
-        break
+    if [ -f "$work_unix/report.txt" ]; then
+        grep -q '^DONE' "$work_unix/report.txt" 2>/dev/null && break
+    elif [ $(( $(date +%s) - started )) -gt "$startup_grace" ]; then
+        stop_reaper
+        rm -f "$reaper_resource/Scripts/__startup.lua"
+        echo "error: no report after ${startup_grace}s - REAPER started but never" >&2
+        echo "       ran the startup hook, so it is not reading:" >&2
+        echo "         $reaper_resource/Scripts" >&2
+        echo "       A portable REAPER (reaper.ini beside reaper.exe) uses that" >&2
+        echo "       directory instead of AppData. Set REAPER_RESOURCE to the one" >&2
+        echo "       REAPER actually uses." >&2
+        exit 1
     fi
     sleep 10
 done
