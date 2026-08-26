@@ -786,7 +786,15 @@ TRACKS = [
      "effects": [FX_ORCHESTRA]},
     {"name": "Solo Violin", "script": "cs80.py", "gain_db": -7.0,
      "pan": -0.1, "notes": violin_notes(),
-     "macros": {0: 0.5, 1: 0.5, 2: 0.26, 3: 0.03, 4: 0.12,
+     # HPF Cutoff (3) was 0.03 -> 80 Hz, which barely filters anything a
+     # violin plays (open G3 is 196 Hz). Layer II is meant to be a bright
+     # shimmer voice riding on top of Layer I (see cs80.py's own comment),
+     # but at 80 Hz it came through as a second, slightly-detuned, nearly
+     # full-spectrum saw - a doubling, not a shimmer - made worse by Layer
+     # II Mix (6) rising to 0.62-0.76 through the aria and recap. 0.45
+     # (~920 Hz) is where the isolated layer stops duplicating Layer I's
+     # low end; verified against the harness before and after.
+     "macros": {0: 0.5, 1: 0.5, 2: 0.26, 3: 0.45, 4: 0.12,
                 5: 0.06, 6: 0.42, 7: 0.44, 8: 0.08, 9: 0.3,
                 10: 0.68, 11: 0.34, 12: 0.1, 13: 0.26, 14: 0.34,
                 15: 0.52},
