@@ -137,7 +137,9 @@ step(function()
     for t = 0, TRACKS - 1 do
         local track = reaper.GetTrack(0, t)
         for fx = 0, reaper.TrackFX_GetCount(track) - 1 do
-            for p = 4, 19 do
+            -- Macros occupy ordinals 5..20: 0 Bypass, 1 Reload Script,
+            -- 2 Engine Ready, 3 Engine Error, 4 Patches, then the macros.
+            for p = 5, 20 do
                 local env = reaper.GetFXEnvelope(track, fx, p, false)
                 if env ~= nil and reaper.CountEnvelopePointsEx(env, -1) > 1 then
                     envs = envs + 1

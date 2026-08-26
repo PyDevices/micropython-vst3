@@ -43,9 +43,16 @@ EFFECT_HEADER = [0x5996706A, 0xFEED5EEE,
                  0x2, 0x1, 0x0, 0x2, 0x0,
                  None, 0x1, 0xFFFF]
 
-# First macro's index among the visible parameters:
-# 0 Bypass, 1 Reload Script, 2 Engine Ready, 3 Engine Error, 4.. macros.
-FIRST_MACRO_PARAM = 4
+# First macro's index among the visible parameters. PARMENV addresses a
+# parameter by its ordinal position in the plug-in's list, not by VST3
+# ParamID, so this has to match Controller::initialize's registration
+# order exactly:
+#   0 Bypass, 1 Reload Script, 2 Engine Ready, 3 Engine Error,
+#   4 Patches, 5..20 the sixteen macros.
+# Verified against a running REAPER with TrackFX_GetParamName. This was 4
+# before the Patch program list was added ahead of the macros, which
+# silently shifted every macro envelope down one parameter.
+FIRST_MACRO_PARAM = 5
 
 
 def guid():
