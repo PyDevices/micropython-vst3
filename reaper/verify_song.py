@@ -76,26 +76,37 @@ def main():
     check("bounce/peak", 0.05 < peak < 1.0, "peak=%.3f" % peak)
 
     print("\n  %-14s %10s %10s %8s" % ("section", "bounce", "preview", "diff"))
+    bounced, previewed = {}, {}
     for name, b0, b1 in C.SECTIONS:
         s0 = int(C.beats_to_seconds(b0) * C.SAMPLE_RATE)
         s1 = int(C.beats_to_seconds(b1) * C.SAMPLE_RATE)
-        db_b = rms_db(bounce[s0:min(s1, len(bounce))])
-        db_p = rms_db(preview[s0:min(s1, len(preview))])
-        diff = db_b - db_p
+        bounced[name] = rms_db(bounce[s0:min(s1, len(bounce))])
+        previewed[name] = rms_db(preview[s0:min(s1, len(preview))])
+        diff = bounced[name] - previewed[name]
         check(name.replace(" ", "_"), abs(diff) < TOLERANCE_DB,
-              "%7.1f dB %8.1f dB %+6.1f" % (db_b, db_p, diff))
+              "%7.1f dB %8.1f dB %+6.1f" % (bounced[name], previewed[name],
+                                            diff))
 
-    # loudest section must be the climax
-    levels = {}
-    for name, b0, b1 in C.SECTIONS:
-        s0 = int(C.beats_to_seconds(b0) * C.SAMPLE_RATE)
-        s1 = int(C.beats_to_seconds(b1) * C.SAMPLE_RATE)
-        levels[name] = rms_db(bounce[s0:min(s1, len(bounce))])
-    loudest = max(levels, key=levels.get)
+    # The climax has to really be the loudest thing in the piece.
+    #
+    # Asked twice, because the two renders can answer to different
+    # precision. The preview is a clean path and settles the ranking
+    # outright. The bounce is only held to the same tolerance its levels
+    # are: a piece may write its last two sections 0.3 dB apart - Velvet
+    # Circuit does - while bounce and preview disagree about any one
+    # section by up to 3 dB, so demanding the bounce reproduce that
+    # ordering asks it to resolve something finer than it can measure.
+    # What is worth catching there is an inversion: a climax that lost a
+    # track and came out quiet.
     expected = getattr(C, "CLIMAX_SECTION", None)
     if expected:
-        check("bounce/climax_loudest", loudest == expected,
+        loudest = max(previewed, key=previewed.get)
+        check("preview/climax_loudest", loudest == expected,
               "loudest=%s" % loudest)
+        behind = max(bounced.values()) - bounced[expected]
+        check("bounce/climax_loudest", behind < TOLERANCE_DB,
+              "loudest=%s, climax %.1f dB behind"
+              % (max(bounced, key=bounced.get), behind))
 
     # No dead air while the piece is playing - a track that failed to load
     # or a sidecar that died mid-render shows up as a silent stretch.

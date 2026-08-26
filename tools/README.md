@@ -22,6 +22,12 @@ one imports or knows about REAPER:
   TestPyPI, plus `numpy` - else a sibling `audioif` checkout's, e.g.
   `../../audioif/.venv/bin/python`); reports peaks, RMS per section, and
   simultaneous-track counts.
+  - The render loop, tempo math, mixing and report live in audioif's
+  `audiorender`. What is left here is the part that is about this plug-in:
+  instruments are exec'd against the vstaudio shim the way the sidecar
+  loads them, rather than imported as `audioinstruments` modules, so the
+  preview stays a check on the path the bounce takes and the macro values
+  it sends stay bit-identical to the ones a script receives in a host.
 
 Turning a piece into a real REAPER project, and driving REAPER itself, is
 a separate, deletable concern - see [`../reaper/README.md`](../reaper/README.md)
