@@ -2,8 +2,8 @@
 
 Everything needed to drive a real copy of REAPER, and nothing else. This
 directory and the root [`../reaper.sh`](../reaper.sh) entry point are a
-single deletable unit: the plug-in, `lib/instruments/`, `lib/effects/`,
-and the composition/preview tooling in
+single deletable unit: the plug-in, the instrument scripts, and the
+composition/preview tooling in
 [`../tools/`](../tools/README.md) all work with these two
 paths removed. Nothing outside `reaper/` imports or sources anything
 inside it - the dependency only runs the other way, from here out to the

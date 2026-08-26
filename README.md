@@ -112,19 +112,48 @@ header comment labels them for the generic editor:
 
 Changing labels does not change parameter IDs or detach automation.
 
-Every instrument in `lib/instruments/` also declares `PATCHES`, whose
-first entry is the sound its module-level defaults describe. That is what
-an unset macro resolves to - not 0.5, which is the middle of a range
-rather than anything intended. `tools/derive_patches.py` generates the
-block by measuring the script rather than guessing.
+Every instrument also declares `PATCHES`, whose first entry is the sound
+its own defaults describe. That is what an unset macro resolves to - not
+the middle of its range, which is not "off" and not anything intended.
+Values are MIDI integers 0-127. `tools/derive_patches.py` generates the
+block by measuring the instrument rather than guessing.
 
-`lib/effects/` is a library of forty-plus effect classes (dynamics, EQ,
-reverb, delay, modulation, drive, pitch and stereo) importable from any
-effect script. It compensates for two CircuitPython biquad quirks that
-audioif reproduces deliberately: filters in a stereo `audiofilters.Filter`
-centre at twice the requested frequency, so the library halves what it
-asks for; and peaking EQ's `b2` sign is wrong upstream, so bells are built
-from notch and band-pass sections instead.
+### Where the instruments live
+
+The fifty-three instruments and the effects library are audioif's
+`audioinstruments` and `audioeffects` packages - host-neutral Python that
+any application can import, not just this plug-in. They are staged beside
+the engine from a sibling audioif checkout (`MPVST_AUDIOIF_LIB` if it is
+somewhere else).
+
+`lib/instruments/*.py` are still one file per instrument, because that is
+the unit the plug-in deals in: the browser lists script files, the
+controller parses macro labels out of the embedded source, and a
+generated REAPER project embeds the bytes of the chosen script. Each is a
+two-line loader written by `tools/generate_shims.py` and committed; a
+ctest regenerates them and diffs, so one cannot go stale. Edit the
+instrument in audioif and regenerate.
+
+`lib/mpvst_adapter.py` is the seam between the two. `vstaudio` speaks the
+normalised floats the VST3 parameter API uses; the instrument API speaks
+MIDI 0-127, because that is what a keyboard, a sequencer and a saved
+patch speak. The conversion happens there and nowhere else, as a multiply
+rather than a quantization, so a host automating a macro with more than 7
+bits keeps its resolution.
+
+The soundtrack's piece-private instruments stay whole scripts in their
+own piece directory - those files *are* the patches - and end in a
+`__main__` guard handing `create` to the same adapter.
+
+`audioeffects` is forty-plus effect classes (dynamics, EQ, reverb, delay,
+modulation, drive, pitch and stereo) importable from any effect script.
+It compensates for two CircuitPython biquad quirks that audioif
+reproduces deliberately: filters in a stereo `audiofilters.Filter` centre
+at twice the requested frequency, so the library halves what it asks for;
+and peaking EQ's `b2` sign is wrong upstream, so bells are built from
+notch and band-pass sections instead. Call `audioeffects.configure(rate)`
+before building anything - it replaces the sample rate the library used
+to read from the host at import.
 
 ## Parameters and state
 

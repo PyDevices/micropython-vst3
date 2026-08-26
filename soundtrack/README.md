@@ -6,8 +6,9 @@ running synthio and the audioif effects inside its own sidecar process.
 
 Each piece is a subdirectory holding its own `composition.py`. Historical
 pieces also own private `instruments/`; newer compositions can opt into the
-shared `../lib/instruments/` collection and put shared `../lib/effects/`
-processors after any instrument. Nothing else here is infrastructure, and the
+shared `../lib/instruments/` collection - loaders for audioif's
+`audioinstruments` package - and put `audioeffects` processors after any
+instrument. Nothing else here is infrastructure, and the
 directory might be renamed, restructured, or replaced independently of the
 tooling that generates, renders, and verifies a piece. Resolving and
 previewing a piece offline lives in `../tools/`, documented in
@@ -23,7 +24,7 @@ were written against: Automata's `strings.py`, `choir.py`, and `glass.py`
 began as copies from Perihelion, while its `riser.py` and `brass_stabs.py` are
 deliberate mutations. Velvet Circuit is the first shared-library piece. Its
 composition declares `INSTRUMENTS_DIR = "../../lib/instruments"`, and each of
-its effect racks instantiates only public classes from `lib/effects`. The
+its effect racks instantiates only public classes from `audioeffects`. The
 generated project still embeds every chosen script, so the playable `.RPP`
 remains self-contained.
 
