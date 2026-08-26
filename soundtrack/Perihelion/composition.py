@@ -473,6 +473,33 @@ def riser_notes():
     ])
 
 
+# --- Effect rack --------------------------------------------------------------
+
+# fx_space.py sits beside this file rather than being inlined as a string
+# the way Velvet Circuit's racks are: it doubles as the repository's
+# worked example of a standalone effect script - a tone filter into a
+# tape delay into a hall, built from public lib/effects classes - and it
+# stays readable, runnable and diffable as its own file. Reading it here
+# is what keeps it honest: it has to actually load in the engine, because
+# the piece will not render otherwise.
+def _read_effect(name):
+    import os
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
+    with open(path) as handle:
+        return handle.read()
+
+
+# Space / Echo / Tone, held well back. The shimmer is already the quietest
+# thing in the mix; this puts it further behind the strings rather than
+# turning it into an effect showcase.
+FX_SPACE = {
+    "name": "Air Space",
+    "source": _read_effect("fx_space.py"),
+    "macros": {0: 0.3, 1: 0.15, 2: 0.7},
+    "macro_env": {},
+}
+
+
 # --- Track table -------------------------------------------------------------
 #
 # macros: initial value per macro index (unlisted macros stay at 0.5)
@@ -620,6 +647,7 @@ TRACKS = [
         "macros": {0: 0.55, 1: 0.7},
         "vol": [(bar(1), 0.9), (bar(43), 1.0), (bar(71), 0.8)],
         "macro_env": {},
+        "effects": [FX_SPACE],
     },
     {
         "name": "Aurora Bells", "script": "bells.py", "gain_db": -8.5,

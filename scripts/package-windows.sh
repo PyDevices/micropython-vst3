@@ -33,7 +33,6 @@ mkdir -p "$stage_dir/$name"
 cp -a "$bundle" "$stage_dir/$name/"
 cp "$repo_dir/README.md" "$stage_dir/$name/"
 cp "$repo_dir/docs/windows-workflow.md" "$stage_dir/$name/"
-cp -a "$repo_dir/examples" "$stage_dir/$name/"
 
 mkdir -p "$dist_dir"
 rm -f -- "$archive"

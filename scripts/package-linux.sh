@@ -32,7 +32,6 @@ mkdir -p "$stage_dir/$name"
 cp -a "$bundle" "$stage_dir/$name/"
 cp "$repo_dir/README.md" "$stage_dir/$name/"
 cp "$repo_dir/docs/linux-workflow.md" "$stage_dir/$name/"
-cp -a "$repo_dir/examples" "$stage_dir/$name/"
 
 # The engine and the shared object must stay executable through the archive.
 chmod 755 "$stage_dir/$name/MicroPythonVST3.vst3/Contents/x86_64-linux/micropython-vst-engine"

@@ -45,7 +45,7 @@ platforms.
   and the **MicroPython Effect**, which adds a stereo audio-input bus.
   An effect script reads the host audio through `vstaudio.input()` - an
   audiosample source any audioif chain can consume - and its bypass is a
-  latency-matched pass-through. `examples/fx_space.py` shows the shape.
+  latency-matched pass-through. `soundtrack/Perihelion/fx_space.py` shows the shape, and the piece renders it.
 - `lib/effects` is a shared library of forty-plus effect classes
   (dynamics, EQ, reverb, delay, modulation, drive, pitch/stereo) staged
   into the bundle and importable from any script. It rides on two engine
