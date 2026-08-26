@@ -44,22 +44,16 @@ if(EXISTS "${MPVST_MICROPYTHON_ENGINE}")
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${MPVST_MICROPYTHON_ENGINE}"
             $<TARGET_FILE_DIR:${MPVST_PLUGIN_TARGET}>
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/engine/micropython_vst_bootstrap.py"
-            $<TARGET_FILE_DIR:${MPVST_PLUGIN_TARGET}>
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/engine/default_instrument.py"
-            $<TARGET_FILE_DIR:${MPVST_PLUGIN_TARGET}>
         COMMAND ${CMAKE_COMMAND}
             -DMPVST_LIB_SRC=${CMAKE_SOURCE_DIR}/lib
-            -DMPVST_LIB_DST=$<TARGET_FILE_DIR:${MPVST_PLUGIN_TARGET}>/lib
+            -DMPVST_LIB_DST=$<TARGET_FILE_DIR:${MPVST_PLUGIN_TARGET}>
             -P "${CMAKE_CURRENT_SOURCE_DIR}/stage_lib.cmake"
         DEPENDS
             ${MPVST_PLUGIN_TARGET}
             "${MPVST_MICROPYTHON_ENGINE}"
-            "${CMAKE_SOURCE_DIR}/engine/micropython_vst_bootstrap.py"
-            "${CMAKE_SOURCE_DIR}/engine/default_instrument.py"
-        COMMENT "Bundling the headless MicroPython Phase 3 engine")
+            "${CMAKE_SOURCE_DIR}/lib/micropython_vst_bootstrap.py"
+            "${CMAKE_SOURCE_DIR}/lib/default_instrument.py"
+        COMMENT "Bundling the headless MicroPython engine and script library")
 endif()
 
 target_compile_features(${MPVST_PLUGIN_TARGET} PRIVATE cxx_std_17)

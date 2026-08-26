@@ -7,8 +7,8 @@ def main():
     vstaudio.configure(sys.argv[1], int(sys.argv[2]))
     script_path = sys.argv[3]
 
-    # The bundle ships a shared script library next to this bootstrap
-    # (lib/effects, ...); make it importable for every instance script.
+    # The shared script library (effects/, instruments/, ...) ships beside
+    # this bootstrap; make it importable for every instance script.
     #
     # Insert it FIRST, and drop the current-directory entries MicroPython
     # puts on sys.path by default. The sidecar inherits its working
@@ -21,7 +21,7 @@ def main():
     bootstrap = sys.argv[0].replace("\\", "/")
     slash = bootstrap.rfind("/")
     if slash >= 0:
-        sys.path.insert(0, bootstrap[:slash] + "/lib")
+        sys.path.insert(0, bootstrap[:slash])
 
     def load_script():
         vstaudio.clear_output()

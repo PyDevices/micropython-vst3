@@ -1,31 +1,41 @@
-# Stage lib/ into the plug-in bundle, without Python's bytecode cache.
+# Stage the contents of lib/ beside the engine binary, without Python's
+# bytecode cache.
 #
 # Run with -P at build time, so a newly added script is picked up without
 # reconfiguring:
 #
-#   cmake -DMPVST_LIB_SRC=<repo>/lib -DMPVST_LIB_DST=<bundle>/lib
+#   cmake -DMPVST_LIB_SRC=<repo>/lib -DMPVST_LIB_DST=<bundle dir>
 #         -P plugin/stage_lib.cmake
+#
+# lib/'s *contents* land at the destination, not a lib/ subdirectory: the
+# bootstrap puts its own directory on sys.path, so effects/, instruments/
+# and the bootstrap itself all sit together next to the engine.
 #
 # cmake -E copy_directory has no exclude filter, so it dragged every
 # __pycache__/*.pyc a local test run happened to leave behind into the
 # shipped bundle - including stale files compiled by a different Python
 # version than the engine runs. They are never read (the engine imports
 # from source) and are pure noise in a release archive.
-#
-# The destination is cleared first rather than filtered afterwards. That
-# keeps it an exact mirror of the source - a script deleted or renamed in
-# lib/ does not linger in the bundle - and it avoids needing to hunt for
-# stale caches at all. Do not try to prune them with
-# file(GLOB_RECURSE ... LIST_DIRECTORIES true): that returns every
-# directory it walks through regardless of the pattern, so a glob meant to
-# match only __pycache__ happily matches lib/effects and lib/instruments
-# as well.
 
 if(NOT DEFINED MPVST_LIB_SRC OR NOT DEFINED MPVST_LIB_DST)
     message(FATAL_ERROR "MPVST_LIB_SRC and MPVST_LIB_DST are required")
 endif()
 
-file(REMOVE_RECURSE "${MPVST_LIB_DST}")
+# Clear only the entries lib/ owns. The destination is the bundle
+# directory itself, which also holds the plug-in binary and the engine, so
+# wiping all of it would delete the build. Removing each top-level entry
+# means a renamed or deleted script inside effects/ or instruments/ cannot
+# linger; a top-level entry deleted from lib/ outright is the one case
+# that would need a clean build.
+#
+# Do not reach for file(GLOB_RECURSE ... LIST_DIRECTORIES true) to hunt
+# stale caches instead: it returns every directory it walks regardless of
+# the pattern, so a glob written to match only __pycache__ also matches
+# effects/ and instruments/.
+file(GLOB top_level RELATIVE "${MPVST_LIB_SRC}" "${MPVST_LIB_SRC}/*")
+foreach(entry IN LISTS top_level)
+    file(REMOVE_RECURSE "${MPVST_LIB_DST}/${entry}")
+endforeach()
 
 file(GLOB_RECURSE entries RELATIVE "${MPVST_LIB_SRC}" "${MPVST_LIB_SRC}/*")
 foreach(entry IN LISTS entries)
