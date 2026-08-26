@@ -39,7 +39,25 @@ else()
 endif()
 set(MPVST_MICROPYTHON_ENGINE "${MPVST_ENGINE_DEFAULT}"
     CACHE FILEPATH "Optional prebuilt MicroPython VST engine for this platform")
+# The instruments and the effects library live in audioif, as ordinary
+# pure-Python packages. They are staged beside this repository's own lib/
+# so `import audioinstruments` resolves in the sidecar, which puts the
+# bootstrap's directory on sys.path and nothing else. Same layout rule as
+# the engine build, which also expects audioif as a workspace sibling.
+set(MPVST_AUDIOIF_LIB "${CMAKE_SOURCE_DIR}/../audioif/lib"
+    CACHE PATH "audioif's pure-Python packages (audioinstruments, audioeffects)")
+if(NOT IS_DIRECTORY "${MPVST_AUDIOIF_LIB}")
+    message(FATAL_ERROR
+        "audioif's lib/ is not at ${MPVST_AUDIOIF_LIB}.\n"
+        "Every instrument script loads audioinstruments from there. Run "
+        "scripts/fetch-sibling-repos.sh, or point MPVST_AUDIOIF_LIB at a "
+        "checkout.")
+endif()
+
 if(EXISTS "${MPVST_MICROPYTHON_ENGINE}")
+    # stage_lib.cmake clears only the top-level entries its own source
+    # owns, so these two invocations compose rather than erasing each
+    # other's output.
     add_custom_target(mpvst-stage-micropython-engine ALL
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${MPVST_MICROPYTHON_ENGINE}"
@@ -48,11 +66,16 @@ if(EXISTS "${MPVST_MICROPYTHON_ENGINE}")
             -DMPVST_LIB_SRC=${CMAKE_SOURCE_DIR}/lib
             -DMPVST_LIB_DST=$<TARGET_FILE_DIR:${MPVST_PLUGIN_TARGET}>
             -P "${CMAKE_CURRENT_SOURCE_DIR}/stage_lib.cmake"
+        COMMAND ${CMAKE_COMMAND}
+            -DMPVST_LIB_SRC=${MPVST_AUDIOIF_LIB}
+            -DMPVST_LIB_DST=$<TARGET_FILE_DIR:${MPVST_PLUGIN_TARGET}>
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/stage_lib.cmake"
         DEPENDS
             ${MPVST_PLUGIN_TARGET}
             "${MPVST_MICROPYTHON_ENGINE}"
             "${CMAKE_SOURCE_DIR}/lib/micropython_vst_bootstrap.py"
             "${CMAKE_SOURCE_DIR}/lib/default_instrument.py"
+            "${CMAKE_SOURCE_DIR}/lib/mpvst_adapter.py"
         COMMENT "Bundling the headless MicroPython engine and script library")
 endif()
 

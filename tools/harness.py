@@ -28,6 +28,10 @@ AUDIOIF_DIR = REPO_DIR.parent / "audioif"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(AUDIOIF_DIR))
+# audioinstruments and audioeffects live under audioif's lib/, and the
+# plug-in stages them beside its own lib/ contents. Mirror that here so a
+# script imports the same packages offline as it does in the sidecar.
+sys.path.insert(0, str(AUDIOIF_DIR / "lib"))
 sys.path.insert(0, str(REPO_DIR / "lib"))
 
 import audiocore  # noqa: E402
