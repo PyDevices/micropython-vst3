@@ -45,18 +45,38 @@ def karplus_strong_table(hz, damping, pluck_pos, seed=1234):
     for i in range(delay_len):
         buf[i] -= 0.5 * buf[i - p]
     fb = 0.90 + damping * 0.09 # feedback loss per lap; closer to 1 rings longer
-    out = array.array("h", bytearray(KS_TABLE_LEN * 2))
+    # The pluck-position comb above subtracts each sample from one already
+    # updated earlier in the same pass (i - p < i whenever i >= p), so it
+    # compounds rather than staying a clean +/-1 FIR notch - real output
+    # can run well past unit amplitude (peaks of 1.3-1.4x measured). A
+    # fixed *32000 scale with a hard clamp baked genuine digital clipping
+    # into the wavetable at every pitch, damping and pluck-position
+    # combination, which is why no macro setting ever sounded clean: none
+    # of them touch this. Render to floats first and normalize to the
+    # loop's own peak, the same way every other instrument's make_table
+    # does, instead of assuming the algorithm stays within +/-1.
+    vals = [0.0] * KS_TABLE_LEN
     idx = 0
     prev = buf[0]
+    peak = 0.0
     for i in range(KS_TABLE_LEN):
         cur = buf[idx]
         avg = (cur + prev) * 0.5 * fb
         buf[idx] = avg
-        out[i] = int(max(-32000.0, min(32000.0, avg * 32000.0)))
+        vals[i] = avg
+        a = avg if avg >= 0.0 else -avg
+        if a > peak:
+            peak = a
         prev = cur
         idx += 1
         if idx >= delay_len:
             idx = 0
+    if peak <= 0.0:
+        peak = 1.0
+    scale = 32000.0 / peak
+    out = array.array("h", bytearray(KS_TABLE_LEN * 2))
+    for i in range(KS_TABLE_LEN):
+        out[i] = int(vals[i] * scale)
     return out
 
 synth = synthio.Synthesizer(sample_rate=SR, channel_count=2)
