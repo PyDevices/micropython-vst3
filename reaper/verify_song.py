@@ -51,6 +51,13 @@ def rms_db(seg):
     return 20 * np.log10(max(float(np.sqrt((seg ** 2).mean())), 1e-9))
 
 
+def last_note_off(composition):
+    """When the last note of the piece is released, in seconds."""
+    return max(composition.beats_to_seconds(start + duration)
+               for track in composition.TRACKS
+               for start, duration, _pitch, _velocity in track["notes"])
+
+
 def main():
     bounce_path, preview_path = ARGV[0], ARGV[1]
     rate_b, bounce = load(bounce_path)
@@ -90,13 +97,24 @@ def main():
         check("bounce/climax_loudest", loudest == expected,
               "loudest=%s" % loudest)
 
-    # no dead air inside the song
-    mono = bounce[:int(C.SONG_SECONDS * C.SAMPLE_RATE)].mean(axis=1)
+    # No dead air while the piece is playing - a track that failed to load
+    # or a sidecar that died mid-render shows up as a silent stretch.
+    #
+    # Measured up to the last note-off, not to the end of the song: after
+    # that there is nothing but the release tail, and a tail is allowed to
+    # reach silence. It does so sooner in the bounce than in the preview
+    # because every audioif node carries int16 samples, so a decay stops at
+    # the last bit rather than asymptotically - Automata ends 2.5 s of tail
+    # after its last note-off and truncates there. Judging a decay against a
+    # fixed floor tests the arithmetic of silence, not the render.
+    playing = min(C.SONG_SECONDS, last_note_off(C))
+    mono = bounce[:int(playing * C.SAMPLE_RATE)].mean(axis=1)
     win = C.SAMPLE_RATE // 2
     n = len(mono) // win
     blocks = mono[:n * win].reshape(n, win)
     quiet = int((np.sqrt((blocks ** 2).mean(axis=1)) < 1e-4).sum())
-    check("bounce/no_dead_air", quiet == 0, "%d silent half-seconds" % quiet)
+    check("bounce/no_dead_air", quiet == 0,
+          "%d silent half-seconds in %.1f s of playing" % (quiet, playing))
 
     print()
     if failures:
