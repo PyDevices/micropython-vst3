@@ -151,8 +151,17 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         if last_pitch is not None and glide > 0.001:
             last_hz = synthio.midi_to_hz(last_pitch)
             ratio = last_hz / hz
-            # Gliding from last_hz to hz
-            glide_table = array.array("h", (int(32767 * (ratio - 1.0)), 0))
+            # Gliding from last_hz to hz.  The bend table is int16, and one
+            # full-scale step is one octave, so an interval wider than an
+            # octave has to clamp - the real Model D's glide can't outrun
+            # its own portamento circuit either.  Without the clamp a
+            # downward leap of more than an octave overflows array("h").
+            depth = int(32767 * (ratio - 1.0))
+            if depth > 32767:
+                depth = 32767
+            elif depth < -32767:
+                depth = -32767
+            glide_table = array.array("h", (depth, 0))
             bend = synthio.LFO(waveform=glide_table, once=True, rate=1.0/glide, interpolate=True)
             
         last_pitch = data0

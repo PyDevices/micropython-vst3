@@ -69,6 +69,19 @@ piano, choir, and structural timpani/cymbal. Eleven restrained hall/chamber
 inserts place the shared instruments in depth without turning the piece into
 an effects showcase.
 
+**Neon Meridian** - 2:56 of 80s synthwave in A minor, three sections at
+100/106 bpm. A Juno-106 pad opens alone and the harmonic rhythm accelerates
+from four bars per chord to one, pulling into a Minimoog eighth-note ostinato
+under the full LinnDrum. A Prophet-5 states the theme twice, a four-bar
+breakdown strips everything back to a rimshot pulse and the DX7 signal motif,
+and the climax lifts through the relative major before a ritard onto a held
+Am(add9). Every chord is a triad plus an added ninth; the C-major excursion at
+bar 61 is the only modulation. Nine shared instruments - LinnDrum, Minimoog,
+Taurus, Juno-106, SH-101, Solina, OB-Xa, Prophet-5, DX7 - and **no effect
+inserts at all**: the Juno's bucket-brigade chorus, the Solina's ensemble and
+the Minimoog's overdrive are part of the instruments, exactly as they were
+part of the hardware.
+
 ## Listening
 
 ```bash
@@ -79,6 +92,8 @@ an effects showcase.
 ../tools/piece/launch.sh --render --piece automata   # headless verified bounce
 ../tools/piece/launch.sh --render --piece velvetcircuit # render/verify it
 ../tools/piece/launch.sh --render --piece aureliaoverture # render/verify it
+../tools/piece/launch.sh --piece neonmeridian        # play Neon Meridian
+../tools/piece/launch.sh --render --piece neonmeridian # render/verify it
 ```
 
 Play mode regenerates the project under `C:\Users\bradb\Music\<Title>\`,
