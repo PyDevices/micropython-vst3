@@ -50,9 +50,10 @@ if(EXISTS "${MPVST_MICROPYTHON_ENGINE}")
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_SOURCE_DIR}/engine/default_instrument.py"
             $<TARGET_FILE_DIR:${MPVST_PLUGIN_TARGET}>
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${CMAKE_SOURCE_DIR}/lib"
-            $<TARGET_FILE_DIR:${MPVST_PLUGIN_TARGET}>/lib
+        COMMAND ${CMAKE_COMMAND}
+            -DMPVST_LIB_SRC=${CMAKE_SOURCE_DIR}/lib
+            -DMPVST_LIB_DST=$<TARGET_FILE_DIR:${MPVST_PLUGIN_TARGET}>/lib
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/stage_lib.cmake"
         DEPENDS
             ${MPVST_PLUGIN_TARGET}
             "${MPVST_MICROPYTHON_ENGINE}"
