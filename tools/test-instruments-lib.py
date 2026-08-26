@@ -49,7 +49,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import harness  # noqa: E402  (also puts audioif and audioif/lib on the path)
 import vstaudio  # noqa: E402
-from piece import MODULE_PREFIX, module_of  # noqa: E402
+from piece import module_of  # noqa: E402
 
 MACRO_SETTINGS = (0.0, 0.5, 1.0)
 MELODIC_CHORD = (48, 52, 55, 60)  # a triad plus root

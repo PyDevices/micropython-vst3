@@ -185,7 +185,6 @@ def piece_arg(argv):
 if __name__ == "__main__":
     # `piece.py --list` prints one piece name per line, for shell callers
     # that need to iterate every piece (see render-all.sh).
-    import sys
     if sys.argv[1:2] == ["--list"]:
         for _name in available_pieces():
             print(_name)

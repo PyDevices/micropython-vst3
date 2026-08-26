@@ -1,0 +1,21 @@
+[flake8]
+# Defect checks only, not formatting opinions. Same selection audioif
+# uses, and for the same reason: the instrument and effect scripts are
+# compact on purpose, and a generated shim puts its macro-label comment
+# above everything else because that is where the plug-in reads it.
+#
+# F   pyflakes: undefined names, unused imports, shadowed definitions.
+# E9  syntax and IO errors.
+# W6  deprecated or removed language features.
+select = F,E9,W6
+
+# sdk/ is Steinberg's, .deps/ and .build-*/ are build output - which
+# includes a staged copy of the whole script library.
+extend-exclude =
+    .venv,
+    .deps,
+    .build-linux,
+    .build-windows,
+    sdk,
+    build,
+    dist

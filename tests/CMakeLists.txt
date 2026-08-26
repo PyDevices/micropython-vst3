@@ -77,6 +77,21 @@ if(Python3_FOUND)
     # the instrument about its macro labels, so regenerate and diff.
     add_test(NAME mpvst_instrument_shims COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_SOURCE_DIR}/tools/generate_shims.py --check)
+
+    # Defect linting for the Python half of the repository - the tools, the
+    # instrument and effect scripts, the composition modules. Configured in
+    # .flake8 to pyflakes-level checks only, so it reports bugs rather than
+    # layout. Only registered when flake8 is actually installed; there is no
+    # hosted CI for this repository, ctest is the gate.
+    execute_process(COMMAND ${Python3_EXECUTABLE} -m flake8 --version
+        RESULT_VARIABLE mpvst_flake8_missing
+        OUTPUT_QUIET ERROR_QUIET)
+    if(mpvst_flake8_missing EQUAL 0)
+        add_test(NAME mpvst_lint COMMAND ${Python3_EXECUTABLE} -m flake8
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+    else()
+        message(STATUS "flake8 not installed; skipping the mpvst_lint test")
+    endif()
 endif()
 
 # Fuzz targets. The portable driver runs on every toolchain as an ordinary
