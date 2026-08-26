@@ -741,16 +741,16 @@ TRACKS = [
      "effects": [FX_BASS]},
     {"name": "Pizzicato Strings", "script": "karplus.py", "gain_db": 1.0,
      "pan": -0.12, "notes": pizzicato_notes(),
+     # macro_env temporarily removed (was on Pluck Position/1, String
+     # Damping/2, Pick Hardness/4): the harshness survived every attempt
+     # to turn a knob down in REAPER because those three were automated,
+     # so playback snapped them back to the envelope's value every time.
+     # Static macro values only, so every knob stays where it's put.
      "macros": {0: 0.5, 1: 0.46, 2: 0.58, 3: 0.48, 4: 0.46,
                 5: 0.26},
      "vol": [(M2, 0.78), (M3, 0.56), (M4, 1.6), (M5, 0.96),
              (M6, 0.48)],
-     "macro_env": {1: [(M2, 0.5), (M3, 0.72), (M4, 0.42),
-                       (M5, 0.48), (M6, 0.7)],
-                   2: [(M2, 0.52), (M3, 0.72), (M4, 0.58),
-                       (M5, 0.62)],
-                   4: [(M2, 0.52), (M3, 0.32), (M4, 0.48),
-                       (M5, 0.56)]},
+     "macro_env": {},
      "effects": [FX_PIZZ]},
     {"name": "String Orchestra", "script": "solina.py", "gain_db": 2.0,
      "pan": -0.08, "notes": strings_notes(),
