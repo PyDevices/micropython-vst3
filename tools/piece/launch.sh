@@ -25,7 +25,16 @@ while [[ $# -gt 0 ]]; do
 done
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-soundtrack_dir=$(cd "$script_dir/../../soundtrack" && pwd)
+repo_dir=$(cd "$script_dir/../.." && pwd)
+soundtrack_dir=$(cd "$repo_dir/soundtrack" && pwd)
+# verify_song.py needs numpy plus the audioif wheel - this repo's own
+# .venv (pydevices-audioif from TestPyPI) if set up, else the sibling
+# audioif checkout's.
+if [[ -x "$repo_dir/.venv/bin/python" ]]; then
+    venv_python="$repo_dir/.venv/bin/python"
+else
+    venv_python="$repo_dir/../audioif/.venv/bin/python"
+fi
 # Windows folder locations are queried, never assembled from a username:
 # a profile need not live under C:\Users, and Roaming AppData is often
 # redirected. REAPER_EXE / REAPER_RESOURCE / MPVST_VST3_DIR override.
@@ -191,7 +200,7 @@ if [ -f "$bounce" ]; then
     echo "wrote $soundtrack_dir/build/$title.RPP"
     echo
     echo "=== bounce vs preview ==="
-    "$script_dir/../../../audioif/.venv/bin/python" "$script_dir/verify_song.py" \
+    "$venv_python" "$script_dir/verify_song.py" \
         --piece "$piece" \
         "$soundtrack_dir/build/$title.wav" \
         "$soundtrack_dir/build/${piece}_preview.wav"

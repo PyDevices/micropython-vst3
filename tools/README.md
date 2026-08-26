@@ -19,9 +19,11 @@ that generates, renders, and verifies a piece lives here instead:
   complete REAPER project with every track's instrument script embedded
   directly in synthesized VST3 state, so it opens with no build pass.
 - **`piece/render_preview.py [--piece NAME] [out.wav] [--stems DIR]`** -
-  offline render through `preview/` (needs the `audioif` wheel's venv,
-  e.g. `../../audioif/.venv/bin/python`); reports peaks, RMS per section,
-  and simultaneous-track counts.
+  offline render through `preview/` (needs the `audioif` wheel's venv:
+  this repo's own `.venv` if set up - `pip install pydevices-audioif` from
+  TestPyPI, plus `numpy` - else a sibling `audioif` checkout's, e.g.
+  `../../audioif/.venv/bin/python`); reports peaks, RMS per section, and
+  simultaneous-track counts.
 - **`piece/verify_song.py --piece NAME <bounce.wav> <preview.wav>`** -
   compares a REAPER bounce against the offline preview section by section.
 - **`piece/render-all.sh [--piece NAME]`** - the whole pipeline for every

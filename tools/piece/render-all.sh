@@ -15,8 +15,13 @@ script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo_dir=$(cd "$script_dir/../.." && pwd)
 soundtrack_dir="$repo_dir/soundtrack"
 # render_preview.py, verify_song.py and make_playable.py need numpy plus
-# the audioif wheel.
-venv_python="$repo_dir/../audioif/.venv/bin/python"
+# the audioif wheel - this repo's own .venv (pydevices-audioif from
+# TestPyPI) if it's been set up, else the sibling audioif checkout's.
+if [[ -x "$repo_dir/.venv/bin/python" ]]; then
+    venv_python="$repo_dir/.venv/bin/python"
+else
+    venv_python="$repo_dir/../audioif/.venv/bin/python"
+fi
 
 pieces=()
 while [[ $# -gt 0 ]]; do
