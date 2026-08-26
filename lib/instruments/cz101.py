@@ -112,7 +112,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, synthio.Math(synthio.MathOperation.SUM, 200.0, f_sweep, 0.0), Q=res)
         
-        vib_lfo = synthio.LFO(waveform=SINE, rate=vib_rate, scale=vib_depth * 0.05) if vib_depth > 0.01 else None
+        vib_lfo = synthio.LFO(waveform=SINE, rate=vib_rate, scale=vib_depth * 0.025) if vib_depth > 0.01 else None
         
         n = synthio.Note(hz, waveform=WAVE_PD, envelope=env, filter=lp, amplitude=amp * 0.8, bend=vib_lfo)
         

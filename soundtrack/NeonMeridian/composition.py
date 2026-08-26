@@ -504,8 +504,10 @@ TRACKS = [
         "pan": 0.0, "notes": bass_notes(),
         # Glide (macro 4) stays at zero: this bass restates the root on
         # every eighth, and any portamento at all smears the drive.
-        "macros": {0: 0.7, 1: 0.35, 2: 0.35, 3: 0.55, 4: 0.0, 5: 0.52,
-                   8: 0.0, 9: 0.35, 10: 0.6, 11: 0.15, 15: 0.3},
+        # Osc2/Osc3 sit about six cents either side of the root: enough for
+        # the Model D's thickness, not enough to blur the pitch centre.
+        "macros": {0: 0.7, 1: 0.35, 2: 0.35, 3: 0.55, 4: 0.0, 5: 0.62,
+                   6: 0.4, 8: 0.0, 9: 0.35, 10: 0.6, 11: 0.15, 15: 0.3},
         "vol": [(bar(21), 0.9), (bar(29), 1.0), (bar(53), 1.08),
                 (bar(72), 1.0)],
         "macro_env": {
@@ -522,8 +524,12 @@ TRACKS = [
     {
         "name": "Taurus Sub", "script": "taurus.py", "gain_db": -11.0,
         "pan": 0.0, "notes": sub_notes(),
-        "macros": {0: 0.6, 1: 0.5, 2: 0.1, 3: 0.25, 4: 0.3, 5: 0.3,
-                   7: 0.2, 8: 0.5, 9: 0.85, 10: 0.4},
+        # Osc B Detune (1) and Beat Freq (6) stay low deliberately.  The
+        # Taurus beats its two oscillators against each other, and at a
+        # 55 Hz root even a 1 Hz beat is a third of a semitone - this is a
+        # pedal, so it wants a slow shimmer, not an audible interval.
+        "macros": {0: 0.6, 1: 0.15, 2: 0.1, 3: 0.25, 4: 0.3, 5: 0.3,
+                   6: 0.1, 7: 0.2, 8: 0.5, 9: 0.85, 10: 0.4},
         "vol": [(bar(5), 0.7), (bar(13), 0.95), (bar(45), 1.0),
                 (bar(53), 0.85), (bar(73), 0.8)],
         "macro_env": {3: [(bar(5), 0.18), (bar(17), 0.3), (bar(45), 0.26),
@@ -581,7 +587,7 @@ TRACKS = [
     {
         "name": "Prophet Lead", "script": "prophet5.py", "gain_db": -7.5,
         "pan": 0.06, "notes": lead_notes(),
-        "macros": {0: 0.7, 1: 0.5, 2: 0.3, 3: 0.5, 5: 0.53, 7: 0.35,
+        "macros": {0: 0.7, 1: 0.5, 2: 0.3, 3: 0.5, 5: 0.62, 7: 0.35,
                    8: 0.05, 9: 0.4, 10: 0.7, 14: 0.35, 15: 0.12},
         "vol": [(bar(29), 0.85), (bar(37), 0.95), (bar(53), 1.1),
                 (bar(61), 1.1), (bar(69), 0.9), (bar(73), 0.75)],
@@ -595,8 +601,11 @@ TRACKS = [
     {
         "name": "DX7 Bells", "script": "dx7.py", "gain_db": -2.0,
         "pan": -0.12, "notes": bell_notes(),
+        # Vibrato Depth (12) is pinned off. Unset macros arrive at 0.5, and
+        # half-depth DX7 vibrato is ~12 cents of wobble - the last thing a
+        # bell motif stating the theme should have.
         "macros": {0: 0.55, 1: 0.4, 2: 0.5, 3: 0.2, 7: 0.7, 9: 0.05,
-                   10: 0.55},
+                   10: 0.55, 11: 0.15, 12: 0.0},
         "vol": [(bar(3), 0.8), (bar(45), 1.0), (bar(57), 0.7),
                 (bar(73), 1.0)],
         "macro_env": {10: [(bar(3), 0.45), (bar(45), 0.6), (bar(73), 0.5)]},

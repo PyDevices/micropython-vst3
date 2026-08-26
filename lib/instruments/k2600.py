@@ -112,7 +112,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, master_cutoff, Q=master_res)
         
         # Mod wheel adds vibrato
-        vib = synthio.LFO(waveform=SINE, rate=mod_rate, scale=mod_depth * mod_wheel * 0.1) if mod_wheel > 0.01 else None
+        vib = synthio.LFO(waveform=SINE, rate=mod_rate, scale=mod_depth * mod_wheel * 0.05) if mod_wheel > 0.01 else None
         
         notes = []
         if l1_mix > 0.01:

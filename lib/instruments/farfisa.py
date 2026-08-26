@@ -102,7 +102,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         filter_mode = synthio.FilterMode.HIGH_PASS if boosted else synthio.FilterMode.LOW_PASS
         lp = synthio.Biquad(filter_mode, cutoff, Q=1.0)
 
-        vib_lfo = synthio.LFO(waveform=SINE, rate=vib_rate, scale=vib_depth * 0.03) if vib_depth > 0.01 else None
+        vib_lfo = synthio.LFO(waveform=SINE, rate=vib_rate, scale=vib_depth * 0.02) if vib_depth > 0.01 else None
 
         w_str = WAVE_STR_BOOST if boosted else WAVE_STR
         w_flute = WAVE_FLUTE_BOOST if boosted else WAVE_FLUTE

@@ -119,7 +119,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         
     elif event_type == vstaudio.EVENT_PARAMETER:
         if data0 == 0: volume = value0
-        elif data0 == 1: hs_detune = value0
+        elif data0 == 1: hs_detune = value0 * 0.6
         elif data0 == 2: sub_osc = value0
         elif data0 == 3: cutoff_val = 50.0 * (100.0 ** value0)
         elif data0 == 4: res = 0.5 + value0 * 3.5

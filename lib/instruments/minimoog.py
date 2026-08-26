@@ -198,8 +198,8 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         elif data0 == 2: resonance = logmap(value0, 0.5, 4.0)
         elif data0 == 3: env_amount = logmap(value0, 100.0, 8000.0)
         elif data0 == 4: glide = logmap(value0, 0.001, 1.0)
-        elif data0 == 5: osc2_detune = 1.0 + (value0 - 0.5) * 0.05
-        elif data0 == 6: osc3_detune = 1.0 + (value0 - 0.5) * 0.05
+        elif data0 == 5: osc2_detune = 1.0 + (value0 - 0.5) * 0.03
+        elif data0 == 6: osc3_detune = 1.0 + (value0 - 0.5) * 0.03
         elif data0 == 7: noise_mix = value0
         elif data0 == 8: amp_a = logmap(value0, 0.001, 2.0)
         elif data0 == 9: amp_d = logmap(value0, 0.05, 3.0)

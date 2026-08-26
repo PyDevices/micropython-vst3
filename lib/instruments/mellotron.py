@@ -106,7 +106,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         env = synthio.Envelope(attack_time=att, decay_time=0.1, release_time=rel, attack_level=1.0, sustain_level=1.0)
         
         # Tape wow/flutter
-        flutter_lfo = synthio.LFO(waveform=SINE, rate=flutter_rate, scale=flutter_depth * 0.02) if flutter_depth > 0.01 else None
+        flutter_lfo = synthio.LFO(waveform=SINE, rate=flutter_rate, scale=flutter_depth * 0.012) if flutter_depth > 0.01 else None
         
         # Bandpass filter for lo-fi tape sound
         bp = synthio.Biquad(synthio.FilterMode.BAND_PASS, tone, Q=0.8)

@@ -165,7 +165,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         elif data0 == 2: resonance = 0.5 + value0 * 3.5
         elif data0 == 3: env_amount = value0 * 8000.0
         elif data0 == 4: poly_mod = value0
-        elif data0 == 5: osc2_detune = 1.0 + (value0 - 0.5) * 0.1
+        elif data0 == 5: osc2_detune = 1.0 + (value0 - 0.5) * 0.03
         elif data0 == 6: sync = value0
         elif data0 == 7: release_time = 0.01 + value0 * 3.0
         elif data0 == 8: amp_a = 0.001 + value0 * 2.0

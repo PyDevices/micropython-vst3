@@ -85,7 +85,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         cutoff = 1000.0 + ((1.0 - mellow_tone) * 4000.0)
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=0.7)
         
-        vib_lfo = synthio.LFO(waveform=SINE, rate=vib_rate, scale=vib_depth * 0.05) if vib_depth > 0.01 else None
+        vib_lfo = synthio.LFO(waveform=SINE, rate=vib_rate, scale=vib_depth * 0.025) if vib_depth > 0.01 else None
         
         o_body = synthio.Note(hz, waveform=WAVE_PIANET, envelope=env, filter=lp, amplitude=amp * 0.7, bend=vib_lfo)
         o_pluck = synthio.Note(hz, waveform=WAVE_PLUCK, envelope=pluck_env, filter=lp, amplitude=amp * pluck_attack * 0.4, bend=vib_lfo)

@@ -151,8 +151,8 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         # Jupiter 8 Unison creates massive sound
         if unison_spread > 0.01:
             o1 = synthio.Note(hz, waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.3, panning=-0.5)
-            o2 = synthio.Note(hz * (1.0 + unison_spread * 0.02), waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.3, panning=0.5)
-            o3 = synthio.Note(hz * (1.0 - unison_spread * 0.02), waveform=pw_wave, envelope=env, filter=lp, amplitude=amp * 0.3, panning=0.0)
+            o2 = synthio.Note(hz * (1.0 + unison_spread * 0.012), waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.3, panning=0.5)
+            o3 = synthio.Note(hz * (1.0 - unison_spread * 0.012), waveform=pw_wave, envelope=env, filter=lp, amplitude=amp * 0.3, panning=0.0)
             notes = [o1, o2, o3]
         else:
             o1 = synthio.Note(hz, waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.5)

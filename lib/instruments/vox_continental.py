@@ -82,7 +82,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         cutoff = 1000.0 + (brilliance * 6000.0)
         lp = synthio.Biquad(synthio.FilterMode.LOW_PASS, cutoff, Q=0.5)
         
-        vib_lfo = synthio.LFO(waveform=SINE, rate=vib_rate, scale=vib_depth * 0.03) if vib_depth > 0.01 else None
+        vib_lfo = synthio.LFO(waveform=SINE, rate=vib_rate, scale=vib_depth * 0.02) if vib_depth > 0.01 else None
         
         notes = []
         if db16 > 0.01: notes.append(synthio.Note(hz * 0.5, waveform=WAVE_TRANS, envelope=env, filter=lp, amplitude=amp * db16 * 0.25, bend=vib_lfo))

@@ -93,7 +93,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         for reg_mult, reg_vol in [(1.0, violin), (0.5, viola), (0.25, cello)]:
             if reg_vol > 0.01:
                 for i in range(3):
-                    mod_lfo = synthio.LFO(waveform=SINE, rate=rates[i], scale=chorus_depth * 0.015)
+                    mod_lfo = synthio.LFO(waveform=SINE, rate=rates[i], scale=chorus_depth * 0.008)
                     n = synthio.Note(hz * reg_mult, waveform=SAW, envelope=env, filter=lp, amplitude=amp * reg_vol * 0.15, bend=mod_lfo, panning=pans[i])
                     notes.append(n)
         
@@ -110,7 +110,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         elif data0 == 1: violin = value0
         elif data0 == 2: viola = value0
         elif data0 == 3: cello = value0
-        elif data0 == 4: chorus_depth = value0 * 2.0
+        elif data0 == 4: chorus_depth = value0
         elif data0 == 5: att = 0.001 + value0 * 2.0
         elif data0 == 6: rel = 0.01 + value0 * 4.0
         elif data0 == 7: crescendo = value0

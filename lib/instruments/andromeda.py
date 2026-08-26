@@ -138,8 +138,8 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         if unison_detune > 0.01:
             for i, detune in enumerate([-unison_detune, 0.0, unison_detune]):
                 pan = [-0.5, 0.0, 0.5][i]
-                n1 = synthio.Note(hz * (1.0 + detune * 0.02), waveform=SAW, envelope=env, filter=lp1, amplitude=amp * (1.0 - f_mix) * 0.3, panning=pan)
-                n2 = synthio.Note(hz * (1.0 + detune * 0.02), waveform=SQUARE, envelope=env, filter=hp2, amplitude=amp * f_mix * 0.3, panning=pan)
+                n1 = synthio.Note(hz * (1.0 + detune * 0.012), waveform=SAW, envelope=env, filter=lp1, amplitude=amp * (1.0 - f_mix) * 0.3, panning=pan)
+                n2 = synthio.Note(hz * (1.0 + detune * 0.012), waveform=SQUARE, envelope=env, filter=hp2, amplitude=amp * f_mix * 0.3, panning=pan)
                 notes.extend([n1, n2])
         else:
             n1 = synthio.Note(hz, waveform=SAW, envelope=env, filter=lp1, amplitude=amp * (1.0 - f_mix))

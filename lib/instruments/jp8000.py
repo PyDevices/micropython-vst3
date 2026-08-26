@@ -169,7 +169,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         if data0 == 0: volume = value0
         elif data0 == 1: cutoff_base = 50.0 * (100.0 ** value0)
         elif data0 == 2: resonance = 0.5 + value0 * 3.5
-        elif data0 == 3: supersaw_detune = value0
+        elif data0 == 3: supersaw_detune = value0 * 0.6
         elif data0 == 4: supersaw_mix = value0
         elif data0 == 5: env_depth = value0 * 8000.0
         elif data0 == 6: chorus = value0

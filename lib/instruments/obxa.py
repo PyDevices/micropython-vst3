@@ -50,7 +50,7 @@ vstaudio.output(synth)
 
 # Macros
 volume = 0.8
-detune_spread = 0.02
+detune_spread = 0.004
 cutoff_val = 2000.0
 res = 1.0
 env_depth = 4000.0
@@ -119,7 +119,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         
     elif event_type == vstaudio.EVENT_PARAMETER:
         if data0 == 0: volume = value0
-        elif data0 == 1: detune_spread = value0 * 0.05
+        elif data0 == 1: detune_spread = value0 * 0.012
         elif data0 == 2: cutoff_val = 50.0 * (100.0 ** value0)
         elif data0 == 3: res = 0.5 + value0 * 3.5
         elif data0 == 4: env_depth = value0 * 8000.0

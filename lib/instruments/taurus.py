@@ -100,7 +100,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         # beat control as an actual target Hz (not a fixed ratio) so the wobble rate
         # stays audible and consistent across the bass register instead of scaling
         # away at low notes or turning into a dissonant interval at high ones.
-        beat_hz = 0.15 + beat_freq * 5.0
+        beat_hz = 0.15 + beat_freq * 1.5
         actual_detune = osc_b_detune + (beat_hz / hz)
 
         n1 = synthio.Note(hz, waveform=SAW, envelope=env, filter=lp, amplitude=amp * 0.45, bend=bend)
@@ -120,7 +120,7 @@ def handle_event(event_type, channel, note_id, data0, value0, value1, sample_pos
         
     elif event_type == vstaudio.EVENT_PARAMETER:
         if data0 == 0: volume = value0
-        elif data0 == 1: osc_b_detune = value0 * 0.1
+        elif data0 == 1: osc_b_detune = value0 * 0.02
         elif data0 == 2: glide = value0
         elif data0 == 3: cutoff_val = 50.0 * (100.0 ** value0)
         elif data0 == 4: res = 0.5 + value0 * 5.5
