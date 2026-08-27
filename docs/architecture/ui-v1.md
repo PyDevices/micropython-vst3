@@ -34,17 +34,21 @@ structure this document adds.
   input group: clicking focuses a control, wheel deltas adjust the focused
   control (the slider now, the knob later). No keyboard focus handling.
 
-  v1 uses only the vertical axis to adjust the focused control. A second,
-  genuinely independent horizontal axis is reachable too — navigating
-  focus between controls — and is no longer a bypass of shared code: the
-  investigation below fed a fix straight into the canonical
-  `display_driver.py` (`lvgl-bindings/python/display_driver.py`, released
-  to every sister project), which now exposes `set_wheel_mapping(
-  adjust_axis, adjust_sign, navigate)` for exactly this pattern, defaulting
-  to today's v1 behavior (adjust only, no navigation) for every existing
-  consumer. Horizontal-as-navigate stays out of v1 scope for this plug-in
-  regardless — a script author's choice to make later, not a limitation
-  discovered here.
+  v1 ships the two-axis mapping proven on the desktop mockup (decision
+  2026-08-27): the axis parallel to the control adjusts it — horizontal
+  swipe on the horizontal sliders, rightward increasing — and the
+  perpendicular axis moves group focus between controls, downward going
+  to the next. This is not a hand-rolled path: the mockup investigation
+  fed the machinery straight into the canonical `display_driver.py`
+  (`lvgl-bindings/python/display_driver.py`, released to every sister
+  project), whose `set_wheel_mapping(adjust_axis, adjust_sign, navigate)`
+  the panel calls with `("h", sign, True)`; every other consumer keeps
+  the old single-axis default. Signs are a per-input-path fact (they
+  differed between every build tested), so the panel's `adjust_sign` is
+  recalibrated against `vstui`'s native deltas at integration and locked
+  in by a smoke-host test that injects synthetic wheel events through the
+  shared-memory input ring and asserts the focused macro moves in the
+  expected direction.
 
   A `MOUSEWHEEL` event carries both a legacy integer `x`/`y` pair and a
   float `precise_x`/`precise_y` pair, and which one (if either) carries
@@ -79,10 +83,10 @@ structure this document adds.
   around on an ordinary desktop before it ever touches the engine — the
   shipping engine has no SDL window and never links `usdl2` at all. Its
   wheel input takes a completely different, simpler path: the native
-  C++ view reads the host platform's own wheel event directly and packs
-  it into `mpvst_ui_input`'s single signed delta field (this document's
-  region layout, above), which `vstui.poll()` surfaces as `encoder_read`
-  in `vst_board_config.py`. On Windows that event (`WM_MOUSEWHEEL`)
+  C++ view reads the host platform's own wheel events directly and packs
+  them into `mpvst_ui_input`'s pair of signed delta fields, one per axis
+  (this document's region layout, above), which `vstui.poll()` surfaces
+  through `vst_board_config.py`. On Windows that event (`WM_MOUSEWHEEL`)
   already reports an unambiguous signed multiple of `WHEEL_DELTA` — the
   legacy-vs-precise duality this section spent so long on is purely an
   SDL concept and cannot occur there. Confirmed against a real PyDevices
@@ -206,7 +210,7 @@ sample precision.
 |---|---:|---|
 | `mpvst_ui_state` | 128 | logical and maximum size, pixel format, editor-open flag, content scale, frame seqlock, ring cursors, UI error code, heartbeat |
 | `mpvst_ui_rect` | 16 | dirty rectangle keyed to a frame sequence |
-| `mpvst_ui_input` | 32 | input event: type, buttons, logical x/y, signed wheel delta, sequence |
+| `mpvst_ui_input` | 32 | input event: type, buttons, logical x/y, two signed wheel deltas (vertical and horizontal — both axes ship in v1), sequence |
 | `mpvst_ui_edit` | 32 | parameter edit: kind (begin/perform/end), parameter ID, normalized float32 value, sequence |
 | framebuffer | 1024x600x2, 64-byte aligned | RGB565 little-endian pixels at the maximum size; the logical size indexes into the same stride |
 
@@ -325,10 +329,6 @@ One implementation, written once, generic forever:
 
 - Per-script custom panels (the panel-module replacement path above).
 - The shared knob widget, meters and scope taps, and host keyboard focus.
-- Horizontal wheel/swipe as a second, independent input axis (navigate
-  focus, confirmed working) — deferred because it needs a hand-rolled
-  input path alongside the shared `display_driver.py`'s single-axis
-  encoder indev, not because the platform can't do it.
 - User-resizable or zoomable editors.
 - A dedicated UI sidecar process (kept possible, not built).
 - macOS, with the rest of the platform work.
