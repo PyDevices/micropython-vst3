@@ -9,12 +9,18 @@ PASS engine_ready ready=1.000 error=0
 PASS play_note rendered macro_zero.wav
 INFO macro_value 1.0
 PASS automate_set macro=1.000
+INFO editor_open true
+PASS editor_attach host opened the plug-in view
+INFO editor_macro 1.0
+PASS editor_stable macro=1.000 ready=1.000 error=0
+PASS editor_detach host closed the plug-in view
+PASS editor_survived ready=1.000 error=0
 PASS edit_script installed edited source
 INFO edited_ready 1.0
 INFO edited_error 0
 PASS reload_edited ready=1.000 error=0
 PASS restore_script reinstalled original source
-PASS save_project bytes=7130
+PASS save_project bytes=7138
 INFO reopen_macro 1.0
 PASS reopen_project macro=1.000 ready=1.000 params=2103
 PASS reopened_ignores_edit rendered reopened_after_edit.wav

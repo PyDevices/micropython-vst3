@@ -262,6 +262,79 @@ step(function()
     sleep_ms(700)
 end)
 
+-- The editor, in a real host. What the matrix can attest to that nothing else
+-- can is that the host attaches and detaches a real window, and that having
+-- one open changes neither the rendered audio nor the engine's health. The
+-- panel's own behaviour - painting, input, gestures becoming edits - is the
+-- editor smoke test's job, which drives the shared surface directly.
+step(function()
+    -- 3 is REAPER's "show the plug-in's own UI in a floating window", which is
+    -- what puts the host through IPlugView::attached.
+    reaper.TrackFX_Show(S.track, S.fx, 3)
+    sleep_ms(3000)
+end)
+
+step(function()
+    local open = reaper.TrackFX_GetOpen(S.track, S.fx)
+    info("editor_open", tostring(open))
+    if open then
+        pass("editor_attach", "host opened the plug-in view")
+    else
+        fail("editor_attach", "TrackFX_GetOpen returned false")
+    end
+    sleep_ms(500)
+end)
+
+step(function()
+    -- Rendered at exactly the macro_full configuration, so verify_renders.py
+    -- can compare the two sample for sample.
+    render("editor_open")
+    sleep_ms(700)
+end)
+
+step(function()
+    local macro = reaper.TrackFX_GetParamNormalized(S.track, S.fx, S.macro_idx)
+    local ready = ready_value()
+    local code = error_code()
+    info("editor_macro", macro)
+    -- The panel treats incoming parameter state as truth and the host echoes
+    -- back what the panel published, so a value that drifts here would be the
+    -- two of them chasing each other.
+    if math.abs(macro - 1.0) < 0.001 and ready > 0.5 and code == 0 then
+        pass("editor_stable", string.format("macro=%.3f ready=%.3f error=%d",
+                                            macro, ready, code))
+    else
+        fail("editor_stable", string.format("macro=%.3f ready=%.3f error=%d",
+                                            macro, ready, code))
+    end
+end)
+
+step(function()
+    -- 2 is "hide the floating window", the detach half of the cycle. Closing
+    -- the editor must not touch the engine: it is a child of the host's frame,
+    -- never a window this plug-in owns.
+    reaper.TrackFX_Show(S.track, S.fx, 2)
+    sleep_ms(1500)
+    local open = reaper.TrackFX_GetOpen(S.track, S.fx)
+    if open then
+        fail("editor_detach", "the view stayed open")
+    else
+        pass("editor_detach", "host closed the plug-in view")
+    end
+end)
+
+step(function()
+    render("editor_closed")
+    sleep_ms(700)
+    local ready = ready_value()
+    local code = error_code()
+    if ready > 0.5 and code == 0 then
+        pass("editor_survived", string.format("ready=%.3f error=%d", ready, code))
+    else
+        fail("editor_survived", string.format("ready=%.3f error=%d", ready, code))
+    end
+end)
+
 -- Developer loop: edit the file the instance was created from, then reload.
 step(function()
     if EDITED_SCRIPT == "" or not copy_file(EDITED_SCRIPT, SCRIPT) then

@@ -13,6 +13,7 @@ when a step legitimately changes the level.
 
 from __future__ import annotations
 
+import hashlib
 import struct
 import sys
 import wave
@@ -100,6 +101,17 @@ def analyse(path: Path):
     }
 
 
+def pcm_digest(path: Path) -> str:
+    """SHA-256 of a render's samples, ignoring everything around them."""
+    with wave.open(str(path), "rb") as handle:
+        frames = handle.readframes(handle.getnframes())
+        header = "%d/%d/%d" % (handle.getframerate(), handle.getsampwidth(),
+                               handle.getnchannels())
+    digest = hashlib.sha256(header.encode("ascii"))
+    digest.update(frames)
+    return digest.hexdigest()
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         print("usage: verify_renders.py <render-dir>", file=sys.stderr)
@@ -181,6 +193,30 @@ def main() -> int:
     # Macro 01 at zero gives 0.125 and at full scale gives 0.25.
     plateau("macro_zero", 0.125)
     plateau("macro_full", 0.25)
+
+    # An open editor must not change a single sample. This is the enforcement
+    # for that: both renders are taken at the same macro_full configuration,
+    # one with the plug-in's view attached and one after the host closed it.
+    plateau("editor_open", 0.25)
+    plateau("editor_closed", 0.25)
+    for name in ("editor_open", "editor_closed"):
+        reference = directory / "macro_full.wav"
+        candidate = directory / ("%s.wav" % name)
+        if not reference.exists() or not candidate.exists():
+            check("%s/parity" % name, False, "render missing")
+            continue
+        # The samples, not the file: REAPER stamps each render with its own
+        # metadata, so two byte-identical performances land in two different
+        # files.
+        expected = pcm_digest(reference)
+        actual = pcm_digest(candidate)
+        check(
+            "%s/parity" % name,
+            expected == actual,
+            "PCM %s macro_full.wav (%s vs %s)"
+            % ("matches" if expected == actual else "DIFFERS from",
+               expected[:12], actual[:12]),
+        )
 
     # The edited source ignores the macro and holds a fixed 0.375, so hearing
     # that level proves the reload picked up the file as it is on disk now.
