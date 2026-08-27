@@ -384,6 +384,28 @@ One implementation, written once, generic forever:
 4. Parity: PCM identical with and without an editor attached, checked in the
    matrix against the same configuration rendered both ways.
 
+5. Windows only, and the only test that looks at a screen
+   (`mpvst_editor_window`): the real view is opened in a real window,
+   photographed through `WM_PRINTCLIENT`, and required to equal the engine's
+   framebuffer pixel for pixel. `mpvst_gdi_blit_tests` pins the same geometry
+   headlessly against GDI itself.
+
+Both of those exist because the editor shipped painting the wrong 480 rows of
+its 600-row framebuffer. In `HALFTONE` stretch mode GDI reads `ySrc` from the
+bottom of the bitmap even when `biHeight` declares top-down, so the panel's
+header fell off the top, unwritten black filled the bottom, and every click
+was hit-tested 120 rows from the pixel it hit - which read as an editor whose
+controls did not work. Every other test passed throughout: the engine's
+framebuffer was correct on both platforms, the protocol was correct, and the
+audio was byte-identical. Nothing that stops short of the window could have
+seen it, so now something does not stop short.
+
+The same episode is why a reopened editor is not driven from the rectangle
+ring. Rectangles say what *changed*, and a reopened editor showing a panel
+nobody touched changes nothing - so a view that waits for rectangles waits
+forever and stays black. A view that has never shown a frame takes the whole
+framebuffer instead, under the same seqlock.
+
 Two notes on where the coverage sits. Gestures becoming automation is
 asserted by the smoke test rather than the matrix, because Lua cannot click
 a panel; the matrix asserts the half Lua can see, which is that a real host

@@ -11,6 +11,7 @@
 #include "pluginterfaces/vst/ivsteditcontroller.h"
 #include "pluginterfaces/vst/ivstmessage.h"
 #include "pluginterfaces/base/ustring.h"
+#include "pluginterfaces/gui/iplugview.h"
 
 #include "editor_message.h"
 #include "mpvst/atomic.h"
@@ -30,6 +31,12 @@
 #include <thread>
 #include <tuple>
 #include <vector>
+
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
 
 namespace {
 
@@ -1245,8 +1252,287 @@ struct UiView
     }
 };
 
+// GDI expands a BI_BITFIELDS RGB565 channel by replicating its high bits into
+// the low ones. Matching that exactly is what lets a window capture and a
+// framebuffer dump be compared without a tolerance, and a tolerance is the
+// last thing this comparison should have: the bug it exists to catch is a
+// whole-frame shift that a tolerance would happily accept.
+std::uint8_t expand5(std::uint32_t value)
+{
+    return static_cast<std::uint8_t>((value << 3) | (value >> 2));
+}
+
+std::uint8_t expand6(std::uint32_t value)
+{
+    return static_cast<std::uint8_t>((value << 2) | (value >> 4));
+}
+
+void expandPixel(std::uint16_t pixel, char* rgb)
+{
+    rgb[0] = static_cast<char>(expand5((pixel >> 11) & 0x1FU));
+    rgb[1] = static_cast<char>(expand6((pixel >> 5) & 0x3FU));
+    rgb[2] = static_cast<char>(expand5(pixel & 0x1FU));
+}
+
+// Write the shared framebuffer out as a PPM, exactly as the engine left it.
+// The view is a long way downstream of the pixels, so when an editor looks
+// wrong on screen this is what says whether the engine drew it wrong or
+// something after it did.
+bool writeFramePpm(const UiView& view, const std::filesystem::path& path)
+{
+    const auto width = mpvst::acquire_load_u32(&view.state->width);
+    const auto height = mpvst::acquire_load_u32(&view.state->height);
+    const auto* pixels = mpvst_ui_framebuffer(view.mapping.data());
+    const auto stride = mpvst_ui_stride_bytes();
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out)
+        return false;
+    out << "P6\n" << width << ' ' << height << "\n255\n";
+    for (std::uint32_t y = 0; y < height; ++y)
+    {
+        const auto* row = reinterpret_cast<const std::uint16_t*>(
+            pixels + static_cast<std::size_t>(y) * stride);
+        for (std::uint32_t x = 0; x < width; ++x)
+        {
+            char rgb[3];
+            expandPixel(row[x], rgb);
+            out.write(rgb, 3);
+        }
+    }
+    return out.good();
+}
+
+#if defined(_WIN32)
+// Open the plug-in's real view in a real window and photograph it.
+//
+// The editor shipped with a blit that took the wrong rows out of the
+// framebuffer, and nothing caught it: the engine's pixels were right, the
+// protocol was right, and the audio was right. The only thing that would have
+// caught it is looking at the window, so this looks at the window.
+bool captureEditorWindow(const PluginFactory& factory,
+                         const ClassInfo& classInfo, FUnknown* host,
+                         const std::string& outputPath, bool& skipped)
+{
+    skipped = false;
+    auto component = createComponent(factory, classInfo, host);
+    auto processor = getProcessor(component);
+    if (!component || !processor)
+        return false;
+
+    TUID controllerCID {};
+    if (!ok(component->getControllerClassId(controllerCID)))
+        return false;
+    auto controller =
+        factory.createInstance<IEditController>(VST3::UID(controllerCID));
+    if (!controller || !ok(controller->initialize(host)))
+        return false;
+
+    // The view learns where the framebuffer is from the processor, over the
+    // connection a host would wire. Without it there is nothing to paint.
+    IConnectionPoint* componentConnection = nullptr;
+    IConnectionPoint* controllerConnection = nullptr;
+    if (!ok(component->queryInterface(IConnectionPoint::iid,
+                                      reinterpret_cast<void**>(
+                                          &componentConnection))) ||
+        !ok(controller->queryInterface(IConnectionPoint::iid,
+                                       reinterpret_cast<void**>(
+                                           &controllerConnection))))
+        return false;
+    auto ownedComponentConnection = owned(componentConnection);
+    auto ownedControllerConnection = owned(controllerConnection);
+    auto relay = owned(new ConnectionRelay);
+    relay->setPeer(controllerConnection);
+    if (!ok(componentConnection->connect(relay)))
+        return false;
+
+    SpeakerArrangement stereo = SpeakerArr::kStereo;
+    ProcessSetup setup {};
+    setup.processMode = kRealtime;
+    setup.symbolicSampleSize = kSample32;
+    setup.maxSamplesPerBlock = 256;
+    setup.sampleRate = 48000.0;
+    if (!ok(processor->setBusArrangements(nullptr, 0, &stereo, 1)) ||
+        !ok(component->activateBus(kAudio, kOutput, 0, true)) ||
+        !ok(processor->setupProcessing(setup)) ||
+        !ok(component->setActive(true)) ||
+        !ok(processor->setProcessing(true)))
+        return false;
+
+    auto* view = controller->createView(ViewType::kEditor);
+    if (view == nullptr)
+    {
+        std::cerr << "HOOK editor.capture FAIL: no view\n";
+        return false;
+    }
+    ViewRect size {};
+    if (!ok(view->getSize(&size)))
+        return false;
+    const auto width = size.right - size.left;
+    const auto height = size.bottom - size.top;
+
+    // A plain top-level window standing in for the host's frame. The view is
+    // a child of whatever it is handed, so this is the same path a DAW takes.
+    WNDCLASSEXW frameClass {};
+    frameClass.cbSize = sizeof(frameClass);
+    frameClass.lpfnWndProc = DefWindowProcW;
+    frameClass.hInstance = GetModuleHandleW(nullptr);
+    frameClass.lpszClassName = L"MpvstSmokeHostFrame";
+    RegisterClassExW(&frameClass);
+    // Parked offscreen and never activated. The editor answers
+    // WM_PRINTCLIENT, so the capture does not need the window to be visible -
+    // which keeps this from stealing focus, and keeps a stray click from
+    // spoiling the picture.
+    HWND frame = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+                                 L"MpvstSmokeHostFrame", L"mpvst", WS_POPUP,
+                                 -32000, -32000, width, height, nullptr,
+                                 nullptr, GetModuleHandleW(nullptr), nullptr);
+    if (frame == nullptr)
+    {
+        std::cout << "SKIP editor.capture: no window station\n";
+        skipped = true;
+        return true;
+    }
+    ShowWindow(frame, SW_SHOWNOACTIVATE);
+
+    if (!ok(view->attached(frame, kPlatformTypeHWND)))
+    {
+        std::cerr << "HOOK editor.capture FAIL: attach refused\n";
+        return false;
+    }
+
+    std::array<float, 256> left {};
+    std::array<float, 256> right {};
+    Sample32* channels[] = {left.data(), right.data()};
+    AudioBusBuffers output {};
+    output.numChannels = 2;
+    output.channelBuffers32 = channels;
+    ProcessData data {};
+    data.processMode = kRealtime;
+    data.symbolicSampleSize = kSample32;
+    data.numSamples = static_cast<int32>(left.size());
+    data.numOutputs = 1;
+    data.outputs = &output;
+
+    // Turn the audio pipeline and the window's message queue together: the
+    // engine only paints when it has slack, and the view only presents from
+    // its own WM_TIMER.
+    for (int block = 0; block < 400; ++block)
+    {
+        (void)processor->process(data);
+        MSG message;
+        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE))
+        {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    HWND child = GetWindow(frame, GW_CHILD);
+    if (child == nullptr)
+    {
+        std::cerr << "HOOK editor.capture FAIL: the view made no window\n";
+        return false;
+    }
+
+    BITMAPINFO shot {};
+    shot.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    shot.bmiHeader.biWidth = width;
+    shot.bmiHeader.biHeight = -height;
+    shot.bmiHeader.biPlanes = 1;
+    shot.bmiHeader.biBitCount = 32;
+    shot.bmiHeader.biCompression = BI_RGB;
+    void* bits = nullptr;
+    HDC childDc = GetDC(child);
+    HDC memory = CreateCompatibleDC(childDc);
+    HBITMAP bitmap =
+        CreateDIBSection(memory, &shot, DIB_RGB_COLORS, &bits, nullptr, 0);
+    HGDIOBJ previous = SelectObject(memory, bitmap);
+    // PrintWindow asks the window to draw itself, which is what reaches the
+    // editor's own WM_PAINT rather than whatever happens to be on screen.
+    if (PrintWindow(child, memory, PW_CLIENTONLY) == 0)
+        BitBlt(memory, 0, 0, width, height, childDc, 0, 0, SRCCOPY);
+    GdiFlush();
+
+    // The whole point. What the window shows must be what the engine drew -
+    // not merely something plausible, and not merely the right pixels in the
+    // wrong place, which is exactly how this shipped broken.
+    UiView surface;
+    if (!surface.open(relay->mappingName()))
+    {
+        std::cerr << "HOOK editor.capture FAIL: cannot open the mapping\n";
+        return false;
+    }
+    const auto* framebuffer = mpvst_ui_framebuffer(surface.mapping.data());
+    const auto stride = mpvst_ui_stride_bytes();
+    const auto* captured = static_cast<const std::uint32_t*>(bits);
+    int firstBadRow = -1;
+    for (int32 y = 0; y < height && firstBadRow < 0; ++y)
+    {
+        const auto* row = reinterpret_cast<const std::uint16_t*>(
+            framebuffer + static_cast<std::size_t>(y) * stride);
+        for (int32 x = 0; x < width; ++x)
+        {
+            char expected[3];
+            expandPixel(row[x], expected);
+            const auto pixel = captured[static_cast<std::size_t>(y) * width + x];
+            if (static_cast<char>((pixel >> 16) & 0xFFU) != expected[0] ||
+                static_cast<char>((pixel >> 8) & 0xFFU) != expected[1] ||
+                static_cast<char>(pixel & 0xFFU) != expected[2])
+            {
+                firstBadRow = y;
+                break;
+            }
+        }
+    }
+
+    std::ofstream out(outputPath, std::ios::binary | std::ios::trunc);
+    if (!out)
+        return false;
+    out << "P6\n" << width << ' ' << height << "\n255\n";
+    const auto* pixels = static_cast<const std::uint32_t*>(bits);
+    for (int32 y = 0; y < height; ++y)
+    {
+        for (int32 x = 0; x < width; ++x)
+        {
+            const auto pixel = pixels[static_cast<std::size_t>(y) * width + x];
+            const char rgb[3] = {static_cast<char>((pixel >> 16) & 0xFFU),
+                                 static_cast<char>((pixel >> 8) & 0xFFU),
+                                 static_cast<char>(pixel & 0xFFU)};
+            out.write(rgb, 3);
+        }
+    }
+    out.close();
+
+    SelectObject(memory, previous);
+    DeleteObject(bitmap);
+    DeleteDC(memory);
+    ReleaseDC(child, childDc);
+    (void)view->removed();
+    view->release();
+    DestroyWindow(frame);
+    (void)processor->setProcessing(false);
+    (void)component->setActive(false);
+    (void)componentConnection->disconnect(relay);
+    (void)controller->terminate();
+    (void)component->terminate();
+    if (firstBadRow >= 0)
+    {
+        std::cerr << "HOOK editor.capture FAIL: the window and the framebuffer "
+                     "first differ at row " << firstBadRow << "; see "
+                  << outputPath << '\n';
+        return false;
+    }
+    std::cout << "HOOK editor.capture OK: the window matches the framebuffer "
+                 "exactly (" << width << 'x' << height << "), " << outputPath
+              << '\n';
+    return true;
+}
+#endif
+
 bool editorDrivesParameters(const PluginFactory& factory,
-                            const ClassInfo& classInfo, FUnknown* host)
+                            const ClassInfo& classInfo, FUnknown* host,
+                            const std::string& framePath)
 {
     const auto sourcePath = std::filesystem::temp_directory_path() /
         "mpvst-editor-probe.py";
@@ -1362,6 +1648,16 @@ bool editorDrivesParameters(const PluginFactory& factory,
         return false;
     }
     std::cout << "HOOK editor.open OK: frames=" << view.frames() << '\n';
+    if (!framePath.empty())
+    {
+        if (!writeFramePpm(view, framePath))
+        {
+            std::cerr << "HOOK editor.frame FAIL: cannot write " << framePath
+                      << '\n';
+            return false;
+        }
+        std::cout << "HOOK editor.frame OK: " << framePath << '\n';
+    }
     (void)view.drainEdits();
 
     // Click the first macro slider, then swipe right along it. Both signs are
@@ -1448,6 +1744,53 @@ bool editorDrivesParameters(const PluginFactory& factory,
         return false;
     }
     std::cout << "HOOK editor.close OK: painting stopped\n";
+
+    // Reopening is where the editor went black. A view starts with an empty
+    // copy of the framebuffer and fills it from the dirty-rectangle ring, but
+    // rectangles say what *changed* - and a reopened editor showing a panel
+    // nobody has touched changes nothing, so a rectangle-only view waits
+    // forever on a ring that stays empty. These two assertions are the shape
+    // of that: the ring really does stay quiet, and the framebuffer really
+    // does still hold the frame, which is what a reopened view reads instead.
+    const auto quietRects = mpvst::acquire_load_u64(&view.state->rect_head);
+    view.setOpen(true);
+    if (!pump(40))
+        return false;
+    if (mpvst::acquire_load_u64(&view.state->rect_head) != quietRects)
+    {
+        std::cerr << "HOOK editor.reopen FAIL: expected a static panel to "
+                     "publish no rectangles\n";
+        return false;
+    }
+    bool anyPixel = false;
+    {
+        const auto width = mpvst::acquire_load_u32(&view.state->width);
+        const auto height = mpvst::acquire_load_u32(&view.state->height);
+        const auto* pixels = mpvst_ui_framebuffer(view.mapping.data());
+        const auto stride = mpvst_ui_stride_bytes();
+        for (std::uint32_t y = 0; y < height && !anyPixel; ++y)
+        {
+            const auto* row = reinterpret_cast<const std::uint16_t*>(
+                pixels + static_cast<std::size_t>(y) * stride);
+            for (std::uint32_t x = 0; x < width; ++x)
+            {
+                if (row[x] != 0U)
+                {
+                    anyPixel = true;
+                    break;
+                }
+            }
+        }
+    }
+    if (!anyPixel)
+    {
+        std::cerr << "HOOK editor.reopen FAIL: the framebuffer lost the frame, "
+                     "so a reopened view has nothing to show\n";
+        return false;
+    }
+    std::cout << "HOOK editor.reopen OK: no new rectangles, frame still in "
+                 "the buffer\n";
+    view.setOpen(false);
 
     // A deactivate/activate cycle is an engine restart as far as the editor is
     // concerned: a new mapping, a new generation, and no stale input replayed
@@ -1675,15 +2018,20 @@ int main(int argc, char** argv)
     const std::string mode = argc >= 3 ? argv[2] : "";
     const std::string modeArgument = argc >= 4 ? argv[3] : "";
     const bool renderMode = mode == "--render-reference";
+    const bool frameDump = mode == "--dump-editor-frame";
+    const bool windowCapture = mode == "--capture-editor-window";
     const bool scriptProbe = mode == "--effect-script";
     const bool instrumentProbe = mode == "--instrument-script";
     if (argc < 2 || argc > 4 ||
-        ((renderMode || scriptProbe || instrumentProbe) && modeArgument.empty()) ||
-        (!renderMode && !scriptProbe && !instrumentProbe && argc > 3) ||
+        ((renderMode || scriptProbe || instrumentProbe || frameDump ||
+          windowCapture) && modeArgument.empty()) ||
+        (!renderMode && !scriptProbe && !instrumentProbe && !frameDump &&
+         !windowCapture && argc > 3) ||
         (!mode.empty() && mode != "--expect-micropython" &&
          mode != "--expect-embedded-state" &&
          mode != "--expect-effect-audio" && mode != "--expect-patch-select" &&
-         mode != "--expect-editor" &&
+         mode != "--expect-editor" && mode != "--dump-editor-frame" &&
+         mode != "--capture-editor-window" &&
          mode != "--effect-script" && mode != "--instrument-script" &&
          !renderMode))
     {
@@ -1692,6 +2040,8 @@ int main(int argc, char** argv)
                      "--expect-effect-audio|"
                      "--expect-patch-select|"
                      "--expect-editor|"
+                     "--dump-editor-frame <out.ppm>|"
+                     "--capture-editor-window <out.ppm>|"
                      "--effect-script <script.py>|"
                      "--instrument-script <script.py>|"
                      "--render-reference <out.pcm>]\n";
@@ -1700,7 +2050,7 @@ int main(int argc, char** argv)
     const bool embeddedState = mode == "--expect-embedded-state";
     const bool effectMode = mode == "--expect-effect-audio";
     const bool patchSelectMode = mode == "--expect-patch-select";
-    const bool editorMode = mode == "--expect-editor";
+    const bool editorMode = mode == "--expect-editor" || frameDump;
 
     std::string error;
     const auto modulePath = std::filesystem::weakly_canonical(argv[1]).string();
@@ -1779,9 +2129,27 @@ int main(int argc, char** argv)
             }
             std::cout << "HOOK instrument.script OK\n";
         }
+        else if (windowCapture)
+        {
+#if defined(_WIN32)
+            bool skipped = false;
+            if (!captureEditorWindow(factory, classInfo, host, modeArgument,
+                                     skipped))
+            {
+                std::cerr << "HOOK editor.capture FAIL\n";
+                return 5;
+            }
+            if (skipped)
+                return 77; // ctest SKIP_RETURN_CODE
+#else
+            std::cerr << "HOOK editor.capture FAIL: Windows only\n";
+            return 5;
+#endif
+        }
         else if (editorMode)
         {
-            if (!editorDrivesParameters(factory, classInfo, host))
+            if (!editorDrivesParameters(factory, classInfo, host,
+                                        frameDump ? modeArgument : std::string {}))
             {
                 std::cerr << "HOOK editor FAIL\n";
                 return 5;
@@ -1814,7 +2182,7 @@ int main(int argc, char** argv)
         const bool defaultSuite = !embeddedState &&
                                   !renderMode && !effectMode && !scriptProbe &&
                                   !instrumentProbe && !patchSelectMode &&
-                                  !editorMode;
+                                  !editorMode && !windowCapture;
         if (defaultSuite)
             std::cout << "HOOK state.roundtrip OK: legacy_v1=1 malformed=4\n";
 

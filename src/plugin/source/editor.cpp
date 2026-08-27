@@ -176,6 +176,23 @@ tresult PLUGIN_API Editor::setContentScaleFactor (ScaleFactor factor)
     logicalSize (width, height);
     rect.right = static_cast<int32> (scaled (width, scale_));
     rect.bottom = static_cast<int32> (scaled (height, scale_));
+    // A host is free to report the scale after attaching, and the child
+    // window was sized with whatever scale was current then. Follow the
+    // change rather than painting stretched into a stale rectangle.
+#if defined(_WIN32)
+    if (window_ != nullptr)
+        MoveWindow (window_, 0, 0, scaled (width, scale_),
+                    scaled (height, scale_), TRUE);
+#elif defined(__linux__)
+    if (display_ != nullptr && window_ != 0U)
+    {
+        auto* display = static_cast<Display*> (display_);
+        XResizeWindow (display, window_,
+                       static_cast<unsigned> (scaled (width, scale_)),
+                       static_cast<unsigned> (scaled (height, scale_)));
+        XFlush (display);
+    }
+#endif
     return kResultTrue;
 }
 
@@ -205,6 +222,40 @@ bool Editor::sampleFrame ()
 
     auto tail = mpvst::acquire_load_u64 (&state_->rect_tail);
     const auto head = mpvst::acquire_load_u64 (&state_->rect_head);
+
+    // A view that has never shown a frame starts from the whole framebuffer,
+    // not from the rectangle ring. Rectangles describe what *changed*, and
+    // for a reopened editor nothing may ever change again: the previous view
+    // consumed the rects, the panel is static, and a view that waits for new
+    // ones stays black forever. The framebuffer itself still holds every
+    // pixel, so take all of it - under the same seqlock discipline, since the
+    // engine may be mid-repaint at this exact moment.
+    if (!everPainted_)
+    {
+        std::int32_t width = 0;
+        std::int32_t height = 0;
+        logicalSize (width, height);
+        const auto* pixels = mpvst_ui_framebuffer (mapping_.data ());
+        const auto stride = mpvst_ui_stride_bytes ();
+        const auto rowBytes =
+            static_cast<std::size_t> (width) * MPVST_UI_PIXEL_BYTES;
+        for (std::int32_t row = 0; row < height; ++row)
+        {
+            const auto offset = static_cast<std::size_t> (row) * stride;
+            std::memcpy (frame_.data () + offset, pixels + offset, rowBytes);
+        }
+        if (mpvst::acquire_load_u64 (&state_->frame_sequence) != sequence)
+            return false;
+        // Everything a pending rectangle covers is already in the copy.
+        mpvst::release_store_u64 (&state_->rect_tail, head);
+        dirtyLeft_ = 0;
+        dirtyTop_ = 0;
+        dirtyRight_ = width;
+        dirtyBottom_ = height;
+        dirty_ = true;
+        return true;
+    }
+
     if (head == tail)
         return false;
     // A view that fell behind a busy engine has lost the oldest rectangles.
@@ -469,6 +520,14 @@ LRESULT Editor::handleMessage (HWND window, UINT message, WPARAM wparam,
             EndPaint (window, &paintStruct);
             return 0;
         }
+        case WM_PRINTCLIENT:
+            // Draw into whatever device the caller supplies rather than the
+            // screen. Hosts use this to take a picture of a plug-in view
+            // without bringing it to the front, and it is what lets the
+            // window capture in tests/smoke_host photograph the real editor
+            // offscreen instead of racing whatever is on top of it.
+            paint (reinterpret_cast<HDC> (wparam));
+            return 0;
         case WM_MOUSEMOVE:
             pushInput (MPVST_UI_INPUT_POINTER_MOVE,
                        (wparam & MK_LBUTTON) != 0U ? 1U : 0U,
@@ -552,8 +611,25 @@ void Editor::paint (HDC device)
     } info {};
     info.header.biSize = sizeof (BITMAPINFOHEADER);
     info.header.biWidth = static_cast<LONG> (MPVST_UI_MAX_WIDTH);
-    // Negative height means top-down, which is how the framebuffer is laid out.
-    info.header.biHeight = -static_cast<LONG> (MPVST_UI_MAX_HEIGHT);
+    // Negative height means top-down, which is how the framebuffer is laid
+    // out - and the DIB is declared exactly as tall as the frame being
+    // blitted, not as tall as the buffer that holds it.
+    //
+    // That distinction shipped broken. In HALFTONE stretch mode GDI reads
+    // ySrc as an offset from the *bottom* of the bitmap even when biHeight
+    // says top-down, so asking for 480 rows at ySrc 0 out of a 600-row DIB
+    // handed back rows 120..599: the panel's header and first macro row fell
+    // off the top, 120 rows of never-written black appeared at the bottom,
+    // and every click was hit-tested 120 rows above the pixel it visually
+    // landed on - which is what made the controls look dead. The default
+    // stretch mode does not do this, which is why it took a probe in
+    // HALFTONE to reproduce (tests/gdi_blit_tests.cpp is that probe, kept).
+    //
+    // A DIB exactly as tall as the source rectangle leaves the quirk nothing
+    // to misread, under either mode. biWidth stays the full buffer width
+    // because that is what carries the stride; the rows past the logical
+    // height are never part of a frame, so declaring them buys nothing.
+    info.header.biHeight = -static_cast<LONG> (height);
     info.header.biPlanes = 1;
     info.header.biBitCount = 16;
     info.header.biCompression = BI_BITFIELDS;
@@ -563,7 +639,15 @@ void Editor::paint (HDC device)
 
     const auto destinationWidth = scaled (width, scale_);
     const auto destinationHeight = scaled (height, scale_);
-    SetStretchBltMode (device, HALFTONE);
+    // Interpolate only when there is actually something to interpolate. The
+    // usual case is one-to-one - Windows does its own DPI scaling outside
+    // this process, so the window is in virtualised coordinates - and asking
+    // HALFTONE to resample a frame onto itself costs time and sharpens
+    // nothing.
+    const bool scaling = destinationWidth != width || destinationHeight != height;
+    SetStretchBltMode (device, scaling ? HALFTONE : COLORONCOLOR);
+    if (scaling)
+        SetBrushOrgEx (device, 0, 0, nullptr); // documented HALFTONE pairing
     StretchDIBits (device, 0, 0, destinationWidth, destinationHeight, 0, 0,
                    width, height, frame_.data (),
                    reinterpret_cast<const BITMAPINFO*> (&info), DIB_RGB_COLORS,

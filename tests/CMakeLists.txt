@@ -37,6 +37,23 @@ endif()
 
 add_test(NAME mpvst_protocol_tests COMMAND mpvst_protocol_tests)
 
+# The editor's Windows present path, checked against GDI itself. The engine's
+# framebuffer, the protocol and the render parity checks were all correct
+# while the blit silently took the wrong 480 rows out of a 600-row buffer, so
+# nothing but a real blit can cover this.
+if(WIN32)
+    add_executable(mpvst_gdi_blit_tests gdi_blit_tests.cpp)
+    target_link_libraries(mpvst_gdi_blit_tests PRIVATE mpvst_protocol gdi32)
+    target_compile_features(mpvst_gdi_blit_tests PRIVATE cxx_std_17)
+    if(MSVC)
+        target_compile_options(mpvst_gdi_blit_tests PRIVATE /W4 /permissive-)
+    else()
+        target_compile_options(mpvst_gdi_blit_tests PRIVATE
+            -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion)
+    endif()
+    add_test(NAME mpvst_gdi_blit_tests COMMAND mpvst_gdi_blit_tests)
+endif()
+
 # These need a real MicroPython sidecar, which is staged on any platform that
 # has one built.
 if(TARGET mpvst-stage-micropython-engine)
@@ -80,6 +97,22 @@ if(TARGET mpvst-stage-micropython-engine)
     add_test(NAME mpvst_editor_smoke COMMAND mpvst_smoke_host
         $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-editor)
     set_tests_properties(mpvst_editor_smoke PROPERTIES TIMEOUT 300)
+
+    # The one test that looks at the screen. It opens the real view in a real
+    # window, photographs it through WM_PRINTCLIENT, and requires the result
+    # to equal the engine's framebuffer pixel for pixel. Everything else in
+    # this suite passed while the editor was painting the wrong 480 rows of a
+    # 600-row buffer, because everything else stops short of the window.
+    #
+    # Needs a window station, so it reports a skip rather than a failure when
+    # there is none.
+    if(WIN32)
+        add_test(NAME mpvst_editor_window COMMAND mpvst_smoke_host
+            $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --capture-editor-window
+            ${CMAKE_CURRENT_BINARY_DIR}/editor-window.ppm)
+        set_tests_properties(mpvst_editor_window PROPERTIES TIMEOUT 300
+            SKIP_RETURN_CODE 77)
+    endif()
     # Every class in the shared effects library, through the real sidecar.
     if(MPVST_PYTHON)
         add_test(NAME mpvst_effects_library COMMAND ${MPVST_PYTHON}
