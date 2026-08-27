@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace PyDevices::MicroPythonVST3 {
 
@@ -37,7 +38,10 @@ private:
     // whichever order the host feels like.
     std::string uiMappingName_;
     std::uint32_t uiGeneration_ = 0U;
-    Editor* editor_ = nullptr;
+    // Every view handed out and not yet released. There is normally one, but
+    // a host reopening an editor may well build the replacement before it
+    // lets go of the old one, so this cannot be a single slot.
+    std::vector<Editor*> editors_;
 
 public:
     OBJ_METHODS (Controller, Steinberg::Vst::EditControllerEx1)

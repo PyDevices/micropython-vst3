@@ -387,7 +387,9 @@ One implementation, written once, generic forever:
 5. Windows only, and the only test that looks at a screen
    (`mpvst_editor_window`): the real view is opened in a real window,
    photographed through `WM_PRINTCLIENT`, and required to equal the engine's
-   framebuffer pixel for pixel. `mpvst_gdi_blit_tests` pins the same geometry
+   framebuffer pixel for pixel - twice, closing and reopening in between,
+   with the second view asked for while the first is still alive, because
+   that is the order that broke reopening. `mpvst_gdi_blit_tests` pins the same geometry
    headlessly against GDI itself.
 
 Both of those exist because the editor shipped painting the wrong 480 rows of
@@ -400,11 +402,22 @@ framebuffer was correct on both platforms, the protocol was correct, and the
 audio was byte-identical. Nothing that stops short of the window could have
 seen it, so now something does not stop short.
 
-The same episode is why a reopened editor is not driven from the rectangle
-ring. Rectangles say what *changed*, and a reopened editor showing a panel
-nobody touched changes nothing - so a view that waits for rectangles waits
-forever and stays black. A view that has never shown a frame takes the whole
-framebuffer instead, under the same seqlock.
+Reopening an editor had two independent causes of the same black rectangle,
+and both are worth stating because each alone was enough.
+
+`createView` refused a second view while the first was still alive, guarding
+a race between two readers of the input ring. REAPER builds a replacement
+view *before* releasing the one it replaces, so it got a null and drew
+nothing from then on. The guard was also unnecessary: only an attached view
+runs a timer, only the visible window gets mouse messages, and an edit
+drained by either view reaches the controller exactly once. `createView` now
+always returns a fresh view and the controller tracks all live ones.
+
+And a view filled its copy of the frame from the rectangle ring alone.
+Rectangles say what *changed*, and a reopened editor showing a panel nobody
+touched changes nothing - so a view that waits for rectangles waits forever.
+A view that has never shown a frame takes the whole framebuffer instead,
+under the same seqlock.
 
 Two notes on where the coverage sits. Gestures becoming automation is
 asserted by the smoke test rather than the matrix, because Lua cannot click

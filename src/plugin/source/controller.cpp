@@ -95,14 +95,12 @@ tresult PLUGIN_API Controller::initialize (FUnknown* context)
 
 tresult PLUGIN_API Controller::terminate ()
 {
-    // The host normally releases the view first, but a controller that is
-    // torn down with one still alive must not leave it holding a dangling
-    // owner - it calls back on destruction.
-    if (editor_ != nullptr)
-    {
-        editor_->mappingChanged ({}, 0U);
-        editor_ = nullptr;
-    }
+    // The host normally releases its views first, but a controller torn down
+    // with one still alive must not leave it holding a dangling owner - it
+    // calls back on destruction.
+    for (auto* editor : editors_)
+        editor->mappingChanged ({}, 0U);
+    editors_.clear ();
     return EditControllerEx1::terminate ();
 }
 
@@ -110,18 +108,34 @@ IPlugView* PLUGIN_API Controller::createView (FIDString name)
 {
     if (name == nullptr || std::strcmp (name, ViewType::kEditor) != 0)
         return nullptr;
-    // One view at a time. A host that asks for a second gets nothing rather
-    // than a second reader racing the first over the same input ring.
-    if (editor_ != nullptr)
-        return nullptr;
-    editor_ = new Editor (this, uiMappingName_, uiGeneration_);
-    return editor_;
+    // Always hand out a fresh view. This used to refuse a second one while
+    // the first was alive, on the theory that two readers would race over the
+    // input ring - and that theory cost the editor its reopen: REAPER builds
+    // the replacement view before releasing the one it is replacing, got a
+    // null back, and showed a black rectangle from then on.
+    //
+    // The race it guarded against is not one. Only an attached view runs a
+    // timer, only the visible window receives mouse messages, and an edit
+    // drained by either view reaches this controller exactly once either way,
+    // so a brief overlap costs nothing. The most that can happen is that a
+    // detaching view clears editor_open a moment before the arriving one sets
+    // it again, which skips a single frame.
+    auto* editor = new Editor (this, uiMappingName_, uiGeneration_);
+    editors_.push_back (editor);
+    return editor;
 }
 
 void Controller::editorClosed (Editor* editor)
 {
-    if (editor_ == editor)
-        editor_ = nullptr;
+    for (auto candidate = editors_.begin (); candidate != editors_.end ();
+         ++candidate)
+    {
+        if (*candidate == editor)
+        {
+            editors_.erase (candidate);
+            return;
+        }
+    }
 }
 
 tresult PLUGIN_API Controller::notify (IMessage* message)
@@ -146,8 +160,8 @@ tresult PLUGIN_API Controller::notify (IMessage* message)
         uiMappingName_.assign (static_cast<const char*> (data),
                                data != nullptr ? size : 0U);
         uiGeneration_ = static_cast<std::uint32_t> (generation);
-        if (editor_ != nullptr)
-            editor_->mappingChanged (uiMappingName_, uiGeneration_);
+        for (auto* editor : editors_)
+            editor->mappingChanged (uiMappingName_, uiGeneration_);
         return kResultOk;
     }
     return EditControllerEx1::notify (message);

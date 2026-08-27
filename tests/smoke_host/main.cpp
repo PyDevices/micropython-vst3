@@ -1358,48 +1358,6 @@ bool captureEditorWindow(const PluginFactory& factory,
         !ok(processor->setProcessing(true)))
         return false;
 
-    auto* view = controller->createView(ViewType::kEditor);
-    if (view == nullptr)
-    {
-        std::cerr << "HOOK editor.capture FAIL: no view\n";
-        return false;
-    }
-    ViewRect size {};
-    if (!ok(view->getSize(&size)))
-        return false;
-    const auto width = size.right - size.left;
-    const auto height = size.bottom - size.top;
-
-    // A plain top-level window standing in for the host's frame. The view is
-    // a child of whatever it is handed, so this is the same path a DAW takes.
-    WNDCLASSEXW frameClass {};
-    frameClass.cbSize = sizeof(frameClass);
-    frameClass.lpfnWndProc = DefWindowProcW;
-    frameClass.hInstance = GetModuleHandleW(nullptr);
-    frameClass.lpszClassName = L"MpvstSmokeHostFrame";
-    RegisterClassExW(&frameClass);
-    // Parked offscreen and never activated. The editor answers
-    // WM_PRINTCLIENT, so the capture does not need the window to be visible -
-    // which keeps this from stealing focus, and keeps a stray click from
-    // spoiling the picture.
-    HWND frame = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
-                                 L"MpvstSmokeHostFrame", L"mpvst", WS_POPUP,
-                                 -32000, -32000, width, height, nullptr,
-                                 nullptr, GetModuleHandleW(nullptr), nullptr);
-    if (frame == nullptr)
-    {
-        std::cout << "SKIP editor.capture: no window station\n";
-        skipped = true;
-        return true;
-    }
-    ShowWindow(frame, SW_SHOWNOACTIVATE);
-
-    if (!ok(view->attached(frame, kPlatformTypeHWND)))
-    {
-        std::cerr << "HOOK editor.capture FAIL: attach refused\n";
-        return false;
-    }
-
     std::array<float, 256> left {};
     std::array<float, 256> right {};
     Sample32* channels[] = {left.data(), right.data()};
@@ -1413,120 +1371,208 @@ bool captureEditorWindow(const PluginFactory& factory,
     data.numOutputs = 1;
     data.outputs = &output;
 
-    // Turn the audio pipeline and the window's message queue together: the
-    // engine only paints when it has slack, and the view only presents from
-    // its own WM_TIMER.
-    for (int block = 0; block < 400; ++block)
-    {
-        (void)processor->process(data);
-        MSG message;
-        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE))
+    // Turn the audio pipeline and the message queue together: the engine only
+    // paints when it has slack, and the view only presents from its WM_TIMER.
+    const auto pumpBoth = [&](int blocks) {
+        for (int block = 0; block < blocks; ++block)
         {
-            TranslateMessage(&message);
-            DispatchMessageW(&message);
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    }
-
-    HWND child = GetWindow(frame, GW_CHILD);
-    if (child == nullptr)
-    {
-        std::cerr << "HOOK editor.capture FAIL: the view made no window\n";
-        return false;
-    }
-
-    BITMAPINFO shot {};
-    shot.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    shot.bmiHeader.biWidth = width;
-    shot.bmiHeader.biHeight = -height;
-    shot.bmiHeader.biPlanes = 1;
-    shot.bmiHeader.biBitCount = 32;
-    shot.bmiHeader.biCompression = BI_RGB;
-    void* bits = nullptr;
-    HDC childDc = GetDC(child);
-    HDC memory = CreateCompatibleDC(childDc);
-    HBITMAP bitmap =
-        CreateDIBSection(memory, &shot, DIB_RGB_COLORS, &bits, nullptr, 0);
-    HGDIOBJ previous = SelectObject(memory, bitmap);
-    // PrintWindow asks the window to draw itself, which is what reaches the
-    // editor's own WM_PAINT rather than whatever happens to be on screen.
-    if (PrintWindow(child, memory, PW_CLIENTONLY) == 0)
-        BitBlt(memory, 0, 0, width, height, childDc, 0, 0, SRCCOPY);
-    GdiFlush();
-
-    // The whole point. What the window shows must be what the engine drew -
-    // not merely something plausible, and not merely the right pixels in the
-    // wrong place, which is exactly how this shipped broken.
-    UiView surface;
-    if (!surface.open(relay->mappingName()))
-    {
-        std::cerr << "HOOK editor.capture FAIL: cannot open the mapping\n";
-        return false;
-    }
-    const auto* framebuffer = mpvst_ui_framebuffer(surface.mapping.data());
-    const auto stride = mpvst_ui_stride_bytes();
-    const auto* captured = static_cast<const std::uint32_t*>(bits);
-    int firstBadRow = -1;
-    for (int32 y = 0; y < height && firstBadRow < 0; ++y)
-    {
-        const auto* row = reinterpret_cast<const std::uint16_t*>(
-            framebuffer + static_cast<std::size_t>(y) * stride);
-        for (int32 x = 0; x < width; ++x)
-        {
-            char expected[3];
-            expandPixel(row[x], expected);
-            const auto pixel = captured[static_cast<std::size_t>(y) * width + x];
-            if (static_cast<char>((pixel >> 16) & 0xFFU) != expected[0] ||
-                static_cast<char>((pixel >> 8) & 0xFFU) != expected[1] ||
-                static_cast<char>(pixel & 0xFFU) != expected[2])
+            (void)processor->process(data);
+            MSG message;
+            while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE))
             {
-                firstBadRow = y;
-                break;
+                TranslateMessage(&message);
+                DispatchMessageW(&message);
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    };
+
+    WNDCLASSEXW frameClass {};
+    frameClass.cbSize = sizeof(frameClass);
+    frameClass.lpfnWndProc = DefWindowProcW;
+    frameClass.hInstance = GetModuleHandleW(nullptr);
+    frameClass.lpszClassName = L"MpvstSmokeHostFrame";
+    RegisterClassExW(&frameClass);
+
+    // Attach one view to a frame of its own, photograph it, and require the
+    // picture to equal the engine's framebuffer. Run per open, because the
+    // interesting failures are on the second one.
+    const auto showAndCompare = [&](IPlugView* view, const char* tag) {
+        ViewRect size {};
+        if (!ok(view->getSize(&size)))
+            return false;
+        const auto width = size.right - size.left;
+        const auto height = size.bottom - size.top;
+
+        // Parked offscreen and never activated. The editor answers
+        // WM_PRINTCLIENT, so this needs no visible window - it cannot steal
+        // focus, and a stray click cannot spoil the picture.
+        HWND frame = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+                                     L"MpvstSmokeHostFrame", L"mpvst", WS_POPUP,
+                                     -32000, -32000, width, height, nullptr,
+                                     nullptr, GetModuleHandleW(nullptr),
+                                     nullptr);
+        if (frame == nullptr)
+        {
+            std::cout << "SKIP editor.capture: no window station\n";
+            skipped = true;
+            return true;
+        }
+        ShowWindow(frame, SW_SHOWNOACTIVATE);
+
+        if (!ok(view->attached(frame, kPlatformTypeHWND)))
+        {
+            std::cerr << "HOOK editor.capture FAIL: " << tag
+                      << ": attach refused\n";
+            DestroyWindow(frame);
+            return false;
+        }
+        pumpBoth(120);
+
+        HWND child = GetWindow(frame, GW_CHILD);
+        if (child == nullptr)
+        {
+            std::cerr << "HOOK editor.capture FAIL: " << tag
+                      << ": the view made no window\n";
+            return false;
+        }
+
+        BITMAPINFO shot {};
+        shot.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        shot.bmiHeader.biWidth = width;
+        shot.bmiHeader.biHeight = -height;
+        shot.bmiHeader.biPlanes = 1;
+        shot.bmiHeader.biBitCount = 32;
+        shot.bmiHeader.biCompression = BI_RGB;
+        void* bits = nullptr;
+        HDC childDc = GetDC(child);
+        HDC memory = CreateCompatibleDC(childDc);
+        HBITMAP bitmap =
+            CreateDIBSection(memory, &shot, DIB_RGB_COLORS, &bits, nullptr, 0);
+        HGDIOBJ previous = SelectObject(memory, bitmap);
+        if (PrintWindow(child, memory, PW_CLIENTONLY) == 0)
+            BitBlt(memory, 0, 0, width, height, childDc, 0, 0, SRCCOPY);
+        GdiFlush();
+
+        UiView surface;
+        bool opened = surface.open(relay->mappingName());
+        int firstBadRow = -1;
+        bool allBlack = true;
+        const auto* captured = static_cast<const std::uint32_t*>(bits);
+        if (opened)
+        {
+            const auto* framebuffer = mpvst_ui_framebuffer(surface.mapping.data());
+            const auto stride = mpvst_ui_stride_bytes();
+            for (int32 y = 0; y < height; ++y)
+            {
+                const auto* row = reinterpret_cast<const std::uint16_t*>(
+                    framebuffer + static_cast<std::size_t>(y) * stride);
+                for (int32 x = 0; x < width; ++x)
+                {
+                    char expected[3];
+                    expandPixel(row[x], expected);
+                    const auto pixel =
+                        captured[static_cast<std::size_t>(y) * width + x];
+                    if ((pixel & 0x00FFFFFFU) != 0U)
+                        allBlack = false;
+                    if (firstBadRow < 0 &&
+                        (static_cast<char>((pixel >> 16) & 0xFFU) != expected[0] ||
+                         static_cast<char>((pixel >> 8) & 0xFFU) != expected[1] ||
+                         static_cast<char>(pixel & 0xFFU) != expected[2]))
+                        firstBadRow = y;
+                }
             }
         }
-    }
 
-    std::ofstream out(outputPath, std::ios::binary | std::ios::trunc);
-    if (!out)
-        return false;
-    out << "P6\n" << width << ' ' << height << "\n255\n";
-    const auto* pixels = static_cast<const std::uint32_t*>(bits);
-    for (int32 y = 0; y < height; ++y)
-    {
-        for (int32 x = 0; x < width; ++x)
+        const auto path = outputPath + "." + tag + ".ppm";
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        if (out)
         {
-            const auto pixel = pixels[static_cast<std::size_t>(y) * width + x];
-            const char rgb[3] = {static_cast<char>((pixel >> 16) & 0xFFU),
-                                 static_cast<char>((pixel >> 8) & 0xFFU),
-                                 static_cast<char>(pixel & 0xFFU)};
-            out.write(rgb, 3);
+            out << "P6\n" << width << ' ' << height << "\n255\n";
+            for (int32 y = 0; y < height; ++y)
+            {
+                for (int32 x = 0; x < width; ++x)
+                {
+                    const auto pixel =
+                        captured[static_cast<std::size_t>(y) * width + x];
+                    const char rgb[3] = {
+                        static_cast<char>((pixel >> 16) & 0xFFU),
+                        static_cast<char>((pixel >> 8) & 0xFFU),
+                        static_cast<char>(pixel & 0xFFU)};
+                    out.write(rgb, 3);
+                }
+            }
+            out.close();
         }
-    }
-    out.close();
 
-    SelectObject(memory, previous);
-    DeleteObject(bitmap);
-    DeleteDC(memory);
-    ReleaseDC(child, childDc);
-    (void)view->removed();
-    view->release();
-    DestroyWindow(frame);
+        SelectObject(memory, previous);
+        DeleteObject(bitmap);
+        DeleteDC(memory);
+        ReleaseDC(child, childDc);
+        (void)view->removed();
+        DestroyWindow(frame);
+
+        if (!opened)
+        {
+            std::cerr << "HOOK editor.capture FAIL: " << tag
+                      << ": cannot open the mapping\n";
+            return false;
+        }
+        if (allBlack)
+        {
+            std::cerr << "HOOK editor.capture FAIL: " << tag
+                      << ": the window is entirely black; see " << path << '\n';
+            return false;
+        }
+        if (firstBadRow >= 0)
+        {
+            std::cerr << "HOOK editor.capture FAIL: " << tag
+                      << ": the window and the framebuffer first differ at row "
+                      << firstBadRow << "; see " << path << '\n';
+            return false;
+        }
+        std::cout << "HOOK editor.capture OK: " << tag
+                  << ": the window matches the framebuffer exactly (" << width
+                  << 'x' << height << ")\n";
+        return true;
+    };
+
+    auto* first = controller->createView(ViewType::kEditor);
+    if (first == nullptr)
+    {
+        std::cerr << "HOOK editor.capture FAIL: no view\n";
+        return false;
+    }
+    if (!showAndCompare(first, "open") || skipped)
+    {
+        if (!skipped)
+            return false;
+        first->release();
+        return true;
+    }
+
+    // Reopening is what went black in REAPER. Ask for the second view while
+    // the first is still alive, because that is the order a host that builds
+    // the new UI before tearing down the old one uses - and a plug-in that
+    // hands out only one view ever would fail exactly here.
+    auto* second = controller->createView(ViewType::kEditor);
+    if (second == nullptr)
+    {
+        std::cerr << "HOOK editor.capture FAIL: reopen: createView returned "
+                     "nothing while the previous view was still alive\n";
+        first->release();
+        return false;
+    }
+    first->release();
+    const bool reopened = showAndCompare(second, "reopen");
+    second->release();
+
     (void)processor->setProcessing(false);
     (void)component->setActive(false);
     (void)componentConnection->disconnect(relay);
     (void)controller->terminate();
     (void)component->terminate();
-    if (firstBadRow >= 0)
-    {
-        std::cerr << "HOOK editor.capture FAIL: the window and the framebuffer "
-                     "first differ at row " << firstBadRow << "; see "
-                  << outputPath << '\n';
-        return false;
-    }
-    std::cout << "HOOK editor.capture OK: the window matches the framebuffer "
-                 "exactly (" << width << 'x' << height << "), " << outputPath
-              << '\n';
-    return true;
+    return reopened;
 }
 #endif
 
