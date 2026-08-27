@@ -43,6 +43,14 @@ CASES = {
     "DynamicEQ": ("audioeffects.DynamicEQ(src, frequency=220,"
                   " threshold_db=-30)", "pass"),
     "LowPass": ("audioeffects.LowPass(src, frequency=2000)", "pass"),
+    # Below a few hundred hertz the engine's biquad coefficients used to
+    # quantize into nonsense, and this one returned silence in the host -
+    # so the case is here as much for the "does it render at all" check as
+    # for the corner. audioif's biquads are wider now; see its
+    # docs/upstream-diff.md, "The biquads are Q15, so they cannot go low".
+    "LowPass-100Hz": ("audioeffects.LowPass(src, frequency=100)", "pass"),
+    "GraphicEQ-low": ("audioeffects.GraphicEQ(src,"
+                      " [9, 9, 9, 0, 0, 0, 0, 0, 0, 0])", "pass"),
     "HighPass": ("audioeffects.HighPass(src, frequency=1000)", "kill"),
     "BandPass": ("audioeffects.BandPass(src, frequency=220, q=2)", "pass"),
     # Tuned to the probe's own 220 Hz tone, so it annihilates it (-45 dB)
