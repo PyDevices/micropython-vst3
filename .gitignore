@@ -1,3 +1,4 @@
+# Build trees and fetched dependencies
 .deps/
 .vs/
 build/
@@ -8,5 +9,12 @@ dist/
 *.user
 *.suo
 *.VC.db
+
+# Python
 __pycache__/
+*.py[cod]
 .venv/
+
+# Cursor IDE throwaways (do not ignore the whole .cursor/ tree)
+.cursor/debug*
+.cursor/plans/
