@@ -112,7 +112,11 @@ private:
     std::int32_t dirtyRight_ = 0;
     std::int32_t dirtyBottom_ = 0;
     bool dirty_ = false;
-    bool everPainted_ = false;
+    // Whether frame_ holds a real copy of the engine's frame. Emphatically
+    // not "whether this view has ever drawn": a window is asked to paint the
+    // moment it is created, long before the first timer tick, and answering
+    // that with an empty buffer must not count as having a frame.
+    bool haveFrame_ = false;
     double scale_ = 1.0;
 
 #if defined(_WIN32)

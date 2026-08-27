@@ -416,8 +416,22 @@ always returns a fresh view and the controller tracks all live ones.
 And a view filled its copy of the frame from the rectangle ring alone.
 Rectangles say what *changed*, and a reopened editor showing a panel nobody
 touched changes nothing - so a view that waits for rectangles waits forever.
-A view that has never shown a frame takes the whole framebuffer instead,
+A view that has no frame of its own now takes the whole framebuffer instead,
 under the same seqlock.
+
+The flag guarding that had to mean the right thing, and at first it did not.
+It was set by the paint path, so it read as "this view has drawn something"
+rather than "this view holds a frame" - and a window is asked to paint the
+moment it is created, well before its first timer tick. The view answered
+that first request with its empty buffer, marked itself painted, and never
+took the full copy at all. It is set by the sampling path now, which is the
+only place that can honestly claim a frame exists.
+
+Attaching also invalidates the whole screen engine-side. That is not what
+fixes the above - the view's own fallback is sufficient there, confirmed by
+disabling one and re-running the other - but it covers the case the view
+cannot: after a sidecar restart the framebuffer is freshly zeroed, and then
+only the engine can put the pixels back.
 
 Two notes on where the coverage sits. Gestures becoming automation is
 asserted by the smoke test rather than the matrix, because Lua cannot click

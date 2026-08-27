@@ -1427,7 +1427,6 @@ bool captureEditorWindow(const PluginFactory& factory,
             DestroyWindow(frame);
             return false;
         }
-        pumpBoth(120);
 
         HWND child = GetWindow(frame, GW_CHILD);
         if (child == nullptr)
@@ -1436,6 +1435,16 @@ bool captureEditorWindow(const PluginFactory& factory,
                       << ": the view made no window\n";
             return false;
         }
+        // Force the first paint before the first timer tick. A visible child
+        // window gets a WM_PAINT the moment it is created, so on a real host
+        // the view is asked to draw before it has ever sampled a frame - and
+        // a view that mistakes "I have blitted something" for "I have a
+        // frame" paints its empty buffer black and never recovers. Offscreen
+        // windows do not raise that WM_PAINT, so without this the test agrees
+        // with itself instead of with the host.
+        InvalidateRect(child, nullptr, TRUE);
+        UpdateWindow(child);
+        pumpBoth(120);
 
         BITMAPINFO shot {};
         shot.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -1791,23 +1800,26 @@ bool editorDrivesParameters(const PluginFactory& factory,
     }
     std::cout << "HOOK editor.close OK: painting stopped\n";
 
-    // Reopening is where the editor went black. A view starts with an empty
-    // copy of the framebuffer and fills it from the dirty-rectangle ring, but
-    // rectangles say what *changed* - and a reopened editor showing a panel
-    // nobody has touched changes nothing, so a rectangle-only view waits
-    // forever on a ring that stays empty. These two assertions are the shape
-    // of that: the ring really does stay quiet, and the framebuffer really
-    // does still hold the frame, which is what a reopened view reads instead.
+    // Reopening is where the editor went black, and it has two defences that
+    // are checked separately here.
+    //
+    // The engine's: attaching a view invalidates the whole screen, so a panel
+    // nobody has touched is republished rather than sitting silent. Without
+    // it a freshly restarted sidecar - whose framebuffer is zeroed - would
+    // have nothing to show at all.
     const auto quietRects = mpvst::acquire_load_u64(&view.state->rect_head);
     view.setOpen(true);
     if (!pump(40))
         return false;
-    if (mpvst::acquire_load_u64(&view.state->rect_head) != quietRects)
+    if (mpvst::acquire_load_u64(&view.state->rect_head) == quietRects)
     {
-        std::cerr << "HOOK editor.reopen FAIL: expected a static panel to "
-                     "publish no rectangles\n";
+        std::cerr << "HOOK editor.reopen FAIL: attaching published nothing, so "
+                     "a restarted engine would reopen black\n";
         return false;
     }
+    // The view's: the framebuffer still holds the last frame across a close,
+    // which is what a view with no frame of its own copies wholesale rather
+    // than waiting on rectangles that may never come.
     bool anyPixel = false;
     {
         const auto width = mpvst::acquire_load_u32(&view.state->width);
@@ -1834,8 +1846,8 @@ bool editorDrivesParameters(const PluginFactory& factory,
                      "so a reopened view has nothing to show\n";
         return false;
     }
-    std::cout << "HOOK editor.reopen OK: no new rectangles, frame still in "
-                 "the buffer\n";
+    std::cout << "HOOK editor.reopen OK: attaching republished the panel, and "
+                 "the frame survived the close\n";
     view.setOpen(false);
 
     // A deactivate/activate cycle is an engine restart as far as the editor is

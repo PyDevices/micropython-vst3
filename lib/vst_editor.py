@@ -60,6 +60,7 @@ class Editor:
             return
         if not self._was_open:
             self._was_open = True
+            self._on_open()
         try:
             if self._app is None:
                 self._setup()
@@ -175,6 +176,26 @@ class Editor:
             adapter.note_program(data0)
 
     # ---- teardown --------------------------------------------------------
+
+    def _on_open(self):
+        """The host attached a view. Redraw everything, once.
+
+        A view arrives with an empty copy of the frame and fills it from the
+        dirty-rectangle ring, and rectangles only say what *changed* - so an
+        editor reopened onto a panel nobody touched would have nothing to
+        collect. The view has its own answer for that (it takes the whole
+        framebuffer when it has no frame yet), and this is the other half:
+        after a sidecar restart the framebuffer itself is freshly zeroed, and
+        then only the engine can put the pixels back.
+        """
+        if self._panel is None:
+            return  # nothing built yet; the first build paints everything
+        try:
+            import lvgl as lv
+
+            lv.screen_active().invalidate()
+        except Exception:
+            pass
 
     def _on_close(self):
         """The host detached the view. Stop painting; keep the panel.

@@ -81,7 +81,7 @@ bool Editor::openMapping ()
     state_ = static_cast<mpvst_ui_state*> (mapping_.data ());
     frame_.assign (static_cast<std::size_t> (mpvst_ui_framebuffer_bytes ()), 0U);
     dirty_ = false;
-    everPainted_ = false;
+    haveFrame_ = false;
     return true;
 }
 
@@ -230,7 +230,7 @@ bool Editor::sampleFrame ()
     // ones stays black forever. The framebuffer itself still holds every
     // pixel, so take all of it - under the same seqlock discipline, since the
     // engine may be mid-repaint at this exact moment.
-    if (!everPainted_)
+    if (!haveFrame_)
     {
         std::int32_t width = 0;
         std::int32_t height = 0;
@@ -248,6 +248,7 @@ bool Editor::sampleFrame ()
             return false;
         // Everything a pending rectangle covers is already in the copy.
         mpvst::release_store_u64 (&state_->rect_tail, head);
+        haveFrame_ = true;
         dirtyLeft_ = 0;
         dirtyTop_ = 0;
         dirtyRight_ = width;
@@ -310,7 +311,7 @@ bool Editor::sampleFrame ()
     if (right <= left || bottom <= top)
         return false;
 
-    if (lost || !everPainted_)
+    if (lost)
     {
         left = 0;
         top = 0;
@@ -596,7 +597,7 @@ void Editor::paint (HDC device)
         SetTextColor (device, RGB (0xF8, 0x51, 0x49));
         DrawTextW (device, L"Editor unavailable - the panel raised an error.",
                    -1, &area, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        everPainted_ = false;
+        haveFrame_ = false;
         dirty_ = false;
         return;
     }
@@ -652,7 +653,6 @@ void Editor::paint (HDC device)
                    width, height, frame_.data (),
                    reinterpret_cast<const BITMAPINFO*> (&info), DIB_RGB_COLORS,
                    SRCCOPY);
-    everPainted_ = true;
     dirty_ = false;
 }
 
@@ -696,7 +696,7 @@ tresult PLUGIN_API Editor::attached (void* parent, FIDString type)
         return kResultFalse;
     SetWindowLongPtrW (window_, GWLP_USERDATA, reinterpret_cast<LONG_PTR> (this));
     SetTimer (window_, kFrameTimer, kFrameIntervalMs, nullptr);
-    everPainted_ = false;
+    haveFrame_ = false;
     markEditorOpen (true);
     return CPluginView::attached (parent, type);
 }
@@ -834,7 +834,7 @@ void Editor::paint ()
                      16, scaled (height, scale_) / 2, message,
                      static_cast<int> (sizeof (message) - 1U));
         XFlush (display);
-        everPainted_ = false;
+        haveFrame_ = false;
         dirty_ = false;
         return;
     }
@@ -872,7 +872,6 @@ void Editor::paint ()
                static_cast<unsigned> (right - left),
                static_cast<unsigned> (bottom - top));
     XFlush (display);
-    everPainted_ = true;
     dirty_ = false;
 }
 
@@ -969,7 +968,7 @@ tresult PLUGIN_API Editor::attached (void* parent, FIDString type)
         timerRegistered_ =
             loop->registerTimer (this, kFrameIntervalMs) == kResultOk;
     }
-    everPainted_ = false;
+    haveFrame_ = false;
     markEditorOpen (true);
     return CPluginView::attached (parent, type);
 }
