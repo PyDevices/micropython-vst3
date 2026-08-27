@@ -285,3 +285,14 @@ exit, including after a failed build.
   configure with `-DMPVST_ENABLE_LIBFUZZER=ON` on a clang toolchain and
   keep interesting inputs in `tests/fuzz/corpus`. The portable driver runs
   on every toolchain as an ordinary test regardless.
+
+## License
+
+MIT, in [LICENSE](LICENSE) — the same terms as the rest of PyDevices.
+
+That covers this repository's own source. The Steinberg VST3 SDK is **not**
+vendored here: `scripts/fetch-vst3-sdk.sh` clones it into `.deps/`, which is
+ignored. It carries its own dual license (GPLv3 or a proprietary Steinberg
+agreement), and anyone distributing a **built** plug-in binary has to satisfy
+one of those two for the SDK it links. Building from source for your own use
+does not change anything here.
