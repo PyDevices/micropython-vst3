@@ -45,25 +45,39 @@ structure this document adds.
   the platform.
 
   Getting a clean per-axis signal at all took real debugging, and the
-  result is worth keeping: a `MOUSEWHEEL` event carries both a legacy
-  integer `x`/`y` pair and a float `precise_x`/`precise_y` pair, and this
-  platform (confirmed via raw `SDL_MOUSEWHEEL` logging, both under CPython
-  and MicroPython, 2026-08-27) populates the integer field inconsistently —
-  a gentle swipe can leave it at `0` while `precise_*` carries the real
-  delta, and a pure *vertical* swipe was observed setting a spurious
-  nonzero value on the legacy integer `x` field *simultaneously* with the
-  correct `precise_y`. Reading `x`/`precise_x` and `y`/`precise_y` as
-  independent per-channel fallbacks (int if nonzero, else precise) double
-  counts that: one vertical swipe drove both a value-adjust and a
-  focus-navigate at once. The fix, verified against both a patched
-  `appdev_encoder_test.py` and this panel's horizontal-navigate addition:
-  whenever an event carries any precise data at all, take *both* axes from
-  `precise_x`/`precise_y` and ignore the legacy integer fields entirely for
-  that event; fall back to the legacy fields only when precise is all
-  zero (an older SDL2 with no precise-scroll support). Any future consumer
-  of wheel input in this codebase — including a shared `display_driver.py`
-  change, if horizontal ever graduates out of deferred — needs this same
-  whole-event precedence rule, not a per-axis one.
+  finding is worth keeping even though it complicated rather than
+  simplified the picture: a `MOUSEWHEEL` event carries both a legacy
+  integer `x`/`y` pair and a float `precise_x`/`precise_y` pair, and which
+  one is trustworthy is a **per-build fact about `usdl2`, not a general
+  rule** — confirmed by testing the identical gesture against two
+  different `usdl2` builds on 2026-08-27:
+
+  - CPython (`pydevices-lvgl` wheel in the `pydevices-examples` venv): the
+    legacy integer `x`/`y` is the reliable field and already distinguishes
+    both axes correctly. `precise_x`/`precise_y` are not reliable here — a
+    captured sample showed `precise_x = 1.401298464324817e-45`, the
+    IEEE-754 bit pattern of the small integer `1` reinterpreted as a
+    float32. That is a struct-decoding bug in this build's `usdl2`, not
+    real scroll data; reading it at all reintroduced the exact "nothing
+    responds" failure this section used to describe.
+  - MicroPython (`~/.micropython/lib`, unix port): the opposite. A pure
+    *vertical* swipe was observed setting a spurious nonzero value on the
+    legacy integer `x` field *simultaneously* with the correct
+    `precise_y` — real vertical motion, mislabeled onto the x-channel, at
+    the same time real data legitimately arrived on `precise_y`. Reading
+    `x`/`precise_x` and `y`/`precise_y` as independent per-channel
+    fallbacks (int if nonzero, else precise) double-counted that: one
+    vertical swipe drove both a value-adjust and a focus-navigate at once.
+    Fixed by trusting only `precise_x`/`precise_y` for both axes whenever
+    either is nonzero, ignoring the legacy pair entirely for that event.
+
+  Net effect: there is no portable rule for "which field to trust" baked
+  into the wire format — it has to be established per interpreter/build,
+  probably once, empirically (raw `SDL_MOUSEWHEEL` logging in `usdl2` is
+  the fastest way, as it was here). Whoever wires wheel input for the real
+  engine sidecar (a third `usdl2` build, embedded in MicroPython rather
+  than unix-port standalone) needs to re-run this same check rather than
+  assume either finding above transfers.
 
   A click moving group focus always drops the group out of edit mode as
   part of that same transition (this is `lv_group_focus_obj` in LVGL core,
