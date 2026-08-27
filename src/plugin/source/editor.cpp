@@ -476,6 +476,11 @@ LRESULT Editor::handleMessage (HWND window, UINT message, WPARAM wparam,
                        toLogical (lparamY (lparam)), 0, 0);
             return 0;
         case WM_LBUTTONDOWN:
+            // Wheel messages go to the focused window, and a child that has
+            // never been clicked has no focus - so without this the wheel
+            // reaches the editor only on hosts that forward it through
+            // IPlugView::onWheel.
+            SetFocus (window);
             SetCapture (window);
             capturing_ = true;
             pushInput (MPVST_UI_INPUT_POINTER_DOWN, 1U,
@@ -654,12 +659,23 @@ void Editor::createWindow (void* parent)
     auto* display = XOpenDisplay (nullptr);
     if (display == nullptr)
         return;
+
+    // The conversion below writes 32-bit pixels, which ZPixmap stores one per
+    // four bytes at depth 24 or 32 and not at any other depth. Rather than
+    // paint garbage on an exotic visual, refuse the window: the host falls
+    // back to its generic parameter editor, which reaches everything.
+    const auto screen = DefaultScreen (display);
+    const auto depth = DefaultDepth (display, screen);
+    if (depth != 24 && depth != 32)
+    {
+        XCloseDisplay (display);
+        return;
+    }
     display_ = display;
 
     std::int32_t width = 0;
     std::int32_t height = 0;
     logicalSize (width, height);
-    const auto screen = DefaultScreen (display);
     const auto parentWindow = static_cast<Window> (
         reinterpret_cast<std::uintptr_t> (parent));
     window_ = XCreateSimpleWindow (
@@ -679,7 +695,7 @@ void Editor::createWindow (void* parent)
                        0U);
     image_ = XCreateImage (
         display, DefaultVisual (display, screen),
-        static_cast<unsigned> (DefaultDepth (display, screen)), ZPixmap, 0,
+        static_cast<unsigned> (depth), ZPixmap, 0,
         reinterpret_cast<char*> (converted_.data ()), MPVST_UI_MAX_WIDTH,
         MPVST_UI_MAX_HEIGHT, 32, 0);
 }
