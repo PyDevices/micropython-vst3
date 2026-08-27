@@ -34,28 +34,36 @@ structure this document adds.
   input group: clicking focuses a control, wheel deltas adjust the focused
   control (the slider now, the knob later). No keyboard focus handling.
 
-  Only the vertical wheel axis drives this in v1. That is a zero-cost
-  consequence of the existing shared `display_driver.py` (canonical copy in
-  `lvgl-bindings`, synced to every sister project): its `_encoder_cb` reads
-  only the neutral wheel event's `.x` field, which is what a normal vertical
-  scroll populates; horizontal scroll populates `.y`, which nothing reads.
-  Wiring horizontal in would mean editing that shared, release-gated file —
-  a cross-repo change affecting lvgl-micropython/-circuitpython/-python, not
-  a change scoped to this plug-in — so it stays a deferred option, not a v1
-  gap to close here.
+  v1 uses only the vertical axis to adjust the focused control, but a
+  second, genuinely independent horizontal axis turns out to be reachable
+  too — navigating focus between controls, confirmed working during this
+  design pass (see below). It stays out of v1 anyway: reading it means
+  bypassing the shared `display_driver.py`'s existing `_encoder_cb` (single
+  LVGL encoder indev, one axis) with a second, hand-rolled input path, and
+  that shared file is release-gated across lvgl-micropython/-circuitpython/
+  -python — a deliberate v1 scope line, not a limitation of the hardware or
+  the platform.
 
-  A two-finger trackpad swipe, tested under WSLg during this design pass,
-  did not resolve the question either way: a bare `appdev`-level probe (no
-  LVGL, no `display_driver.py`) showed a swipe in *either* direction
-  producing the identical event shape — `Wheel(x=±1, y=0)` — with `y`
-  always zero and no `FINGERMOTION` events at all. Whichever physical axis
-  was swiped, it collapses onto one scroll channel somewhere in the
-  Windows-Precision-Touchpad → WSLg virtual channel → X11/SDL2 pipeline,
-  upstream of every layer this project controls. That may well be specific
-  to testing through WSLg's remoting rather than true of a DAW host running
-  natively — re-test on a native Windows or Linux session (no remoting
-  layer in between) before concluding a two-axis encoder is or isn't
-  possible.
+  Getting a clean per-axis signal at all took real debugging, and the
+  result is worth keeping: a `MOUSEWHEEL` event carries both a legacy
+  integer `x`/`y` pair and a float `precise_x`/`precise_y` pair, and this
+  platform (confirmed via raw `SDL_MOUSEWHEEL` logging, both under CPython
+  and MicroPython, 2026-08-27) populates the integer field inconsistently —
+  a gentle swipe can leave it at `0` while `precise_*` carries the real
+  delta, and a pure *vertical* swipe was observed setting a spurious
+  nonzero value on the legacy integer `x` field *simultaneously* with the
+  correct `precise_y`. Reading `x`/`precise_x` and `y`/`precise_y` as
+  independent per-channel fallbacks (int if nonzero, else precise) double
+  counts that: one vertical swipe drove both a value-adjust and a
+  focus-navigate at once. The fix, verified against both a patched
+  `appdev_encoder_test.py` and this panel's horizontal-navigate addition:
+  whenever an event carries any precise data at all, take *both* axes from
+  `precise_x`/`precise_y` and ignore the legacy integer fields entirely for
+  that event; fall back to the legacy fields only when precise is all
+  zero (an older SDL2 with no precise-scroll support). Any future consumer
+  of wheel input in this codebase — including a shared `display_driver.py`
+  change, if horizontal ever graduates out of deferred — needs this same
+  whole-event precedence rule, not a per-axis one.
 
   A click moving group focus always drops the group out of edit mode as
   part of that same transition (this is `lv_group_focus_obj` in LVGL core,
@@ -248,6 +256,10 @@ One implementation, written once, generic forever:
 
 - Per-script custom panels (the panel-module replacement path above).
 - The shared knob widget, meters and scope taps, and host keyboard focus.
+- Horizontal wheel/swipe as a second, independent input axis (navigate
+  focus, confirmed working) — deferred because it needs a hand-rolled
+  input path alongside the shared `display_driver.py`'s single-axis
+  encoder indev, not because the platform can't do it.
 - User-resizable or zoomable editors.
 - A dedicated UI sidecar process (kept possible, not built).
 - macOS, with the rest of the platform work.
