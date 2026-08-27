@@ -1,4 +1,4 @@
-# mpvst-macro-labels: Level | Probe
+MACRO_LABELS = ("Level", "Probe")
 
 """Edited variant of the matrix instrument.
 

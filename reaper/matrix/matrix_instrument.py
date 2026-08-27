@@ -1,4 +1,4 @@
-# mpvst-macro-labels: Level | Probe
+MACRO_LABELS = ("Level", "Probe")
 
 """Deterministic instrument used by the Windows DAW matrix.
 

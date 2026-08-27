@@ -114,16 +114,16 @@ pressure, pitch bend, and all 128 MIDI CCs across 16 channels. Named
 
 Macro automation arrives through the same callback as
 `vstaudio.EVENT_PARAMETER`: `data0` is the zero-based macro index, `value0`
-the normalised value, `sample_position` the absolute render sample. A header
-comment is how a script declares which macros it has - it is the bare-script
-form of `MACRO_LABELS`, not decoration:
+the normalised value, `sample_position` the absolute render sample. A script
+declares which macros it has the same way a library module does, with a
+module-level tuple:
 
 ```python
-# mpvst-macro-labels: Gain | Tone | Attack | Release
+MACRO_LABELS = ("Gain", "Tone", "Attack", "Release")
 ```
 
-A script without the line declares no macros and the editor draws none.
-Changing labels does not change parameter IDs or detach automation.
+A script without it declares no macros and the editor draws none. Renaming a
+label does not change parameter IDs or detach automation.
 
 Every instrument also declares `PATCHES`, whose first entry is the sound
 its own defaults describe. That is what an unset macro resolves to - not
@@ -156,9 +156,10 @@ the name, so a copy of one of ours is automatically a distinct plug-in -
 and renaming the *file* makes a different plug-in, orphaning projects that
 used the old one.
 
-Macros and patches are declared or absent. A plug-in that wants macro
-parameters declares `MACRO_LABELS`; one that wants patches declares
-`PATCHES`. Undeclared does not mean unnamed, it means there are none:
+Macros and patches are declared or absent, and `MACRO_LABELS` is the whole of
+how a macro is declared - on the module for an instrument, on the class for an
+effect, at module level in a bare script. A plug-in that wants patches
+declares `PATCHES` the same way. Undeclared does not mean unnamed, it means there are none:
 `mpvst_effect_adapter` registers no parameter handler at all for a class
 without `MACRO_LABELS`, an instrument's macro index selects from a table it
 does not have, and a program change with no `PATCHES` selects from nothing.

@@ -1,5 +1,6 @@
 import sys
 
+import mpvst_script
 import vstaudio
 
 
@@ -48,6 +49,8 @@ def main():
             with open(script_path, "rb") as script_file:
                 source = script_file.read()
             exec(compile(source, script_path, "exec"), namespace, namespace)
+            # What the script declared about itself, for the panel to read.
+            mpvst_script.namespace = namespace
         except Exception as exc:
             vstaudio.error("{}: {}".format(type(exc).__name__, exc))
             return False

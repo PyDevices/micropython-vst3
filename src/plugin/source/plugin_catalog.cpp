@@ -213,11 +213,51 @@ std::vector<CatalogEntry> readCatalog ()
 
 } // namespace
 
+namespace {
+
+// The library declares its macros as MACRO_LABELS, so the script this builds
+// declares them the same way. The controller reads the assignment straight
+// back out of the source it embeds, which is how a label written once in
+// audioif ends up titling a parameter in the host - with one convention for
+// declaring a macro rather than a variable for the library and a comment for
+// everyone else.
+std::string macroLabelsAssignment (const std::string& barSeparated)
+{
+    std::string out = "MACRO_LABELS = (";
+    std::size_t at = 0U;
+    while (at < barSeparated.size ())
+    {
+        auto end = barSeparated.find ('|', at);
+        if (end == std::string::npos)
+            end = barSeparated.size ();
+        auto label = barSeparated.substr (at, end - at);
+        while (!label.empty () && std::isspace (
+                   static_cast<unsigned char> (label.front ())) != 0)
+            label.erase (label.begin ());
+        while (!label.empty () && std::isspace (
+                   static_cast<unsigned char> (label.back ())) != 0)
+            label.pop_back ();
+        out += '"';
+        for (const auto character : label)
+        {
+            if (character == '\\' || character == '"')
+                out += '\\';
+            out += character;
+        }
+        out += "\", ";
+        at = end + 1U;
+    }
+    out += ")\n";
+    return out;
+}
+
+} // namespace
+
 std::string CatalogEntry::scriptSource () const
 {
     std::string source;
     if (!macroLabels.empty ())
-        source += "# mpvst-macro-labels: " + macroLabels + "\n";
+        source += macroLabelsAssignment (macroLabels);
     if (effect)
     {
         source += "# mpvst-class: " + package + "." + className + "\n";

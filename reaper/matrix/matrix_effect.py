@@ -1,4 +1,4 @@
-# mpvst-macro-labels: Level
+MACRO_LABELS = ("Level")
 """Deterministic effect used by the DAW matrix.
 
 Plays the host input back through an audiomixer voice at half level, so a

@@ -92,29 +92,6 @@ def notes_for(module):
     return MELODIC_CHORD
 
 
-def check_label_line(script_path, module):
-    """The line the plug-in parses must match the MACRO_LABELS in force.
-
-    The plug-in reads its macro names straight out of the embedded script
-    source, so every script carries them as a comment as well as a tuple.
-    Two places, one truth - this is what keeps them the same.
-    """
-    prefix = "# mpvst-macro-labels:"
-    declared = [line for line in script_path.read_text().split("\n")
-                if line.startswith(prefix)]
-    # Found by its prefix, not by its position: a script carries other
-    # metadata comments too, and which line this one lands on is not the
-    # thing under test.
-    first = declared[0] if declared else "<no %s line>" % prefix
-    expected = "# mpvst-macro-labels: " + " | ".join(module.MACRO_LABELS)
-    if first != expected:
-        fix = ("regenerate it" if module_of(script_path)
-               else "edit the comment or MACRO_LABELS so they agree")
-        return ["macro labels disagree - %s\n  file:   %s\n  labels: %s"
-                % (fix, first, expected)]
-    return []
-
-
 def run_one(script_path):
     errors = []
 
@@ -132,7 +109,6 @@ def run_one(script_path):
     except Exception:
         return ["module: " + traceback.format_exc(limit=4)]
 
-    errors += check_label_line(script_path, module)
 
     try:
         run = harness.InstrumentRun(str(script_path))
@@ -189,9 +165,12 @@ def library_scripts():
         _SYNTHESISED = Path(tempfile.mkdtemp(prefix="mpvst-instruments-"))
         for name in audioinstruments.ALL:
             module = importlib.import_module("audioinstruments." + name)
-            labels = " | ".join(getattr(module, "MACRO_LABELS", ()))
+            declared = getattr(module, "MACRO_LABELS", ())
+            labels = ("MACRO_LABELS = (%s)\n"
+                      % ", ".join('"%s"' % text for text in declared)
+                      if declared else "")
             (_SYNTHESISED / (name + ".py")).write_text(
-                "# mpvst-macro-labels: %s\n"
+                "%s"
                 "# mpvst-module: audioinstruments.%s\n"
                 "import mpvst_adapter\n"
                 "mpvst_adapter.run(\"audioinstruments.%s\")\n"

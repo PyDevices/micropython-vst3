@@ -41,7 +41,7 @@ class EngineAdapter:
         self._values = {}
         self._listeners = []
         self.script_name = _script_name(script_path)
-        self.macro_labels = _macro_labels(script_path)
+        self.macro_labels = _macro_labels()
         # How many of the sixteen this instance actually uses. The parameter
         # space never changes - a host that automated macro 12 keeps doing so
         # whatever the panel draws - but a control that moves nothing is worse
@@ -177,7 +177,7 @@ def _script_name(script_path):
     filename is only worth using when there is no declaration to read - a
     hand-written sketch that never went through either adapter.
     """
-    declared = getattr(_declared(), "NAME", None)
+    declared = _declared("NAME")
     if declared:
         return declared
     if not script_path:
@@ -186,52 +186,25 @@ def _script_name(script_path):
     return name[:-3] if name.endswith(".py") else name
 
 
-def _first_value(script_path, prefix):
-    """The text after `prefix` on the first line that carries it."""
-    try:
-        with open(script_path, "r") as source:
-            for line in source:
-                if line.startswith(prefix):
-                    return line[len(prefix):].strip()
-    except OSError:
-        return None
-    return None
-
-
-# The same marker line the controller parses to title its parameters
-# (src/plugin/source/script_metadata.h). Reading it here rather than inventing
-# a second channel is what keeps the panel's labels and the host's generic UI
-# saying the same thing about the same instrument.
-_LABEL_PREFIX = "# mpvst-macro-labels:"
-
-
-def _macro_labels(script_path):
+def _macro_labels():
     """The macros this instance declares, named. Nothing declared, none drawn.
 
-    Declaring them is the contract: MACRO_LABELS on the module or the class,
-    or a `# mpvst-macro-labels:` line for a script that is neither. An
-    undeclared macro is not an unnamed one, it is one that does nothing -
+    Declaring them is the contract, and MACRO_LABELS is the whole of it: on
+    the module for an instrument, on the class for an effect, and at module
+    level in a script that is neither. An undeclared macro is not an unnamed
+    one, it is one that does nothing -
     mpvst_effect_adapter registers no parameter handler at all for a class
     without MACRO_LABELS, and an instrument's macro index selects from a table
     it does not have. So drawing none of them is an accurate report rather
     than a hidden feature.
     """
-    declared = _labels_from_source(script_path)
-    if not declared:
-        declared = getattr(_declared(), "MACRO_LABELS", None)
+    declared = _declared("MACRO_LABELS")
     labels = []
     for index, text in enumerate(declared or ()):
         if index >= MACRO_COUNT:
             break
         labels.append(str(text) if text else "Macro {:02d}".format(index + 1))
     return labels
-
-
-def _labels_from_source(script_path):
-    if not script_path:
-        return None
-    body = _first_value(script_path, _LABEL_PREFIX)
-    return [part.strip() for part in body.split("|")] if body else None
 
 
 def _patch_names():
@@ -242,7 +215,7 @@ def _patch_names():
     128 entries would be 128 ways to change nothing. The Patch parameter
     itself stays - it is permanent, and a host may still automate it.
     """
-    declared = getattr(_declared(), "PATCHES", None)
+    declared = _declared("PATCHES")
     if not isinstance(declared, dict) or not declared:
         return []
     count = min(max(declared) + 1, PATCH_COUNT)
@@ -253,35 +226,40 @@ def _patch_names():
     return names
 
 
-def _declared():
-    """What this instance is playing, as the object that declares its own
-    metadata: an audioinstruments module, or an audioeffects class.
+def _declared(name):
+    """What this instance declared for `name`, wherever it declared it.
 
-    That difference is the library's, not this file's - an instrument is one
-    plug-in per module, an effect file holds several classes - so the two
-    adapters each say where they got theirs and this asks whichever ran. A
-    script that builds its sound by hand went through neither, has nothing to
-    declare, and gets generic names.
+    Three places, because there are three kinds of plug-in and the library's
+    own shape decides which: an instrument is one plug-in per module so it
+    declares at module level; an effect file holds several classes so each
+    declares on itself; and a script that went through neither adapter is
+    exec'd into a namespace of its own and declares there. The name is the
+    same in all three - MACRO_LABELS is MACRO_LABELS - which is the point.
     """
-    try:
-        import sys
-    except ImportError:  # pragma: no cover - sys is always there
-        return None
+    import sys
 
     try:
         import mpvst_adapter
-        name = getattr(mpvst_adapter, "module_name", None)
-        if name:
-            return sys.modules.get(name)
+        module = sys.modules.get(getattr(mpvst_adapter, "module_name", None))
+        if module is not None:
+            return getattr(module, name, None)
     except ImportError:
         pass
 
     try:
         import mpvst_effect_adapter
-        package = getattr(mpvst_effect_adapter, "module_name", None)
+        package = sys.modules.get(
+            getattr(mpvst_effect_adapter, "module_name", None))
         owner = getattr(mpvst_effect_adapter, "class_name", None)
-        if package and owner:
-            return getattr(sys.modules.get(package), owner, None)
+        if package is not None and owner:
+            return getattr(getattr(package, owner, None), name, None)
+    except ImportError:
+        pass
+
+    try:
+        import mpvst_script
+        if mpvst_script.namespace:
+            return mpvst_script.namespace.get(name)
     except ImportError:
         pass
     return None

@@ -26,6 +26,8 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <set>
+#include <sstream>
 #include <iostream>
 #include <string>
 #include <thread>
@@ -425,7 +427,7 @@ bool embeddedStateSurvivesMissingSource(const PluginFactory& factory,
     const auto sourcePath = std::filesystem::temp_directory_path() /
         ("mpvst-state-source-" + std::to_string(unique) + ".py");
     constexpr const char* source =
-        "# mpvst-macro-labels: Gain | Tone\n"
+        "MACRO_LABELS = (\"Gain\", \"Tone\")\n"
         "import synthio\n"
         "import vstaudio\n"
         "synth = synthio.Synthesizer(sample_rate=vstaudio.sample_rate(), "
@@ -1595,9 +1597,9 @@ bool editorDrivesParameters(const PluginFactory& factory,
     // draw and the test is exercising the same metadata path a shipped
     // instrument uses.
     constexpr const char* source =
-        "# mpvst-macro-labels: Alpha | Bravo | Charlie | Delta | Echo | "
-        "Foxtrot | Golf | Hotel | India | Juliett | Kilo | Lima | Mike | "
-        "November | Oscar | Papa\n"
+        "MACRO_LABELS = (\"Alpha\", \"Bravo\", \"Charlie\", \"Delta\", "
+        "\"Echo\", \"Foxtrot\", \"Golf\", \"Hotel\", \"India\", \"Juliett\", "
+        "\"Kilo\", \"Lima\", \"Mike\", \"November\", \"Oscar\", \"Papa\")\n"
         "import synthio\n"
         "import vstaudio\n"
         "synth = synthio.Synthesizer(sample_rate=vstaudio.sample_rate(), "
@@ -1908,6 +1910,47 @@ bool editorDrivesParameters(const PluginFactory& factory,
 // class it read from a file, the processor built that plug-in's script from
 // the same entry, and the sidecar imported the library module named in it. If
 // any link is wrong the instrument is silent, so silence is the failure.
+// Filled once from the bundle before the sweep runs; empty for every mode
+// that does not need it.
+std::set<std::string> gPluginsDeclaringMacros;
+
+// The plug-ins whose moduleinfo says they have macros, by name.
+//
+// Read from the file rather than from the script the plug-in built, because
+// the point of the check is that the label survived the trip between them. A
+// signal taken from the thing under test agrees with it by construction: the
+// first version of this asked the built script whether it mentioned
+// MACRO_LABELS, which meant a build that stopped emitting the assignment
+// quietly stopped being checked.
+std::set<std::string> pluginsDeclaringMacros(const std::string& bundlePath)
+{
+    std::set<std::string> named;
+    std::ifstream input(bundlePath + "/Contents/Resources/moduleinfo.json");
+    if (!input)
+        return named;
+    std::stringstream buffer;
+    buffer << input.rdbuf();
+    const auto text = buffer.str();
+
+    constexpr const char* marker = "// mpvst-macros:";
+    std::size_t at = text.find(marker);
+    while (at != std::string::npos)
+    {
+        // The class the comment sits above is the next "Name" in the file.
+        const auto nameKey = text.find("\"Name\"", at);
+        if (nameKey == std::string::npos)
+            break;
+        const auto open = text.find('"', text.find(':', nameKey));
+        const auto close = open == std::string::npos
+            ? std::string::npos : text.find('"', open + 1U);
+        if (close == std::string::npos)
+            break;
+        named.insert(text.substr(open + 1U, close - open - 1U));
+        at = text.find(marker, at + 1U);
+    }
+    return named;
+}
+
 bool namedPluginPlays(const PluginFactory& factory, const std::string& wanted,
                       FUnknown* host)
 {
@@ -2075,6 +2118,18 @@ bool namedPluginPlays(const PluginFactory& factory, const std::string& wanted,
     }
     (void)controller->terminate();
     controller = nullptr;
+    // A library label has to survive the whole way: MACRO_LABELS in audioif,
+    // through the scanner into a moduleinfo comment, back out as the
+    // assignment the built script carries, and out of that into the title the
+    // host shows. Every link is silent when it breaks - the parameter still
+    // exists, still automates, and is simply called "Macro 01" - so the
+    // generic name is the failure and not a default.
+    if (gPluginsDeclaringMacros.count(wanted) != 0 && title == "Macro 01")
+    {
+        std::cerr << "HOOK named.controller FAIL: " << wanted
+                  << ": declares macros but macro 01 is still \"Macro 01\"\n";
+        return false;
+    }
     std::cout << "HOOK named.controller OK: " << wanted << " controller "
               << controllerUid.toString() << " macro 01 = \"" << title
               << "\"\n";
@@ -2393,6 +2448,7 @@ int main(int argc, char** argv)
                              "named plug-ins - has scan_plugins.py been run?\n";
                 return 5;
             }
+            gPluginsDeclaringMacros = pluginsDeclaringMacros(argv[1]);
             std::size_t failed = 0;
             for (const auto& name : names)
             {
@@ -2410,6 +2466,7 @@ int main(int argc, char** argv)
         }
         else if (namedMode)
         {
+            gPluginsDeclaringMacros = pluginsDeclaringMacros(argv[1]);
             if (!namedPluginPlays(factory, modeArgument, host))
             {
                 std::cerr << "HOOK named FAIL\n";
