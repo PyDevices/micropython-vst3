@@ -45,7 +45,12 @@ CASES = {
     "LowPass": ("audioeffects.LowPass(src, frequency=2000)", "pass"),
     "HighPass": ("audioeffects.HighPass(src, frequency=1000)", "kill"),
     "BandPass": ("audioeffects.BandPass(src, frequency=220, q=2)", "pass"),
-    "Notch": ("audioeffects.Notch(src, frequency=220, q=1)", "squeeze"),
+    # Tuned to the probe's own 220 Hz tone, so it annihilates it (-45 dB)
+    # rather than merely denting it. This was "squeeze" back when a stereo
+    # Filter shared one biquad state between the channels and every filter
+    # sat an octave above where it was asked to sit: the notch landed on
+    # 440 Hz and the tone lost 2 dB in the skirt.
+    "Notch": ("audioeffects.Notch(src, frequency=220, q=1)", "kill"),
     "LadderFilter": ("audioeffects.LadderFilter(src, cutoff=3000,"
                      " resonance=0.3)", "pass"),
     "CombFilter": ("audioeffects.CombFilter(src, frequency=440)", "pass"),
