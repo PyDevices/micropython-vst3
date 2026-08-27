@@ -166,17 +166,17 @@ def _to_midi(normalized):
 def _script_name(script_path):
     """What to call this instance in the panel's header.
 
-    A named plug-in declares it, and the plug-in puts that declaration in the
-    script it builds - so the panel says "Mellotron M400" rather than the
-    temporary filename the source happened to be written to, which is all a
-    materialised script has to offer. A hand-written script can declare one
-    the same way; without it the filename is still the best guess available.
+    Read off the module or class this instance is playing, which is loaded in
+    this same interpreter and declares its own NAME. A materialised script is
+    written to a temporary file named after nothing in particular, so the
+    filename is only worth using when there is no declaration to read - a
+    hand-written sketch that never went through either adapter.
     """
-    if not script_path:
-        return "script"
-    declared = _first_value(script_path, _NAME_PREFIX)
+    declared = getattr(_declared(), "NAME", None)
     if declared:
         return declared
+    if not script_path:
+        return "script"
     name = script_path.replace("\\", "/").rsplit("/", 1)[-1]
     return name[:-3] if name.endswith(".py") else name
 
@@ -198,7 +198,6 @@ def _first_value(script_path, prefix):
 # a second channel is what keeps the panel's labels and the host's generic UI
 # saying the same thing about the same instrument.
 _LABEL_PREFIX = "# mpvst-macro-labels:"
-_NAME_PREFIX = "# mpvst-name:"
 
 
 def _macro_labels(script_path):
@@ -219,14 +218,12 @@ def _labels_from_source(script_path):
 
 
 def _labels_from_instrument():
-    module = _instrument_module()
-    return getattr(module, "MACRO_LABELS", None) if module else None
+    return getattr(_declared(), "MACRO_LABELS", None)
 
 
 def _patch_names():
     names = ["Patch {:03d}".format(index + 1) for index in range(PATCH_COUNT)]
-    module = _instrument_module()
-    declared = getattr(module, "PATCHES", None) if module else None
+    declared = getattr(_declared(), "PATCHES", None)
     if isinstance(declared, dict):
         for index, entry in declared.items():
             if 0 <= index < PATCH_COUNT and entry:
@@ -234,15 +231,35 @@ def _patch_names():
     return names
 
 
-def _instrument_module():
-    """The audioinstruments module this instance is playing, if it went
-    through `mpvst_adapter`. A script that builds its sound by hand has no
-    such module and gets generic names."""
+def _declared():
+    """What this instance is playing, as the object that declares its own
+    metadata: an audioinstruments module, or an audioeffects class.
+
+    That difference is the library's, not this file's - an instrument is one
+    plug-in per module, an effect file holds several classes - so the two
+    adapters each say where they got theirs and this asks whichever ran. A
+    script that builds its sound by hand went through neither, has nothing to
+    declare, and gets generic names.
+    """
     try:
         import sys
-
-        import mpvst_adapter
-    except ImportError:
+    except ImportError:  # pragma: no cover - sys is always there
         return None
-    name = getattr(mpvst_adapter, "module_name", None)
-    return sys.modules.get(name) if name else None
+
+    try:
+        import mpvst_adapter
+        name = getattr(mpvst_adapter, "module_name", None)
+        if name:
+            return sys.modules.get(name)
+    except ImportError:
+        pass
+
+    try:
+        import mpvst_effect_adapter
+        package = getattr(mpvst_effect_adapter, "module_name", None)
+        owner = getattr(mpvst_effect_adapter, "class_name", None)
+        if package and owner:
+            return getattr(sys.modules.get(package), owner, None)
+    except ImportError:
+        pass
+    return None

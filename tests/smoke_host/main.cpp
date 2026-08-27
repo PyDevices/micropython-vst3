@@ -2043,15 +2043,17 @@ bool namedPluginPlays(const PluginFactory& factory, const std::string& wanted,
     if (ok(component->getState(&state)))
     {
         // The script the plug-in built for itself is embedded in that state.
-        // It has to carry the plug-in's name, because a materialised script
-        // is written to a temporary file named after nothing and the editor's
-        // header has nothing else to show.
+        // It has to hand the sidecar a library entry point: that call is the
+        // whole of what makes this class this plug-in rather than an empty
+        // host, and a class registered from a file that forgets it would
+        // still load, still be silent, and still pass every other check.
         const std::string embedded(state.getData(),
                                    static_cast<std::size_t>(state.getSize()));
-        if (embedded.find("# mpvst-name: " + wanted) == std::string::npos)
+        if (embedded.find("mpvst_adapter.run(") == std::string::npos &&
+            embedded.find("mpvst_effect_adapter.run(") == std::string::npos)
         {
             std::cerr << "HOOK named.script FAIL: " << wanted
-                      << ": its script does not declare the name\n";
+                      << ": its script loads nothing from the library\n";
             return false;
         }
         state.seek(0, IBStream::kIBSeekSet, nullptr);

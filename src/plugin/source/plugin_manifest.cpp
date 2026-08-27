@@ -134,10 +134,6 @@ std::vector<PluginEntry> readManifest ()
 std::string PluginEntry::scriptSource () const
 {
     std::string source;
-    // What the editor's header shows. A materialised script is written to a
-    // temporary file named after nothing in particular, so without this the
-    // panel would caption a Mellotron with a hex nonce.
-    source += "# mpvst-name: " + name + "\n";
     // The controller reads macro names straight out of the embedded source,
     // so the comment has to be here as well as in the library module.
     if (!macroLabels.empty ())
