@@ -33,6 +33,23 @@ structure this document adds.
   `display_driver` already creates. The panel keeps its controls in an
   input group: clicking focuses a control, wheel deltas adjust the focused
   control (the slider now, the knob later). No keyboard focus handling.
+
+  Only the vertical wheel axis drives this in v1. That is a zero-cost
+  consequence of the existing shared `display_driver.py` (canonical copy in
+  `lvgl-bindings`, synced to every sister project): its `_encoder_cb` reads
+  only the neutral wheel event's `.x` field, which is what a normal vertical
+  scroll populates; horizontal scroll populates `.y`, which nothing reads.
+  Wiring horizontal in would mean editing that shared, release-gated file —
+  a cross-repo change affecting lvgl-micropython/-circuitpython/-python, not
+  a change scoped to this plug-in — so it stays a deferred option, not a v1
+  gap to close here.
+
+  A click moving group focus always drops the group out of edit mode as
+  part of that same transition (this is `lv_group_focus_obj` in LVGL core,
+  not a PyDevices choice), so the panel must not re-enable editing from a
+  `PRESSED` handler — that runs before the drop and gets silently
+  overwritten. It has to run from the control's own `FOCUSED` handler,
+  which fires after focus (and the mode drop) has settled.
 - **v1 ships exactly one panel**: a generic panel built from metadata the
   bundle already carries (macro labels, `PATCHES`, engine status), using
   stock `lv.slider` and `lv.switch` controls. A single shared knob widget
