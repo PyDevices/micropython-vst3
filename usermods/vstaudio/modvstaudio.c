@@ -28,6 +28,7 @@
 
 MP_REGISTER_ROOT_POINTER(mp_obj_t vstaudio_output);
 MP_REGISTER_ROOT_POINTER(mp_obj_t vstaudio_event_callback);
+MP_REGISTER_ROOT_POINTER(mp_obj_t vstaudio_event_observer);
 
 #if defined(_WIN32)
 static HANDLE vstaudio_mapping_handle;
@@ -333,6 +334,7 @@ static mp_obj_t vstaudio_configure(mp_obj_t name_obj, mp_obj_t bytes_obj) {
     vstaudio_input_underflows = 0u;
     MP_STATE_VM(vstaudio_output) = MP_OBJ_NULL;
     MP_STATE_VM(vstaudio_event_callback) = MP_OBJ_NULL;
+    MP_STATE_VM(vstaudio_event_observer) = MP_OBJ_NULL;
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_2(vstaudio_configure_obj, vstaudio_configure);
@@ -366,6 +368,10 @@ static MP_DEFINE_CONST_FUN_OBJ_1(vstaudio_output_obj, vstaudio_output);
 static mp_obj_t vstaudio_clear_output(void) {
     MP_STATE_VM(vstaudio_output) = MP_OBJ_NULL;
     MP_STATE_VM(vstaudio_event_callback) = MP_OBJ_NULL;
+    // The observer belongs to the script's own generation too: a reload
+    // rebuilds the panel's adapter, and a stale observer would keep a dead
+    // closure alive and double-report every parameter change.
+    MP_STATE_VM(vstaudio_event_observer) = MP_OBJ_NULL;
     vstaudio_source_samples = NULL;
     vstaudio_source_frames = 0u;
     vstaudio_source_offset = 0u;
@@ -494,8 +500,35 @@ static mp_obj_t vstaudio_on_event(mp_obj_t callback) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(vstaudio_on_event_obj, vstaudio_on_event);
 
+// Watch the event stream without owning it. `on_event` is the script's own
+// handler and there is exactly one; an observer is for a second reader that
+// must not displace it - the editor panel, which mirrors macro values so the
+// controls follow automation and the host's replay after a reload.
+static mp_obj_t vstaudio_observe(mp_obj_t callback) {
+    if (callback != mp_const_none && !mp_obj_is_callable(callback)) {
+        mp_raise_TypeError(MP_ERROR_TEXT("observer must be callable or None"));
+    }
+    MP_STATE_VM(vstaudio_event_observer) = callback == mp_const_none
+        ? MP_OBJ_NULL : callback;
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(vstaudio_observe_obj, vstaudio_observe);
+
 static void dispatch_event(const mpvst_event *event) {
+    mp_obj_t observer = MP_STATE_VM(vstaudio_event_observer);
     mp_obj_t callback = MP_STATE_VM(vstaudio_event_callback);
+    if (observer != MP_OBJ_NULL) {
+        mp_obj_t watched[7] = {
+            mp_obj_new_int_from_uint(event->type),
+            mp_obj_new_int_from_uint(event->channel),
+            mp_obj_new_int(event->note_id),
+            mp_obj_new_int(event->data0),
+            mp_obj_new_float(event->value0),
+            mp_obj_new_float(event->value1),
+            mp_obj_new_int_from_ll(event->sample_position),
+        };
+        mp_call_function_n_kw(observer, 7, 0, watched);
+    }
     if (callback == MP_OBJ_NULL) {
         return;
     }
@@ -591,17 +624,62 @@ static void process_commands(uint64_t *command_position, mp_obj_t reload_callbac
     }
 }
 
-static mp_obj_t vstaudio_run(mp_obj_t reload_callback) {
+// Optional housekeeping, which in practice means the editor. Phase-0's rule is
+// that audio takes priority and the UI is the canonical optional work, so this
+// runs only where the engine has nothing to render: while the host is not
+// asking for blocks at all, and in the moment between finishing the queue and
+// the next work slot arriving. An engine that never catches up never ticks the
+// UI, which is the intended degradation - the frame rate suffers, the audio
+// does not.
+//
+// A budget keeps a burst of yields from turning into a burst of ticks. 5 ms is
+// below the 10 ms LVGL period the PyDevices bridge runs at, so the gates above
+// this one decide the real cadence rather than being starved by this one.
+#define VSTAUDIO_HOUSEKEEPING_INTERVAL_NS UINT64_C(5000000)
+
+static uint64_t vstaudio_housekeeping_next_ns;
+
+static void run_housekeeping(mp_obj_t housekeeping, bool *disabled) {
+    if (housekeeping == MP_OBJ_NULL || *disabled) {
+        return;
+    }
+    const uint64_t now = monotonic_ns();
+    if (now < vstaudio_housekeeping_next_ns) {
+        return;
+    }
+    vstaudio_housekeeping_next_ns = now + VSTAUDIO_HOUSEKEEPING_INTERVAL_NS;
+    nlr_buf_t nlr;
+    if (nlr_push(&nlr) == 0) {
+        mp_call_function_0(housekeeping);
+        nlr_pop();
+    } else {
+        // A panel that raises is torn down, not retried: the caller has
+        // already recorded the failure for the view to render, and an engine
+        // that keeps calling a broken tick would spend the rest of its life
+        // raising instead of rendering. Audio is untouched either way.
+        *disabled = true;
+    }
+}
+
+static mp_obj_t vstaudio_run(size_t n_args, const mp_obj_t *args) {
+    mp_obj_t reload_callback = args[0];
+    mp_obj_t housekeeping = n_args > 1 && args[1] != mp_const_none
+        ? args[1] : MP_OBJ_NULL;
     if (vstaudio_header == NULL) {
         mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("vstaudio is not configured"));
     }
     if (!mp_obj_is_callable(reload_callback)) {
         mp_raise_TypeError(MP_ERROR_TEXT("reload callback must be callable"));
     }
+    if (housekeeping != MP_OBJ_NULL && !mp_obj_is_callable(housekeeping)) {
+        mp_raise_TypeError(MP_ERROR_TEXT("housekeeping callback must be callable"));
+    }
 
     uint64_t command_position = 0u;
     uint64_t work_position = 0u;
     uint64_t output_position = 0u;
+    bool housekeeping_disabled = false;
+    vstaudio_housekeeping_next_ns = 0u;
     atomic_store_u32(&vstaudio_header->lifecycle, MPVST_LIFECYCLE_ENGINE_READY);
     for (;;) {
         uint32_t lifecycle = atomic_load_u32(&vstaudio_header->lifecycle);
@@ -609,6 +687,7 @@ static mp_obj_t vstaudio_run(mp_obj_t reload_callback) {
             break;
         }
         if (lifecycle != MPVST_LIFECYCLE_RUNNING) {
+            run_housekeeping(housekeeping, &housekeeping_disabled);
             engine_idle();
             continue;
         }
@@ -619,6 +698,7 @@ static mp_obj_t vstaudio_run(mp_obj_t reload_callback) {
         mpvst_output_slot *output = output_at(output_position);
         if (atomic_load_u64(&work->sequence) != work_position + 1u ||
             atomic_load_u64(&output->sequence) != output_position) {
+            run_housekeeping(housekeeping, &housekeeping_disabled);
             engine_yield();
             continue;
         }
@@ -694,7 +774,7 @@ static mp_obj_t vstaudio_run(mp_obj_t reload_callback) {
     close_mapping();
     return mp_const_none;
 }
-static MP_DEFINE_CONST_FUN_OBJ_1(vstaudio_run_obj, vstaudio_run);
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(vstaudio_run_obj, 1, 2, vstaudio_run);
 
 // Dynamics and Splitter used to live here, in vstaudio_dsp.c. They are
 // audioif's `audiodynamics.Dynamics` and `audioroute.Splitter` now - the
@@ -710,6 +790,7 @@ static const mp_rom_map_elem_t vstaudio_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_input_stats), MP_ROM_PTR(&vstaudio_input_stats_obj) },
     { MP_ROM_QSTR(MP_QSTR_clear_output), MP_ROM_PTR(&vstaudio_clear_output_obj) },
     { MP_ROM_QSTR(MP_QSTR_on_event), MP_ROM_PTR(&vstaudio_on_event_obj) },
+    { MP_ROM_QSTR(MP_QSTR_observe), MP_ROM_PTR(&vstaudio_observe_obj) },
     { MP_ROM_QSTR(MP_QSTR_error), MP_ROM_PTR(&vstaudio_error_obj) },
     { MP_ROM_QSTR(MP_QSTR_run), MP_ROM_PTR(&vstaudio_run_obj) },
     { MP_ROM_QSTR(MP_QSTR_EVENT_NOTE_ON), MP_ROM_INT(MPVST_EVENT_NOTE_ON) },

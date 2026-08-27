@@ -28,6 +28,15 @@ import sys
 
 import vstaudio
 
+# What the last `attach` built, and the module it came from. The editor panel
+# reads these to label its controls and fill its patch list: an instrument
+# already declares MACRO_LABELS and PATCHES for the library's own use, and the
+# panel showing something other than those would be a second source of truth.
+# Both are None for a script that builds its sound by hand rather than through
+# this seam, and the panel falls back to generic names there.
+instrument = None
+module_name = None
+
 
 def attach(create):
     """Build an instrument from `create` and wire it to the host.
@@ -35,6 +44,7 @@ def attach(create):
     Returns the instrument, so a private script can keep a reference and
     poke at it - the soundtrack's `check_pump.py` does exactly that.
     """
+    global instrument
     instrument = create(vstaudio.sample_rate(), transport=vstaudio.transport)
 
     def dispatch(event_type, channel, note_id, data0, value0, value1,
@@ -70,16 +80,18 @@ def attach(create):
     return instrument
 
 
-def run(module_name):
-    """Import `module_name` fresh and attach its `create`."""
+def run(name):
+    """Import `name` fresh and attach its `create`."""
     # The sidecar reloads a script by re-exec'ing this file, but an import
     # is cached: without this, editing an instrument and hitting reload
     # would rebuild the old code. Drop the whole library rather than just
     # the named module, so an edit to a shared helper counts as a reload
     # too. Costs a wavetable rebuild, which is what a reload is for.
-    root = module_name.split(".")[0]
+    global module_name
+    root = name.split(".")[0]
     for cached in list(sys.modules):
         if cached == root or cached.startswith(root + "."):
             del sys.modules[cached]
-    __import__(module_name)
-    return attach(sys.modules[module_name].create)
+    __import__(name)
+    module_name = name
+    return attach(sys.modules[name].create)

@@ -35,18 +35,25 @@ test -f "$workspace_dir/audioif/micropython.mk"
 mkdir -p "$output_dir"
 
 # cmods applies its Windows networking/SSL/FFI overlays transactionally and
-# reverses them on exit. Add only this repository's module to its ignored
+# reverses them on exit. Add only this repository's modules to its ignored
 # discovery root for the duration of the build.
-vstaudio_link="$cmods_dir/vstaudio"
-if [[ -e "$vstaudio_link" && ! -L "$vstaudio_link" ]]; then
-    echo "error: $vstaudio_link already exists and is not a symlink" >&2
-    exit 1
-fi
-ln -sfn "$repo_dir/usermods/vstaudio" "$vstaudio_link"
-cleanup() {
-    if [[ -L "$vstaudio_link" && "$(readlink "$vstaudio_link")" == "$repo_dir/usermods/vstaudio" ]]; then
-        unlink "$vstaudio_link"
+links=()
+for module in vstaudio vstui; do
+    link="$cmods_dir/$module"
+    if [[ -e "$link" && ! -L "$link" ]]; then
+        echo "error: $link already exists and is not a symlink" >&2
+        exit 1
     fi
+    ln -sfn "$repo_dir/usermods/$module" "$link"
+    links+=("$link")
+done
+cleanup() {
+    local link
+    for link in "${links[@]}"; do
+        if [[ -L "$link" && "$(readlink "$link")" == "$repo_dir/usermods/$(basename "$link")" ]]; then
+            unlink "$link"
+        fi
+    done
 }
 trap cleanup EXIT
 
