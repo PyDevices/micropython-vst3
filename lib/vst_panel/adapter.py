@@ -164,10 +164,33 @@ def _to_midi(normalized):
 
 
 def _script_name(script_path):
+    """What to call this instance in the panel's header.
+
+    A named plug-in declares it, and the plug-in puts that declaration in the
+    script it builds - so the panel says "Mellotron M400" rather than the
+    temporary filename the source happened to be written to, which is all a
+    materialised script has to offer. A hand-written script can declare one
+    the same way; without it the filename is still the best guess available.
+    """
     if not script_path:
         return "script"
+    declared = _first_value(script_path, _NAME_PREFIX)
+    if declared:
+        return declared
     name = script_path.replace("\\", "/").rsplit("/", 1)[-1]
     return name[:-3] if name.endswith(".py") else name
+
+
+def _first_value(script_path, prefix):
+    """The text after `prefix` on the first line that carries it."""
+    try:
+        with open(script_path, "r") as source:
+            for line in source:
+                if line.startswith(prefix):
+                    return line[len(prefix):].strip()
+    except OSError:
+        return None
+    return None
 
 
 # The same marker line the controller parses to title its parameters
@@ -175,6 +198,7 @@ def _script_name(script_path):
 # a second channel is what keeps the panel's labels and the host's generic UI
 # saying the same thing about the same instrument.
 _LABEL_PREFIX = "# mpvst-macro-labels:"
+_NAME_PREFIX = "# mpvst-name:"
 
 
 def _macro_labels(script_path):
@@ -190,15 +214,8 @@ def _macro_labels(script_path):
 def _labels_from_source(script_path):
     if not script_path:
         return None
-    try:
-        with open(script_path, "r") as source:
-            for line in source:
-                if line.startswith(_LABEL_PREFIX):
-                    body = line[len(_LABEL_PREFIX):]
-                    return [part.strip() for part in body.split("|")]
-    except OSError:
-        return None
-    return None
+    body = _first_value(script_path, _LABEL_PREFIX)
+    return [part.strip() for part in body.split("|")] if body else None
 
 
 def _labels_from_instrument():
