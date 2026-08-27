@@ -489,13 +489,15 @@ def _read_effect(name):
         return handle.read()
 
 
-# Space / Echo / Tone, held well back. The shimmer is already the quietest
-# thing in the mix; this puts it further behind the strings rather than
-# turning it into an effect showcase.
-FX_SPACE = {
-    "name": "Air Space",
-    "source": _read_effect("fx_space.py"),
-    "macros": {0: 0.3, 1: 0.15, 2: 0.7},
+# Shimmer / Echo / Space / Tone. The choir plus a copy of itself an octave
+# up, through a tape echo and a long hall - the settings the Shimmer Lab
+# auditioned as take C, unchanged. How far back the track sits is the track's
+# gain, not this rack's business; keeping the approved sound intact and
+# moving it with one number beats re-tuning four.
+FX_SHIMMER = {
+    "name": "Shimmer Hall",
+    "source": _read_effect("fx_shimmer.py"),
+    "macros": {0: 0.55, 1: 0.45, 2: 0.6, 3: 0.62},
     "macro_env": {},
 }
 
@@ -642,12 +644,18 @@ TRACKS = [
                           (bar(61), 0.3)]},
     },
     {
-        "name": "Air Shimmer", "script": "shimmer.py", "gain_db": -12.0,
+        "name": "Air Shimmer", "script": "vp330.py", "gain_db": -8.1,
         "pan": 0.1, "notes": shimmer_notes(),
-        "macros": {0: 0.55, 1: 0.7},
+        # Volume, male choir, female choir, chorus depth, attack, release,
+        # formant, vibrato rate, vibrato depth, brilliance, bass, tune.
+        # Bass at zero deliberately: the VP-330's bass layer doubles an
+        # octave down, and a shimmer is the air above a mix rather than
+        # another thing competing with the bass in it.
+        "macros": {0: 0.95, 1: 0.3, 2: 0.85, 3: 0.6, 4: 0.55, 5: 0.7,
+                   6: 0.5, 7: 0.35, 8: 0.25, 9: 0.65, 10: 0.0, 11: 0.5},
         "vol": [(bar(1), 0.9), (bar(43), 1.0), (bar(71), 0.8)],
         "macro_env": {},
-        "effects": [FX_SPACE],
+        "effects": [FX_SHIMMER],
     },
     {
         "name": "Aurora Bells", "script": "bells.py", "gain_db": -8.5,
