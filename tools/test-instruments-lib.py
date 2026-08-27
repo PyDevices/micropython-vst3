@@ -47,7 +47,7 @@ from pathlib import Path
 REPO_DIR = Path(__file__).resolve().parent.parent
 SOUNDTRACK_DIR = REPO_DIR / "soundtrack"
 # The library instruments have no script files of their own any more: the
-# plug-in builds each one's two-line loader from the manifest when the class
+# plug-in builds each one's two-line loader from the catalog when the class
 # is instantiated. This synthesises the same two lines so the sweep still
 # drives the real path - shim to mpvst_adapter to audioinstruments - rather
 # than reaching into the package and skipping the seam under test.
@@ -179,7 +179,7 @@ def run_one(script_path):
 def library_scripts():
     """A loader script per audioinstruments module, written to a temp dir.
 
-    The same text src/plugin/source/plugin_manifest.cpp builds, for the same
+    The same text src/plugin/source/plugin_catalog.cpp builds, for the same
     reason: everything downstream deals in script source, so the cheapest
     honest way to test a library instrument is to hand it one.
     """

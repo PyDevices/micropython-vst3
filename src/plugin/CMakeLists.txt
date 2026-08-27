@@ -18,14 +18,21 @@ smtg_add_vst3plugin(${MPVST_PLUGIN_TARGET}
     source/editor_message.h
     source/factory.cpp
     source/parameters.h
-    source/plugin_manifest.cpp
-    source/plugin_manifest.h
+    source/plugin_catalog.cpp
+    source/plugin_catalog.h
     source/processor.cpp
     source/processor.h
     source/script_metadata.h
     source/version.h
 )
 smtg_target_add_library_main(${MPVST_PLUGIN_TARGET})
+
+# The SDK's own moduleinfo.json reader. The factory learns which plug-ins to
+# offer from that file, and reading it with the parser that defines the format
+# is what keeps "what the scanner wrote" and "what the host will read" the
+# same question. It is not part of the `sdk` target, so it is named here.
+target_sources(${MPVST_PLUGIN_TARGET} PRIVATE
+    "${VST3_SDK_ROOT}/public.sdk/source/vst/moduleinfo/moduleinfoparser.cpp")
 
 target_link_libraries(${MPVST_PLUGIN_TARGET}
     PRIVATE
@@ -43,9 +50,11 @@ if(UNIX AND NOT APPLE)
 endif()
 
 if(WIN32)
+    set(MPVST_ENGINE_NAME micropython-vst-engine.exe)
     set(MPVST_ENGINE_DEFAULT
         "${CMAKE_SOURCE_DIR}/.deps/engine/micropython-vst-engine.exe")
 else()
+    set(MPVST_ENGINE_NAME micropython-vst-engine)
     set(MPVST_ENGINE_DEFAULT
         "${CMAKE_SOURCE_DIR}/.deps/engine/micropython-vst-engine")
 endif()
@@ -82,6 +91,13 @@ if(EXISTS "${MPVST_MICROPYTHON_ENGINE}")
             -DMPVST_LIB_SRC=${MPVST_AUDIOIF_LIB}
             -DMPVST_LIB_DST=$<TARGET_FILE_DIR:${MPVST_PLUGIN_TARGET}>
             -P "${CMAKE_CURRENT_SOURCE_DIR}/stage_lib.cmake"
+        # Same command the install instructions give a user, run here so a
+        # fresh build has a moduleinfo.json describing the library rather than
+        # none at all - the factory reads it, so without this a just-built
+        # plug-in offers only its four compiled-in classes.
+        COMMAND ${CMAKE_COMMAND} -E chdir
+            $<TARGET_FILE_DIR:${MPVST_PLUGIN_TARGET}>
+            ./${MPVST_ENGINE_NAME} scan_plugins.py --write
         DEPENDS
             ${MPVST_PLUGIN_TARGET}
             "${MPVST_MICROPYTHON_ENGINE}"

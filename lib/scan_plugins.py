@@ -9,11 +9,10 @@ which is the whole reason it is written for the engine rather than for a
 system interpreter. Run it after installing, and again after adding or
 editing a script; the DAW picks up the result on its next rescan.
 
-It writes two files. `plugins.manifest` is what the plug-in binary reads at
-load to decide which classes it offers - that is the one that matters.
-`../Resources/moduleinfo.json` is the same list in the form a host reads to
-enumerate classes without loading the binary. One pass produces both, from
-one in-memory list, so they cannot disagree.
+It writes one file, `../Resources/moduleinfo.json`: the list a host reads to
+enumerate classes without loading the binary, and the same list the plug-in
+binary reads at load to decide which classes it offers. One file, so there is
+nothing for a second one to disagree with.
 
 Reads the files as text rather than importing them - what is wanted is what
 each module *declares*, and text gives the same answer without paying for a
@@ -70,12 +69,6 @@ MODULE_DEFAULTS = {
 # binary.
 MODULE_INFO = "../Resources/moduleinfo.json"
 
-# Read by the plug-in binary itself, next to it. Tab separated because a
-# sub-category list is bar separated and a macro label may contain almost
-# anything else; a tab is the one character none of them carry.
-MANIFEST = "plugins.manifest"
-MANIFEST_VERSION = "mpvst-plugins 1"
-
 # Which file and class a plug-in came from, written beside its class entry.
 #
 # It is a comment because moduleinfo.json is JSON5 and the Steinberg
@@ -86,6 +79,12 @@ MANIFEST_VERSION = "mpvst-plugins 1"
 # it is a key something else looks up, and it has to read the same on both
 # platforms.
 SOURCE_COMMENT = "// mpvst-source:"
+
+# The macro names the plug-in's parameters carry, written the same way and
+# for the same reason. These are wanted in the host's process, where a class
+# is registered and its parameters are named, and there is no sidecar there
+# to ask - so they travel with the class rather than being fetched later.
+MACROS_COMMENT = "// mpvst-macros:"
 
 # A class ID is 128 fixed bits and a plug-in is identified by arbitrary-length
 # text, so something has to compress one into the other deterministically -
@@ -99,26 +98,20 @@ SOURCE_COMMENT = "// mpvst-source:"
 # not having to hand out identifiers.
 CID_NAMESPACE = "PyDevices/micropython-vst3/plugin/1"
 
-# Every generated plug-in names the same controller class.
-#
-# VST3 splits a plug-in into a processor and a controller so a host can run
-# them in separate processes, and a component says which controller class it
-# wants by ID. Nothing requires that to be a different class per plug-in, and
-# ours genuinely is not: one implementation serves all of them and learns
-# which instrument it is from the component state, never from its own class.
-# So they share one, and the class count is a hair over the plug-in count
-# instead of double it.
-CONTROLLER_NAME = "MicroPython Controller"
-
 # The classes compiled into the binary. The scan cannot discover them - they
 # come from no script - and a moduleinfo that omits them is not merely
 # incomplete: a host that trusts the file never sees them at all, which is
 # how the developer-loop plug-in went missing from projects that used it.
 #
-# Held here as identity only. Vendor, version and SDK version come from the
-# module fields like everything else, so the only thing that can go stale is
-# a CID or a name, and `moduleinfotool -validate` fails loudly when one does.
-# The CIDs are src/plugin/source/cids.h and the names are factory.cpp.
+# The two controller classes here are also the ones every discovered plug-in
+# names. One controller implementation serves all of them and learns which
+# instrument it is from the component state, never from its own class, so
+# there is nothing for a per-plug-in controller class to be.
+#
+# Held as identity only. Vendor, version and SDK version come from the module
+# fields like everything else, so the only thing that can go stale is a CID
+# or a name, and `moduleinfotool -validate` fails loudly when one does. The
+# CIDs are src/plugin/source/cids.h and the names are factory.cpp.
 BUILTIN_CLASSES = (
     ("60A40168727C4E7DAAF808B790961DAA",
      "MicroPython Script Host", ["Instrument", "Synth"]),
@@ -332,12 +325,15 @@ def cid(path, name, role):
     return binascii.hexlify(digest).decode("ascii").upper()
 
 
-def source_comment(entry):
-    """The `// mpvst-source:` line that goes above a class entry."""
+def comment_lines(entry):
+    """The comments that go above a class entry, one per line."""
     where = entry["package"] + "/" + entry["file"]
     if entry["class"]:
         where += "#" + entry["class"]
-    return SOURCE_COMMENT + " " + where
+    lines = SOURCE_COMMENT + " " + where + "\n"
+    if entry["macros"]:
+        lines += MACROS_COMMENT + " " + " | ".join(entry["macros"]) + "\n"
+    return lines
 
 
 def class_object(identifier, name, categories, vendor, version, module):
@@ -362,15 +358,6 @@ def class_object(identifier, name, categories, vendor, version, module):
     if categories is not None:
         fields["Sub Categories"] = categories
     return fields
-
-
-def shared_controllers(entries):
-    """Each distinct controller class once, however many components name it."""
-    seen = []
-    for entry in entries:
-        if entry["controller_cid"] not in seen:
-            seen.append(entry["controller_cid"])
-    return seen
 
 
 def module_info(write, entries, module):
@@ -409,40 +396,12 @@ def module_info(write, entries, module):
             module["Version"], module)))
         separator = ",\n"
     for entry in entries:
-        write(separator + source_comment(entry) + "\n")
+        write(separator + comment_lines(entry))
         write(json.dumps(class_object(
             entry["cid"], entry["name"], entry["categories"],
             entry["vendor"], entry["version"], module)))
         separator = ",\n"
-    for shared in shared_controllers(entries):
-        for entry in entries:
-            if entry["controller_cid"] == shared:
-                write(separator + json.dumps(class_object(
-                    shared, CONTROLLER_NAME, None, entry["vendor"],
-                    entry["version"], module)))
-                separator = ",\n"
-                break
-
     write("\n]}\n")
-
-
-def manifest(write, entries):
-    """Write the list the plug-in binary reads."""
-    write(MANIFEST_VERSION + "\n")
-    for entry in entries:
-        write("\t".join((
-            entry["cid"],
-            entry["controller_cid"],
-            "effect" if entry["kind"] == "Fx" else "instrument",
-            entry["name"],
-            "|".join(entry["categories"]),
-            entry["vendor"],
-            entry["version"],
-            entry["package"],
-            entry["module"],
-            entry["class"] or "",
-            " | ".join(entry["macros"]),
-        )) + "\n")
 
 
 def main():
@@ -452,23 +411,16 @@ def main():
     for entry in entries:
         path = entry["package"] + "/" + entry["file"]
         entry["cid"] = cid(path, entry["name"], "processor")
-        entry["controller_cid"] = cid("", CONTROLLER_NAME, "controller")
 
     if "--json" in sys.argv:
         module_info(sys.stdout.write, entries, module)
         return
-    if "--manifest" in sys.argv:
-        manifest(sys.stdout.write, entries)
-        return
     if "--write" in sys.argv:
-        with open(root + "/" + MANIFEST, "w") as handle:
-            manifest(handle.write, entries)
         with open(root + "/" + MODULE_INFO, "w") as handle:
             module_info(handle.write, entries, module)
-        print("%d plug-ins: wrote %s and %s (%d classes)"
-              % (len(entries), MANIFEST, MODULE_INFO,
-                 len(entries) + len(shared_controllers(entries))
-                 + len(BUILTIN_CLASSES)))
+        print("%d plug-ins: wrote %s (%d classes)"
+              % (len(entries), MODULE_INFO,
+                 len(entries) + len(BUILTIN_CLASSES)))
         return
 
     for entry in entries:
@@ -483,8 +435,8 @@ def main():
     print("module: %s %s, %s <%s>"
           % (module["Name"], module["Version"], module["Vendor"],
              module["URL"]))
-    print("%d plug-ins declared. --write to save them, --manifest or --json "
-          "to see either file." % len(entries))
+    print("%d plug-ins declared. --write to save them, --json to see the "
+          "file that would be written." % len(entries))
 
 
 main()

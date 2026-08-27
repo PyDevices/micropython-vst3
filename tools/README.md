@@ -53,7 +53,7 @@ and the root [`../reaper.sh`](../reaper.sh) entry point.
   which is the part audioif's own parity goldens cannot see. No engine or
   VST3 host needed; a full pass over all 93 takes about ten seconds.
   Registered as the `mpvst_instruments_library` ctest.
-- **`smoke_host --expect-all-named`** - every plug-in the manifest
+- **`smoke_host --expect-all-named`** - every plug-in the moduleinfo
   declares, instantiated through the real factory: the class is registered
   from a file, the processor builds its script from the same entry, and
   the sidecar imports the library module named in it. Also builds each

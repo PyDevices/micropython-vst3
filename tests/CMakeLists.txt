@@ -135,10 +135,11 @@ if(TARGET mpvst-stage-micropython-engine)
             $<TARGET_FILE_DIR:MicroPythonVST3>/../..)
         set_tests_properties(mpvst_effects_library PROPERTIES TIMEOUT 600)
 
-        # Every plug-in the manifest declares, instantiated through the real
-        # factory: the class is registered from a file, the processor builds
-        # its script from the same entry, and the sidecar imports the library
-        # module named in it. Silence anywhere along that chain fails here.
+        # Every plug-in the moduleinfo declares, instantiated through the
+        # real factory: the class is registered from a file, the processor
+        # builds its script from the same entry, and the sidecar imports the
+        # library module named in it. Silence anywhere along that chain fails
+        # here.
         add_test(NAME mpvst_named_plugins COMMAND mpvst_smoke_host
             $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-all-named)
         set_tests_properties(mpvst_named_plugins PROPERTIES TIMEOUT 1800)

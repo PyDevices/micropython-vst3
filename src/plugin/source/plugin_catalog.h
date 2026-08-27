@@ -1,29 +1,38 @@
 #pragma once
 
-// The list of plug-ins this binary offers, read at load time from a file
-// beside it rather than compiled in.
+// The list of plug-ins this binary offers, read at load time from the
+// moduleinfo.json beside it rather than compiled in.
+//
+// That file is what a host reads to enumerate classes without loading the
+// binary, so it already has to describe every plug-in exactly. Reading the
+// same file here rather than keeping a second list of our own is what makes
+// the two impossible to disagree - they were two files once, and they did.
+//
+// What VST3 has no field for - which script a class runs, and what its macro
+// parameters are called - rides in `// mpvst-` comments above each class.
+// moduleinfo.json is JSON5, whose parser reads past a comment but rejects an
+// unknown key outright, so a comment is not a shortcut here; it is the only
+// place the file can carry anything of ours.
 //
 // The file is written by lib/scan_plugins.py, which the engine itself runs -
 // so adding an instrument is editing a script and re-scanning, never
 // rebuilding. That is the whole point: a user who writes their own instrument
 // gets it into their DAW without a compiler.
 //
-// A missing or unreadable manifest is not an error. The factory then offers
-// only its built-in classes, which is exactly what it offered before any of
-// this existed.
+// A missing or unreadable file is not an error. The factory then offers only
+// its built-in classes, which is exactly what it offered before any of this
+// existed.
 
 #include "pluginterfaces/base/funknown.h"
 
-#include <cstdint>
 #include <string>
 #include <vector>
 
 namespace PyDevices::MicroPythonVST3 {
 
-struct PluginEntry
+struct CatalogEntry
 {
     Steinberg::FUID processorId;
-    Steinberg::FUID controllerId;
     bool effect = false;
     std::string name;
     // VST3 sub-categories, already bar-separated the way PClassInfo2 wants
@@ -48,8 +57,8 @@ struct PluginEntry
     std::string scriptSource () const;
 };
 
-// Every plug-in the manifest beside this binary declares. Empty when there is
-// no manifest, which is the un-scanned state and not a failure.
-const std::vector<PluginEntry>& manifestPlugins ();
+// Every plug-in the moduleinfo beside this binary declares. Empty when there
+// is none, which is the un-scanned state and not a failure.
+const std::vector<CatalogEntry>& catalogPlugins ();
 
 } // namespace PyDevices::MicroPythonVST3

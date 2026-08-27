@@ -28,11 +28,15 @@ Processor::Processor (bool effectMode)
                               SidecarTransport::ScriptOrigin::DeveloperFile);
 }
 
-Processor::Processor (const PluginEntry& entry)
+Processor::Processor (const CatalogEntry& entry)
     : scriptSource_ (entry.scriptSource ())
     , effectMode_ (entry.effect)
 {
-    setControllerClass (entry.controllerId);
+    // Every generated plug-in names the controller class compiled into this
+    // binary. One implementation serves all of them and learns which
+    // instrument it is from the component state, never from its own class,
+    // so there is nothing for a per-plug-in controller class to be.
+    setControllerClass (entry.effect ? kEffectControllerUID : kControllerUID);
     for (auto& value : macros_)
         value.store (0.5f, std::memory_order_relaxed);
     sidecar_.setInputEnabled (effectMode_);
@@ -43,9 +47,9 @@ Processor::Processor (const PluginEntry& entry)
     sidecar_.setScriptSource (scriptSource_);
 }
 
-FUnknown* Processor::createFromManifest (void* context)
+FUnknown* Processor::createFromCatalog (void* context)
 {
-    const auto* entry = static_cast<const PluginEntry*> (context);
+    const auto* entry = static_cast<const CatalogEntry*> (context);
     if (entry == nullptr)
         return nullptr;
     return static_cast<IAudioProcessor*> (new Processor (*entry));

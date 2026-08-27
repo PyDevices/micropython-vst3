@@ -39,6 +39,16 @@ set(SMTG_ENABLE_VST3_HOSTING_EXAMPLES OFF CACHE BOOL
 set(SMTG_ENABLE_VSTGUI_SUPPORT OFF CACHE BOOL "" FORCE)
 set(SMTG_CREATE_PLUGIN_LINK OFF CACHE BOOL "" FORCE)
 
+# The SDK writes moduleinfo.json after every build, by loading the plug-in and
+# asking its factory. That is left on - it is also what builds moduleinfotool,
+# which the validate test needs - but its output is not the last word: the
+# factory now learns which plug-ins to offer *from* that file, so a file
+# generated from the factory describes only the compiled-in classes and loses
+# the comments carrying each plug-in's script. Staging re-runs the scanner
+# afterwards, from the scripts, which is also what a user runs after adding
+# one. Build the plug-in target alone and the file is briefly down to four
+# classes; the staging target is in ALL, so an ordinary build restores it.
+
 set(public_sdk_SOURCE_DIR "${VST3_SDK_ROOT}/public.sdk")
 add_subdirectory("${VST3_SDK_ROOT}" "${CMAKE_BINARY_DIR}/vst3sdk" EXCLUDE_FROM_ALL)
 add_subdirectory(src/protocol)

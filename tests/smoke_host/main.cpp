@@ -1902,9 +1902,9 @@ bool editorDrivesParameters(const PluginFactory& factory,
     return true;
 }
 
-// Instantiate one of the manifest's named plug-ins and make it play.
+// Instantiate one of the catalog's named plug-ins and make it play.
 //
-// This is the end of the chain the manifest starts: the factory registered a
+// This is the end of the chain the moduleinfo starts: the factory registered a
 // class it read from a file, the processor built that plug-in's script from
 // the same entry, and the sidecar imported the library module named in it. If
 // any link is wrong the instrument is silent, so silence is the failure.
@@ -2374,10 +2374,10 @@ int main(int argc, char** argv)
         else if (sweepMode)
         {
             // Every Audio Module Class the factory offers that is not one of
-            // the two built-in script hosts - i.e. everything the manifest
-            // put there. Asked of the factory rather than read from the
-            // manifest, so a plug-in the scanner declared but the factory
-            // failed to register is a failure and not an omission.
+            // the two built-in script hosts - i.e. everything the moduleinfo
+            // put there. Asked of the factory rather than read from the file,
+            // so a plug-in the scanner declared but the factory failed to
+            // register is a failure and not an omission.
             std::vector<std::string> names;
             for (const auto& info : factory.classInfos())
             {
