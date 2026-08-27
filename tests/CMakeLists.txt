@@ -3,6 +3,27 @@
 # reference it.
 add_subdirectory(smoke_host)
 
+# The Python that runs the test scripts. The repository's own .venv is
+# searched first, for the same reason flake8 is found there below: these
+# scripts import audioif, which is a dependency installed from PyPI (or as an
+# editable install of a sibling checkout), and a distribution Python is
+# usually externally managed and cannot have it installed into it.
+#
+# This used to fall to whatever python3 was on PATH, and worked only because
+# tools/harness.py put a sibling audioif checkout on sys.path itself. That
+# hid which copy of audioif was under test -- it beat both the installed
+# package and PYTHONPATH -- so the scripts now just import it.
+find_program(MPVST_PYTHON
+    NAMES python3 python
+    HINTS "${CMAKE_SOURCE_DIR}/.venv/bin" "${CMAKE_SOURCE_DIR}/.venv/Scripts"
+    NO_CMAKE_SYSTEM_PATH)
+if(NOT MPVST_PYTHON)
+    find_package(Python3 COMPONENTS Interpreter)
+    set(MPVST_PYTHON "${Python3_EXECUTABLE}")
+    message(STATUS "no .venv Python; falling back to ${MPVST_PYTHON}. The "
+        "Python tests need pydevices-audioif installed into it.")
+endif()
+
 add_executable(mpvst_protocol_tests protocol_tests.cpp)
 target_link_libraries(mpvst_protocol_tests PRIVATE mpvst_protocol)
 target_compile_features(mpvst_protocol_tests PRIVATE cxx_std_17)
@@ -45,9 +66,8 @@ if(TARGET mpvst-stage-micropython-engine)
     add_test(NAME mpvst_patch_select_smoke COMMAND mpvst_smoke_host
         $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-patch-select)
     # Every class in the shared effects library, through the real sidecar.
-    find_package(Python3 COMPONENTS Interpreter)
-    if(Python3_FOUND)
-        add_test(NAME mpvst_effects_library COMMAND ${Python3_EXECUTABLE}
+    if(MPVST_PYTHON)
+        add_test(NAME mpvst_effects_library COMMAND ${MPVST_PYTHON}
             ${CMAKE_SOURCE_DIR}/tools/test-effects-lib.py
             $<TARGET_FILE:mpvst_smoke_host>
             $<TARGET_FILE_DIR:MicroPythonVST3>/../..)
@@ -55,7 +75,7 @@ if(TARGET mpvst-stage-micropython-engine)
 
         # Every lib/instruments/*.py script, through the real VST3 plug-in
         # class and protocol.
-        add_test(NAME mpvst_instruments_plugin COMMAND ${Python3_EXECUTABLE}
+        add_test(NAME mpvst_instruments_plugin COMMAND ${MPVST_PYTHON}
             ${CMAKE_SOURCE_DIR}/tools/test-instruments-plugin.py
             $<TARGET_FILE:mpvst_smoke_host>
             $<TARGET_FILE_DIR:MicroPythonVST3>/../..)
@@ -65,9 +85,8 @@ endif()
 
 # The same instrument scripts against the audioif CPython wheel directly
 # (no compiled engine needed) -- fast enough to run on every configure.
-find_package(Python3 COMPONENTS Interpreter)
-if(Python3_FOUND)
-    add_test(NAME mpvst_instruments_library COMMAND ${Python3_EXECUTABLE}
+if(MPVST_PYTHON)
+    add_test(NAME mpvst_instruments_library COMMAND ${MPVST_PYTHON}
         ${CMAKE_SOURCE_DIR}/tools/test-instruments-lib.py)
     set_tests_properties(mpvst_instruments_library PROPERTIES TIMEOUT 300)
 
@@ -75,7 +94,7 @@ if(Python3_FOUND)
     # committed, because a REAPER project embeds the bytes of the script
     # it loads. A stale shim would keep working and quietly disagree with
     # the instrument about its macro labels, so regenerate and diff.
-    add_test(NAME mpvst_instrument_shims COMMAND ${Python3_EXECUTABLE}
+    add_test(NAME mpvst_instrument_shims COMMAND ${MPVST_PYTHON}
         ${CMAKE_SOURCE_DIR}/tools/generate_shims.py --check)
 
     # Defect linting for the Python half of the repository - the tools, the

@@ -21,17 +21,14 @@ from pathlib import Path
 
 TOOLS_DIR = Path(__file__).resolve().parent
 REPO_DIR = TOOLS_DIR.parent
-# A sibling audioif checkout, when present, wins over any installed
-# pydevices-audioif wheel: it is the source these scripts are developed
-# against. Falls through to the wheel in .venv when there is no sibling.
-AUDIOIF_DIR = REPO_DIR.parent / "audioif"
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(AUDIOIF_DIR))
-# audioinstruments and audioeffects live under audioif's lib/, and the
-# plug-in stages them beside its own lib/ contents. Mirror that here so a
-# script imports the same packages offline as it does in the sidecar.
-sys.path.insert(0, str(AUDIOIF_DIR / "lib"))
+# audioif is a dependency, imported from wherever it is installed --
+# pydevices-audioif, from TestPyPI or as an editable install of a sibling
+# checkout. It used to be put on sys.path from a sibling directory instead,
+# which silently won over the installed wheel and, because this ran at
+# sys.path[0], over PYTHONPATH as well: an A/B done by pointing PYTHONPATH at
+# another checkout rendered current code twice and came out bit-identical.
+sys.path.insert(0, str(TOOLS_DIR))
 sys.path.insert(0, str(REPO_DIR / "lib"))
 
 import audiocore  # noqa: E402
