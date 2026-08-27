@@ -76,6 +76,17 @@ MODULE_INFO = "../Resources/moduleinfo.json"
 MANIFEST = "plugins.manifest"
 MANIFEST_VERSION = "mpvst-plugins 1"
 
+# Which file and class a plug-in came from, written beside its class entry.
+#
+# It is a comment because moduleinfo.json is JSON5 and the Steinberg
+# validator takes a closed set of keys - an added one fails with "Unexpected
+# key", and every standard field it would fit in is cross-checked against the
+# live factory, so bending one would put the path in front of the user. A
+# comment validates and stays invisible. The path is always forward-slashed:
+# it is a key something else looks up, and it has to read the same on both
+# platforms.
+SOURCE_COMMENT = "// mpvst-source:"
+
 # A class ID is 128 fixed bits and a plug-in is identified by arbitrary-length
 # text, so something has to compress one into the other deterministically -
 # which is all the hash is for. The seed is the file's path plus its NAME:
@@ -209,38 +220,89 @@ def plugins(root):
     return found
 
 
+def strip_trailing_commas(text):
+    """JSON5 allows a comma before a closing bracket; `json` does not.
+
+    The SDK's own writer emits them, so anything reading a moduleinfo the
+    build produced has to take them out first. Quoted text is stepped over,
+    because a comma inside a string is data.
+    """
+    out = []
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == '"':
+            end = index + 1
+            while end < len(text) and text[end] != '"':
+                end += 2 if text[end] == "\\" else 1
+            out.append(text[index:end + 1])
+            index = end + 1
+            continue
+        if char == ",":
+            look = index + 1
+            while look < len(text) and text[look] in " \t\r\n":
+                look += 1
+            if look < len(text) and text[look] in "}]":
+                index += 1
+                continue
+        out.append(char)
+        index += 1
+    return "".join(out)
+
+
+def header_object(text):
+    """Everything before the class list, as a dict.
+
+    Only the header is parsed. The class array is the large part of the file
+    and none of it is wanted here, so cutting before it keeps a hundred
+    kilobytes of JSON out of the engine's heap.
+    """
+    cut = text.find('"Classes"')
+    if cut < 0:
+        return None
+    head = text[:cut].rstrip()
+    if head.endswith(","):
+        head = head[:-1]
+    try:
+        return json.loads(strip_trailing_commas(head) + "}")
+    except ValueError:
+        return None
+
+
 def module_fields(path):
     """The binary's own identity, read from the moduleinfo the build wrote.
 
-    Line-scanned rather than parsed, for two reasons: the SDK's writer emits
-    trailing commas, which is not JSON that a strict parser will take, and the
-    only values wanted are the first occurrence of a handful of keys - which
-    are the module's, because the module's come before the classes'.
-
-    Reading our own previous output works the same way and yields the same
-    answers, so re-running this is idempotent.
+    A version bump then reaches this file without anyone remembering to edit
+    it, and reading our own previous output yields the same answers, so
+    re-running this is idempotent. MODULE_DEFAULTS is only the fallback for
+    when there is nothing to read.
     """
     fields = dict(MODULE_DEFAULTS)
-    seen = set()
     try:
-        handle = open(path)
+        with open(path) as handle:
+            text = handle.read()
     except OSError:
         return fields  # nothing written yet, or generation turned off
-    with handle:
-        for line in handle:
-            stripped = line.strip()
-            for key in MODULE_DEFAULTS:
-                if key in seen or not stripped.startswith('"%s"' % key):
-                    continue
-                value = stripped.split(":", 1)[1] if ":" in stripped else ""
-                if isinstance(MODULE_DEFAULTS[key], bool):
-                    fields[key] = "true" in value
-                else:
-                    text = quoted(value)
-                    if not text:
-                        continue
-                    fields[key] = text[0]
-                seen.add(key)
+
+    header = header_object(text) or {}
+    factory = header.get("Factory Info") or {}
+    flags = factory.get("Flags") or {}
+    for source, keys in ((header, ("Name", "Version")),
+                         (factory, ("Vendor", "URL", "E-Mail")),
+                         (flags, ("Unicode", "Classes Discardable",
+                                  "Component Non Discardable"))):
+        for key in keys:
+            if key in source:
+                fields[key] = source[key]
+
+    # SDKVersion belongs to a class rather than to the header, so it is the
+    # one value that has to be found in the body.
+    marker = text.find('"SDKVersion"')
+    if marker >= 0:
+        line = text[marker:text.find("\n", marker)]
+        found = quoted(line[len('"SDKVersion"'):])
+        if found:
+            fields["SDKVersion"] = found[0]
     return fields
 
 
@@ -250,91 +312,87 @@ def cid(path, name, role):
     return binascii.hexlify(digest).decode("ascii").upper()
 
 
-def indent(depth):
-    return "  " * depth
+def source_comment(entry):
+    """The `// mpvst-source:` line that goes above a class entry."""
+    where = entry["package"] + "/" + entry["file"]
+    if entry["class"]:
+        where += "#" + entry["class"]
+    return SOURCE_COMMENT + " " + where
 
 
-def json_class(write, entry, controller, module):
+def class_object(entry, controller, module):
     """One entry of the "Classes" array."""
-    name = CONTROLLER_NAME if controller else entry["name"]
-    lines = [indent(2) + "{"]
-    field = lines.append
-    field(indent(3) + '"CID": %s,' % json.dumps(entry["controller_cid"]
-                                                if controller
-                                                else entry["cid"]))
-    field(indent(3) + '"Category": %s,'
-          % json.dumps("Component Controller Class" if controller
-                       else "Audio Module Class"))
-    field(indent(3) + '"Name": %s,' % json.dumps(name))
-    field(indent(3) + '"Vendor": %s,' % json.dumps(entry["vendor"]))
-    field(indent(3) + '"Version": %s,' % json.dumps(entry["version"]))
-    field(indent(3) + '"SDKVersion": %s,'
-          % json.dumps(module["SDKVersion"]))
+    fields = {
+        "CID": entry["controller_cid"] if controller else entry["cid"],
+        "Category": ("Component Controller Class" if controller
+                     else "Audio Module Class"),
+        "Name": CONTROLLER_NAME if controller else entry["name"],
+        "Vendor": entry["vendor"],
+        "Version": entry["version"],
+        "SDKVersion": module["SDKVersion"],
+        "Class Flags": 0,
+        "Cardinality": 2147483647,
+        "Snapshots": [],
+    }
     if not controller:
         # Only an audio module has sub-categories; a controller is not
         # something a host files under Synth or Delay.
-        field(indent(3) + '"Sub Categories": [')
-        for position, category in enumerate(entry["categories"]):
-            comma = "," if position + 1 < len(entry["categories"]) else ""
-            field(indent(4) + json.dumps(category) + comma)
-        field(indent(3) + "],")
-    field(indent(3) + '"Class Flags": 0,')
-    field(indent(3) + '"Cardinality": 2147483647,')
-    field(indent(3) + '"Snapshots": []')
-    lines.append(indent(2) + "}")
-    write("\n".join(lines))
+        fields["Sub Categories"] = entry["categories"]
+    return fields
+
+
+def shared_controllers(entries):
+    """Each distinct controller class once, however many components name it."""
+    seen = []
+    for entry in entries:
+        if entry["controller_cid"] not in seen:
+            seen.append(entry["controller_cid"])
+    return seen
 
 
 def module_info(write, entries, module):
     """Write the whole moduleinfo.json.
 
-    Written by hand rather than through json.dumps because MicroPython's
-    dumps has no indent argument, and a file a human may have to read when a
-    plug-in fails to appear should not be one long line. Every scalar still
-    goes through json.dumps, so escaping is the library's problem and not
-    this function's.
-
-    Emitted a piece at a time rather than joined at the end: ninety-odd
-    plug-ins is a couple of hundred kilobytes of JSON, and the engine's heap
-    is not sized for holding that twice while a join copies it.
+    Streamed a class at a time rather than dumped in one call: ninety-odd
+    plug-ins is a couple of hundred kilobytes of JSON and the engine's heap
+    is not sized to hold that twice while dumps assembles it. Every piece
+    still goes through json.dumps, so quoting, escaping and the difference
+    between True and true are the library's problem and not this file's.
     """
-    def boolean(key):
-        return "true" if module[key] else "false"
+    header = json.dumps({
+        "Name": module["Name"],
+        "Version": module["Version"],
+        "Factory Info": {
+            "Vendor": module["Vendor"],
+            "URL": module["URL"],
+            "E-Mail": module["E-Mail"],
+            "Flags": {
+                "Unicode": module["Unicode"],
+                "Classes Discardable": module["Classes Discardable"],
+                "Component Non Discardable":
+                    module["Component Non Discardable"],
+            },
+        },
+    })
+    # The class list is spliced in rather than dumped with the header, which
+    # is what lets it stream and what lets a comment sit between entries.
+    # dumps has just closed the object; reopen it.
+    write(header[:-1] + ', "Classes": [\n')
 
-    out = ["{"]  # the header is small enough to gather
-    out.append(indent(1) + '"Name": %s,' % json.dumps(module["Name"]))
-    out.append(indent(1) + '"Version": %s,' % json.dumps(module["Version"]))
-    out.append(indent(1) + '"Factory Info": {')
-    out.append(indent(2) + '"Vendor": %s,' % json.dumps(module["Vendor"]))
-    out.append(indent(2) + '"URL": %s,' % json.dumps(module["URL"]))
-    out.append(indent(2) + '"E-Mail": %s,' % json.dumps(module["E-Mail"]))
-    out.append(indent(2) + '"Flags": {')
-    out.append(indent(3) + '"Unicode": %s,' % boolean("Unicode"))
-    out.append(indent(3) + '"Classes Discardable": %s,'
-               % boolean("Classes Discardable"))
-    out.append(indent(3) + '"Component Non Discardable": %s'
-               % boolean("Component Non Discardable"))
-    out.append(indent(2) + "}")
-    out.append(indent(1) + "},")
-    out.append(indent(1) + '"Classes": [')
-    write("\n".join(out) + "\n")
-
-    first = True
+    separator = ""
     for entry in entries:
-        if not first:
-            write(",\n")
-        first = False
-        json_class(write, entry, False, module)
-    # The controller class is listed once, however many components name it.
-    seen = []
-    for entry in entries:
-        if entry["controller_cid"] in seen:
-            continue
-        seen.append(entry["controller_cid"])
-        write(",\n")
-        json_class(write, entry, True, module)
+        write(separator + source_comment(entry) + "\n")
+        write(json.dumps(class_object(entry, False, module)))
+        separator = ",\n"
+    for shared in shared_controllers(entries):
+        for entry in entries:
+            if entry["controller_cid"] == shared:
+                write(separator + json.dumps(
+                    class_object(entry, True, module)))
+                separator = ",\n"
+                break
 
-    write("\n" + indent(1) + "]\n}\n")
+    write("\n]}\n")
 
 
 def manifest(write, entries):
@@ -376,13 +434,9 @@ def main():
             manifest(handle.write, entries)
         with open(root + "/" + MODULE_INFO, "w") as handle:
             module_info(handle.write, entries, module)
-        shared = []
-        for entry in entries:
-            if entry["controller_cid"] not in shared:
-                shared.append(entry["controller_cid"])
         print("%d plug-ins: wrote %s and %s (%d classes)"
               % (len(entries), MANIFEST, MODULE_INFO,
-                 len(entries) + len(shared)))
+                 len(entries) + len(shared_controllers(entries))))
         return
 
     for entry in entries:
