@@ -113,6 +113,20 @@ if(TARGET mpvst-stage-micropython-engine)
         set_tests_properties(mpvst_editor_window PROPERTIES TIMEOUT 300
             SKIP_RETURN_CODE 77)
     endif()
+    # The scanner's output against the binary it describes. moduleinfotool
+    # is built with the SDK, so this needs no tool of ours.
+    if(TARGET moduleinfotool)
+        add_test(NAME mpvst_moduleinfo_validate COMMAND ${CMAKE_COMMAND}
+            -DMPVST_ENGINE=$<TARGET_FILE_DIR:MicroPythonVST3>/${mpvst_engine_name}
+            -DMPVST_BUNDLE_BIN=$<TARGET_FILE_DIR:MicroPythonVST3>
+            -DMPVST_BUNDLE=$<TARGET_FILE_DIR:MicroPythonVST3>/../..
+            -DMPVST_TOOL=$<TARGET_FILE:moduleinfotool>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/validate_moduleinfo.cmake)
+    else()
+        message(STATUS "moduleinfotool not built; skipping the "
+                       "mpvst_moduleinfo_validate test")
+    endif()
+
     # Every class in the shared effects library, through the real sidecar.
     if(MPVST_PYTHON)
         add_test(NAME mpvst_effects_library COMMAND ${MPVST_PYTHON}

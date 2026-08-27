@@ -110,6 +110,26 @@ CID_NAMESPACE = "PyDevices/micropython-vst3/plugin/1"
 # instead of double it.
 CONTROLLER_NAME = "MicroPython Controller"
 
+# The classes compiled into the binary. The scan cannot discover them - they
+# come from no script - and a moduleinfo that omits them is not merely
+# incomplete: a host that trusts the file never sees them at all, which is
+# how the developer-loop plug-in went missing from projects that used it.
+#
+# Held here as identity only. Vendor, version and SDK version come from the
+# module fields like everything else, so the only thing that can go stale is
+# a CID or a name, and `moduleinfotool -validate` fails loudly when one does.
+# The CIDs are src/plugin/source/cids.h and the names are factory.cpp.
+BUILTIN_CLASSES = (
+    ("60A40168727C4E7DAAF808B790961DAA",
+     "MicroPython Script Host", ["Instrument", "Synth"]),
+    ("04B27009082444D48FE82CB5A7C810FD",
+     "MicroPython Script Host Controller", None),
+    ("910677E28594410985AD7A76CA68106C",
+     "MicroPython Script Host (Fx)", ["Fx"]),
+    ("16695D06FA2F4F9585FE0B7165515F68",
+     "MicroPython Script Host (Fx) Controller", None),
+)
+
 FIELDS = ("NAME", "CATEGORIES", "VERSION", "VENDOR", "MACRO_LABELS")
 
 
@@ -320,24 +340,27 @@ def source_comment(entry):
     return SOURCE_COMMENT + " " + where
 
 
-def class_object(entry, controller, module):
-    """One entry of the "Classes" array."""
+def class_object(identifier, name, categories, vendor, version, module):
+    """One entry of the "Classes" array.
+
+    `categories` is None for a controller class, which is both what makes it
+    a controller here and why it carries no sub-categories: a controller is
+    not something a host files under Synth or Delay.
+    """
     fields = {
-        "CID": entry["controller_cid"] if controller else entry["cid"],
-        "Category": ("Component Controller Class" if controller
-                     else "Audio Module Class"),
-        "Name": CONTROLLER_NAME if controller else entry["name"],
-        "Vendor": entry["vendor"],
-        "Version": entry["version"],
+        "CID": identifier,
+        "Category": ("Audio Module Class" if categories is not None
+                     else "Component Controller Class"),
+        "Name": name,
+        "Vendor": vendor,
+        "Version": version,
         "SDKVersion": module["SDKVersion"],
         "Class Flags": 0,
         "Cardinality": 2147483647,
         "Snapshots": [],
     }
-    if not controller:
-        # Only an audio module has sub-categories; a controller is not
-        # something a host files under Synth or Delay.
-        fields["Sub Categories"] = entry["categories"]
+    if categories is not None:
+        fields["Sub Categories"] = categories
     return fields
 
 
@@ -380,15 +403,23 @@ def module_info(write, entries, module):
     write(header[:-1] + ', "Classes": [\n')
 
     separator = ""
+    for identifier, name, categories in BUILTIN_CLASSES:
+        write(separator + json.dumps(class_object(
+            identifier, name, categories, module["Vendor"],
+            module["Version"], module)))
+        separator = ",\n"
     for entry in entries:
         write(separator + source_comment(entry) + "\n")
-        write(json.dumps(class_object(entry, False, module)))
+        write(json.dumps(class_object(
+            entry["cid"], entry["name"], entry["categories"],
+            entry["vendor"], entry["version"], module)))
         separator = ",\n"
     for shared in shared_controllers(entries):
         for entry in entries:
             if entry["controller_cid"] == shared:
-                write(separator + json.dumps(
-                    class_object(entry, True, module)))
+                write(separator + json.dumps(class_object(
+                    shared, CONTROLLER_NAME, None, entry["vendor"],
+                    entry["version"], module)))
                 separator = ",\n"
                 break
 
@@ -436,7 +467,8 @@ def main():
             module_info(handle.write, entries, module)
         print("%d plug-ins: wrote %s and %s (%d classes)"
               % (len(entries), MANIFEST, MODULE_INFO,
-                 len(entries) + len(shared_controllers(entries))))
+                 len(entries) + len(shared_controllers(entries))
+                 + len(BUILTIN_CLASSES)))
         return
 
     for entry in entries:
