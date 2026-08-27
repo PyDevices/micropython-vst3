@@ -23,6 +23,7 @@ BAD = lv.color_hex(0xF85149)
 
 MACRO_COUNT = 16
 _COLUMN_ROWS = 8
+_ROW_HEIGHT = 40
 
 
 class Panel:
@@ -86,13 +87,17 @@ class Panel:
         title.set_style_text_color(TEXT, 0)
         title.set_flex_grow(1)
 
-        patch = lv.dropdown(header)
-        patch.set_options("\n".join(adapter.patches))
-        patch.set_selected(adapter.patch_index)
-        patch.set_width(190)
-        patch.add_event_cb(self._focus_and_edit, lv.EVENT.FOCUSED, None)
-        patch.add_event_cb(self._on_patch, lv.EVENT.VALUE_CHANGED, None)
-        self._patch_dropdown = patch
+        # No selector at all when there is nothing to select. An effect has
+        # no patches, and neither does a script that never declared any.
+        if adapter.patches:
+            patch = lv.dropdown(header)
+            patch.set_options("\n".join(adapter.patches))
+            patch.set_selected(min(adapter.patch_index,
+                                   len(adapter.patches) - 1))
+            patch.set_width(190)
+            patch.add_event_cb(self._focus_and_edit, lv.EVENT.FOCUSED, None)
+            patch.add_event_cb(self._on_patch, lv.EVENT.VALUE_CHANGED, None)
+            self._patch_dropdown = patch
 
         reload_button = lv.button(header)
         reload_button.set_style_bg_color(ACCENT_DIM, 0)
@@ -144,10 +149,23 @@ class Panel:
         content.set_style_pad_column(28, 0)
         content.remove_flag(lv.obj.FLAG.SCROLLABLE)
 
-        columns = [_column(content), _column(content)]
-        for index in range(MACRO_COUNT):
-            parent = columns[0 if index < _COLUMN_ROWS else 1]
-            self._macro_row(parent, index)
+        # One column while they fit, two when they do not. Sixteen rows split
+        # evenly; four get the full width to themselves rather than leaving
+        # half the panel blank.
+        rows = adapter.macro_count
+        if rows == 0:
+            empty = lv.label(content)
+            empty.set_text("No macro controls - this plug-in declares none.")
+            empty.set_style_text_color(MUTED, 0)
+            empty.center()
+        else:
+            columns = [_column(content)]
+            per_column = rows
+            if rows > _COLUMN_ROWS:
+                per_column = (rows + 1) // 2
+                columns.append(_column(content))
+            for index in range(rows):
+                self._macro_row(columns[index // per_column], index)
 
         footer = lv.label(screen)
         footer.set_text(
@@ -163,7 +181,9 @@ class Panel:
         row = lv.obj(parent)
         row.remove_style_all()
         row.set_width(lv.pct(100))
-        row.set_flex_grow(1)
+        # A fixed height rather than an even share of the column: with four
+        # macros an even share is a 90-pixel row holding a 14-pixel slider.
+        row.set_height(_ROW_HEIGHT)
         row.set_flex_flow(lv.FLEX_FLOW.ROW)
         row.set_flex_align(
             lv.FLEX_ALIGN.START, lv.FLEX_ALIGN.CENTER, lv.FLEX_ALIGN.CENTER
@@ -230,10 +250,14 @@ class Panel:
     def _apply_external(self, kind, index, value):
         self._echoing = True
         try:
-            if kind == "macro":
+            # A macro or patch the panel does not draw can still be
+            # automated - the parameters are all still there - so an echo for
+            # one is ignored rather than an index error.
+            if kind == "macro" and index < len(self._sliders):
                 self._sliders[index].set_value(value, 0)
                 self._value_labels[index].set_text(str(value))
-            elif kind == "patch":
+            elif (kind == "patch" and self._patch_dropdown is not None
+                    and index < len(self.adapter.patches)):
                 self._patch_dropdown.set_selected(value)
         finally:
             self._echoing = False

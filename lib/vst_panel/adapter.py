@@ -42,6 +42,11 @@ class EngineAdapter:
         self._listeners = []
         self.script_name = _script_name(script_path)
         self.macro_labels = _macro_labels(script_path)
+        # How many of the sixteen this instance actually uses. The parameter
+        # space never changes - a host that automated macro 12 keeps doing so
+        # whatever the panel draws - but a control that moves nothing is worse
+        # than no control, so the panel stops at what was declared.
+        self.macro_count = len(self.macro_labels)
         self.macro_values = [64] * MACRO_COUNT
         self.patches = _patch_names()
         self.patch_index = 0
@@ -201,12 +206,30 @@ _LABEL_PREFIX = "# mpvst-macro-labels:"
 
 
 def _macro_labels(script_path):
-    labels = ["Macro {:02d}".format(index + 1) for index in range(MACRO_COUNT)]
-    declared = _labels_from_source(script_path) or _labels_from_instrument()
-    if declared:
-        for index, text in enumerate(declared[:MACRO_COUNT]):
-            if text:
-                labels[index] = text
+    """The macros this instance has, named. As many as were declared.
+
+    An undeclared macro is not an unnamed one, it is one that does nothing.
+    An effect only gets a parameter handler at all when its class declares
+    MACRO_LABELS - `mpvst_effect_adapter.attach` gates the wiring on it - and
+    an instrument's macros are indices into a table it does not have. So a
+    library plug-in that declares none has none, and the panel draws none.
+
+    Sixteen is the answer only when nothing is there to ask: a script that
+    went through neither adapter registers its own event handler, may act on
+    any macro it likes, and has told us nothing either way.
+    """
+    declared = _labels_from_source(script_path)
+    if not declared:
+        owner = _declared()
+        if owner is None:
+            return ["Macro {:02d}".format(index + 1)
+                    for index in range(MACRO_COUNT)]
+        declared = getattr(owner, "MACRO_LABELS", None)
+    labels = []
+    for index, text in enumerate(declared or ()):
+        if index >= MACRO_COUNT:
+            break
+        labels.append(str(text) if text else "Macro {:02d}".format(index + 1))
     return labels
 
 
@@ -217,17 +240,22 @@ def _labels_from_source(script_path):
     return [part.strip() for part in body.split("|")] if body else None
 
 
-def _labels_from_instrument():
-    return getattr(_declared(), "MACRO_LABELS", None)
-
-
 def _patch_names():
-    names = ["Patch {:03d}".format(index + 1) for index in range(PATCH_COUNT)]
+    """The patches this instance has, named, or none at all.
+
+    Empty is the honest answer for an effect and for a hand-written script:
+    neither has a patch surface, and a list of 128 entries that select nothing
+    is exactly the control this is here to remove. The Patch parameter itself
+    stays - it is permanent, and a host may still automate it.
+    """
     declared = getattr(_declared(), "PATCHES", None)
-    if isinstance(declared, dict):
-        for index, entry in declared.items():
-            if 0 <= index < PATCH_COUNT and entry:
-                names[index] = str(entry[0])
+    if not isinstance(declared, dict) or not declared:
+        return []
+    count = min(max(declared) + 1, PATCH_COUNT)
+    names = ["Patch {:03d}".format(index + 1) for index in range(count)]
+    for index, entry in declared.items():
+        if 0 <= index < count and entry:
+            names[index] = str(entry[0])
     return names
 
 
