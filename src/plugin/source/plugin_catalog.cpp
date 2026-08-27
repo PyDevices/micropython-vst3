@@ -258,15 +258,15 @@ std::string CatalogEntry::scriptSource () const
     std::string source;
     if (!macroLabels.empty ())
         source += macroLabelsAssignment (macroLabels);
+    // No mpvst comment lines here. Those live in moduleinfo.json and nowhere
+    // else; a script says what it loads by loading it.
     if (effect)
     {
-        source += "# mpvst-class: " + package + "." + className + "\n";
         source += "import mpvst_effect_adapter\n";
         source += "mpvst_effect_adapter.run(\"" + className + "\")\n";
     }
     else
     {
-        source += "# mpvst-module: " + package + "." + module + "\n";
         source += "import mpvst_adapter\n";
         source += "mpvst_adapter.run(\"" + package + "." + module + "\")\n";
     }

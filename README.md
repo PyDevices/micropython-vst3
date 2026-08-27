@@ -156,6 +156,11 @@ the name, so a copy of one of ours is automatically a distinct plug-in -
 and renaming the *file* makes a different plug-in, orphaning projects that
 used the old one.
 
+`mpvst-` marker comments live in `moduleinfo.json` and nowhere else. A `.py`
+file - a library module, an effect class, a script you wrote - declares itself
+with variables. JSON5 comments are the only extension slot moduleinfo.json
+has, which is why they exist there; nothing reads one out of Python.
+
 Macros and patches are declared or absent, and `MACRO_LABELS` is the whole of
 how a macro is declared - on the module for an instrument, on the class for an
 effect, at module level in a bare script. A plug-in that wants patches

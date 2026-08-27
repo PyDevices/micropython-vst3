@@ -171,10 +171,9 @@ def library_scripts():
                       if declared else "")
             (_SYNTHESISED / (name + ".py")).write_text(
                 "%s"
-                "# mpvst-module: audioinstruments.%s\n"
                 "import mpvst_adapter\n"
                 "mpvst_adapter.run(\"audioinstruments.%s\")\n"
-                % (labels, name, name))
+                % (labels, name))
     return sorted(_SYNTHESISED.glob("*.py"))
 
 

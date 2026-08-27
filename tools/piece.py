@@ -45,25 +45,33 @@ SOUNDTRACK_DIR = REPO_DIR / "soundtrack"
 AUDIOIF_LIB = Path(os.environ.get("MPVST_AUDIOIF_LIB",
                                   str(REPO_DIR.parent / "audioif" / "lib")))
 
-#: How a generated shim names the instrument module it loads. Anything
-#: holding a script path and needing the instrument behind it follows this
-#: line rather than guessing from the filename.
-MODULE_PREFIX = "# mpvst-module:"
+#: How a generated loader names the instrument module it runs. Anything
+#: holding a script path and needing the instrument behind it reads the call
+#: rather than guessing from the filename - and reads the call rather than a
+#: comment, because mpvst markers live in moduleinfo.json and never in a .py.
+MODULE_CALL = 'mpvst_adapter.run("'
 
 
 def module_of(script_path):
-    """The audioinstruments module a shim loads, or None for a real script.
+    """The audioinstruments module a generated loader runs, or None.
 
-    Only the head of the file is read: a piece-private instrument is a
-    whole synthesizer, and this is called for every track of every piece.
+    None is the answer for a hand-written instrument, which loads nothing and
+    is the whole synthesizer itself. Only the head of the file is read: this
+    is called for every track of every piece and a private instrument can be
+    long.
     """
     with open(str(script_path)) as handle:
         for _ in range(8):
             line = handle.readline()
             if not line:
                 break
-            if line.startswith(MODULE_PREFIX):
-                return line[len(MODULE_PREFIX):].strip()
+            at = line.find(MODULE_CALL)
+            if at < 0:
+                continue
+            rest = line[at + len(MODULE_CALL):]
+            end = rest.find('"')
+            if end > 0:
+                return rest[:end]
     return None
 
 
