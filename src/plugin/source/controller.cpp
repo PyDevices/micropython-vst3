@@ -1,6 +1,8 @@
 #include "controller.h"
 
 #include "base/source/fstreamer.h"
+#include "editor.h"
+#include "editor_message.h"
 #include "parameters.h"
 #include "script_metadata.h"
 #include "pluginterfaces/base/ustring.h"
@@ -10,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <cstring>
 
 namespace PyDevices::MicroPythonVST3 {
 
@@ -88,6 +91,66 @@ tresult PLUGIN_API Controller::initialize (FUnknown* context)
     }
 
     return kResultOk;
+}
+
+tresult PLUGIN_API Controller::terminate ()
+{
+    // The host normally releases the view first, but a controller that is
+    // torn down with one still alive must not leave it holding a dangling
+    // owner - it calls back on destruction.
+    if (editor_ != nullptr)
+    {
+        editor_->mappingChanged ({}, 0U);
+        editor_ = nullptr;
+    }
+    return EditControllerEx1::terminate ();
+}
+
+IPlugView* PLUGIN_API Controller::createView (FIDString name)
+{
+    if (name == nullptr || std::strcmp (name, ViewType::kEditor) != 0)
+        return nullptr;
+    // One view at a time. A host that asks for a second gets nothing rather
+    // than a second reader racing the first over the same input ring.
+    if (editor_ != nullptr)
+        return nullptr;
+    editor_ = new Editor (this, uiMappingName_, uiGeneration_);
+    return editor_;
+}
+
+void Controller::editorClosed (Editor* editor)
+{
+    if (editor_ == editor)
+        editor_ = nullptr;
+}
+
+tresult PLUGIN_API Controller::notify (IMessage* message)
+{
+    if (message != nullptr && message->getMessageID () != nullptr &&
+        std::strcmp (message->getMessageID (), kUiMappingMessageId) == 0)
+    {
+        const void* data = nullptr;
+        uint32 size = 0U;
+        int64 generation = 0;
+        auto* attributes = message->getAttributes ();
+        if (attributes != nullptr)
+        {
+            if (attributes->getBinary (kUiMappingNameAttribute, data, size) !=
+                kResultOk)
+            {
+                data = nullptr;
+                size = 0U;
+            }
+            (void)attributes->getInt (kUiMappingGenerationAttribute, generation);
+        }
+        uiMappingName_.assign (static_cast<const char*> (data),
+                               data != nullptr ? size : 0U);
+        uiGeneration_ = static_cast<std::uint32_t> (generation);
+        if (editor_ != nullptr)
+            editor_->mappingChanged (uiMappingName_, uiGeneration_);
+        return kResultOk;
+    }
+    return EditControllerEx1::notify (message);
 }
 
 tresult PLUGIN_API Controller::getMidiControllerAssignment (

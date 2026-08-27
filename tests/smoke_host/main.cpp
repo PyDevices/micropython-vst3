@@ -1,4 +1,5 @@
 #include "public.sdk/source/common/memorystream.h"
+#include "base/source/fobject.h"
 #include "base/source/fstreamer.h"
 #include "public.sdk/source/vst/hosting/eventlist.h"
 #include "public.sdk/source/vst/hosting/hostclasses.h"
@@ -8,8 +9,15 @@
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivstcomponent.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
+#include "pluginterfaces/vst/ivstmessage.h"
 #include "pluginterfaces/base/ustring.h"
 
+#include "editor_message.h"
+#include "mpvst/atomic.h"
+#include "mpvst/shared_memory.h"
+#include "mpvst/ui.h"
+
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -20,11 +28,14 @@
 #include <iostream>
 #include <string>
 #include <thread>
+#include <tuple>
+#include <vector>
 
 namespace {
 
 using namespace Steinberg;
 using namespace Steinberg::Vst;
+using namespace PyDevices::MicroPythonVST3;
 using VST3::Hosting::ClassInfo;
 using VST3::Hosting::Module;
 using VST3::Hosting::PluginFactory;
@@ -1103,6 +1114,393 @@ bool instrumentScriptProbe(const PluginFactory& factory,
 // checks the script actually received MPVST_EVENT_PROGRAM_CHANGE with
 // the right data0 both times, via a continuously-held note whose
 // amplitude the script sets directly from the program index.
+//------------------------------------------------------------------------
+// The editor, driven through shared memory exactly as the view drives it.
+//
+// No window is opened. That is deliberate: what has to hold is the protocol -
+// the engine paints when the editor is open and stops when it is not, input
+// injected into the ring reaches the panel, and the gestures it produces come
+// back as parameter edits pointing the right way. A window would add a display
+// dependency to a test whose subject is not drawing, and the REAPER matrix
+// already exercises the real one.
+//------------------------------------------------------------------------
+
+// Relays IConnectionPoint traffic between the component and the controller,
+// which is how the controller learns where the editor's mapping is. Hosts do
+// this for real; the test does it so the same code path runs here.
+class ConnectionRelay : public FObject, public IConnectionPoint
+{
+public:
+    void setPeer(IConnectionPoint* peer) { peer_ = peer; }
+    const std::string& mappingName() const { return mappingName_; }
+    std::uint32_t generation() const { return generation_; }
+
+    tresult PLUGIN_API connect(IConnectionPoint*) SMTG_OVERRIDE { return kResultOk; }
+    tresult PLUGIN_API disconnect(IConnectionPoint*) SMTG_OVERRIDE { return kResultOk; }
+
+    tresult PLUGIN_API notify(IMessage* message) SMTG_OVERRIDE
+    {
+        if (message != nullptr && message->getMessageID() != nullptr &&
+            std::strcmp(message->getMessageID(), kUiMappingMessageId) == 0)
+        {
+            const void* data = nullptr;
+            uint32 size = 0U;
+            int64 value = 0;
+            if (auto* attributes = message->getAttributes())
+            {
+                if (attributes->getBinary(kUiMappingNameAttribute, data, size) !=
+                    kResultOk)
+                {
+                    data = nullptr;
+                    size = 0U;
+                }
+                (void)attributes->getInt(kUiMappingGenerationAttribute, value);
+            }
+            mappingName_.assign(static_cast<const char*>(data),
+                                data != nullptr ? size : 0U);
+            generation_ = static_cast<std::uint32_t>(value);
+        }
+        return peer_ != nullptr ? peer_->notify(message) : kResultOk;
+    }
+
+    OBJ_METHODS(ConnectionRelay, FObject)
+    DEFINE_INTERFACES
+        DEF_INTERFACE(IConnectionPoint)
+    END_DEFINE_INTERFACES(FObject)
+    REFCOUNT_METHODS(FObject)
+
+private:
+    IConnectionPoint* peer_ = nullptr;
+    std::string mappingName_;
+    std::uint32_t generation_ = 0U;
+};
+
+struct UiView
+{
+    mpvst::SharedMemory mapping;
+    mpvst_ui_state* state = nullptr;
+
+    bool open(const std::string& name)
+    {
+        close();
+        const auto bytes = mpvst_ui_mapping_bytes();
+        if (name.empty() || !mapping.open(name, bytes) ||
+            !mpvst_ui_validate(mapping.data(), bytes))
+        {
+            mapping.close();
+            return false;
+        }
+        state = static_cast<mpvst_ui_state*>(mapping.data());
+        return true;
+    }
+
+    void close()
+    {
+        state = nullptr;
+        mapping.close();
+    }
+
+    void setOpen(bool value)
+    {
+        mpvst::release_store_u32(&state->editor_open, value ? 1U : 0U);
+    }
+
+    std::uint64_t frames() const
+    {
+        return mpvst::acquire_load_u64(&state->frame_sequence);
+    }
+
+    void push(std::uint32_t type, std::uint32_t buttons, std::int32_t x,
+              std::int32_t y, std::int32_t wheelVertical,
+              std::int32_t wheelHorizontal)
+    {
+        auto* inputs = mpvst_ui_inputs(mapping.data());
+        const auto head = mpvst::acquire_load_u64(&state->input_head);
+        auto& record = inputs[head % MPVST_UI_INPUT_CAPACITY];
+        record.type = type;
+        record.buttons = buttons;
+        record.x = x;
+        record.y = y;
+        record.wheel_vertical = wheelVertical;
+        record.wheel_horizontal = wheelHorizontal;
+        record.sequence = head + 1U;
+        mpvst::release_store_u64(&state->input_head, head + 1U);
+    }
+
+    // Everything the engine has published since the last call, as
+    // (kind, parameter, value).
+    std::vector<std::tuple<std::uint32_t, std::uint32_t, float>> drainEdits()
+    {
+        std::vector<std::tuple<std::uint32_t, std::uint32_t, float>> out;
+        const auto* edits = mpvst_ui_edits(mapping.data());
+        auto tail = mpvst::acquire_load_u64(&state->edit_tail);
+        const auto head = mpvst::acquire_load_u64(&state->edit_head);
+        for (; tail != head; ++tail)
+        {
+            const auto& record = edits[tail % MPVST_UI_EDIT_CAPACITY];
+            out.emplace_back(record.kind, record.parameter_id, record.value);
+        }
+        mpvst::release_store_u64(&state->edit_tail, head);
+        return out;
+    }
+};
+
+bool editorDrivesParameters(const PluginFactory& factory,
+                            const ClassInfo& classInfo, FUnknown* host)
+{
+    const auto sourcePath = std::filesystem::temp_directory_path() /
+        "mpvst-editor-probe.py";
+    // Sixteen macros with names of their own, so the panel has real labels to
+    // draw and the test is exercising the same metadata path a shipped
+    // instrument uses.
+    constexpr const char* source =
+        "# mpvst-macro-labels: Alpha | Bravo | Charlie | Delta | Echo | "
+        "Foxtrot | Golf | Hotel | India | Juliett | Kilo | Lima | Mike | "
+        "November | Oscar | Papa\n"
+        "import synthio\n"
+        "import vstaudio\n"
+        "synth = synthio.Synthesizer(sample_rate=vstaudio.sample_rate(), "
+        "channel_count=2)\n"
+        "vstaudio.output(synth)\n";
+    {
+        std::ofstream out(sourcePath, std::ios::binary | std::ios::trunc);
+        if (!out || !out.write(source, static_cast<std::streamsize>(
+                                           std::strlen(source))))
+            return false;
+    }
+    setScriptPath(sourcePath.string());
+    struct Cleanup
+    {
+        ~Cleanup() { setScriptPath({}); }
+    } cleanup;
+
+    auto component = createComponent(factory, classInfo, host);
+    auto processor = getProcessor(component);
+    if (!component || !processor)
+        return false;
+
+    IConnectionPoint* componentConnection = nullptr;
+    if (!ok(component->queryInterface(IConnectionPoint::iid,
+                                      reinterpret_cast<void**>(
+                                          &componentConnection))))
+        return false;
+    auto ownedConnection = owned(componentConnection);
+    auto relay = owned(new ConnectionRelay);
+    if (!ok(componentConnection->connect(relay)))
+        return false;
+
+    SpeakerArrangement stereo = SpeakerArr::kStereo;
+    ProcessSetup setup {};
+    setup.processMode = kRealtime;
+    setup.symbolicSampleSize = kSample32;
+    setup.maxSamplesPerBlock = 256;
+    setup.sampleRate = 48000.0;
+    if (!ok(processor->setBusArrangements(nullptr, 0, &stereo, 1)) ||
+        !ok(component->activateBus(kAudio, kOutput, 0, true)) ||
+        !ok(processor->setupProcessing(setup)) ||
+        !ok(component->setActive(true)) ||
+        !ok(processor->setProcessing(true)))
+        return false;
+
+    std::array<float, 256> left {};
+    std::array<float, 256> right {};
+    Sample32* channels[] = {left.data(), right.data()};
+    AudioBusBuffers output {};
+    output.numChannels = 2;
+    output.channelBuffers32 = channels;
+    ProcessData data {};
+    data.processMode = kRealtime;
+    data.symbolicSampleSize = kSample32;
+    data.numSamples = static_cast<int32>(left.size());
+    data.numOutputs = 1;
+    data.outputs = &output;
+
+    // Keeps the pipeline turning at roughly real time, which is what leaves
+    // the engine idle enough to run its housekeeping step at all.
+    const auto pump = [&](int blocks) {
+        for (int block = 0; block < blocks; ++block)
+        {
+            if (!ok(processor->process(data)))
+                return false;
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        return true;
+    };
+
+    if (relay->mappingName().empty())
+    {
+        std::cerr << "HOOK editor.mapping FAIL: no mapping reported\n";
+        return false;
+    }
+    UiView view;
+    if (!view.open(relay->mappingName()))
+    {
+        std::cerr << "HOOK editor.mapping FAIL: cannot open "
+                  << relay->mappingName() << '\n';
+        return false;
+    }
+
+    // Closed: the engine must not paint at all.
+    if (!pump(20))
+        return false;
+    if (view.frames() != 0U)
+    {
+        std::cerr << "HOOK editor.closed FAIL: painted with no editor open\n";
+        return false;
+    }
+    std::cout << "HOOK editor.closed OK: no frames published\n";
+
+    view.setOpen(true);
+    for (int attempt = 0; attempt < 60 && view.frames() == 0U; ++attempt)
+    {
+        if (!pump(10))
+            return false;
+    }
+    if (view.frames() == 0U)
+    {
+        std::cerr << "HOOK editor.open FAIL: no frames after opening\n";
+        return false;
+    }
+    std::cout << "HOOK editor.open OK: frames=" << view.frames() << '\n';
+    (void)view.drainEdits();
+
+    // Click the first macro slider, then swipe right along it. Both signs are
+    // asserted, because a sign is a fact about this input path and nothing
+    // else in the build would notice if it flipped.
+    constexpr std::int32_t kSliderX = 250;
+    constexpr std::int32_t kSliderY = 101;
+    view.push(MPVST_UI_INPUT_POINTER_MOVE, 0U, kSliderX, kSliderY, 0, 0);
+    view.push(MPVST_UI_INPUT_POINTER_DOWN, 1U, kSliderX, kSliderY, 0, 0);
+    view.push(MPVST_UI_INPUT_POINTER_UP, 0U, kSliderX, kSliderY, 0, 0);
+    if (!pump(30))
+        return false;
+    auto edits = view.drainEdits();
+    if (edits.empty() || std::get<1>(edits.front()) != 100U)
+    {
+        std::cerr << "HOOK editor.click FAIL: no edit on the first macro\n";
+        return false;
+    }
+    const auto afterClick = std::get<2>(edits.back());
+    std::cout << "HOOK editor.click OK: macro 100 = " << afterClick << '\n';
+
+    for (int notch = 0; notch < 5; ++notch)
+        view.push(MPVST_UI_INPUT_WHEEL, 0U, 0, 0, 0, MPVST_UI_WHEEL_NOTCH);
+    if (!pump(40))
+        return false;
+    edits = view.drainEdits();
+    float highest = afterClick;
+    bool sawMacro = false;
+    bool sawEnd = false;
+    for (const auto& edit : edits)
+    {
+        if (std::get<1>(edit) != 100U)
+            continue;
+        sawMacro = true;
+        highest = std::max(highest, std::get<2>(edit));
+        sawEnd = sawEnd || std::get<0>(edit) == MPVST_UI_EDIT_END;
+    }
+    if (!sawMacro || highest <= afterClick)
+    {
+        std::cerr << "HOOK editor.adjust FAIL: a rightward swipe did not raise "
+                     "the focused macro\n";
+        return false;
+    }
+    if (!sawEnd)
+    {
+        std::cerr << "HOOK editor.adjust FAIL: the wheel gesture never ended\n";
+        return false;
+    }
+    std::cout << "HOOK editor.adjust OK: macro 100 rose to " << highest
+              << " and the gesture closed\n";
+
+    // A downward swipe moves to the next control; adjusting then lands on the
+    // second macro rather than the first.
+    view.push(MPVST_UI_INPUT_WHEEL, 0U, 0, 0, -MPVST_UI_WHEEL_NOTCH, 0);
+    if (!pump(20))
+        return false;
+    (void)view.drainEdits();
+    for (int notch = 0; notch < 3; ++notch)
+        view.push(MPVST_UI_INPUT_WHEEL, 0U, 0, 0, 0, MPVST_UI_WHEEL_NOTCH);
+    if (!pump(40))
+        return false;
+    edits = view.drainEdits();
+    bool sawNextMacro = false;
+    for (const auto& edit : edits)
+        sawNextMacro = sawNextMacro || std::get<1>(edit) == 101U;
+    if (!sawNextMacro)
+    {
+        std::cerr << "HOOK editor.navigate FAIL: a downward swipe did not "
+                     "reach the next control\n";
+        return false;
+    }
+    std::cout << "HOOK editor.navigate OK: focus moved to macro 101\n";
+
+    // Closing stops the painting and nothing else.
+    view.setOpen(false);
+    if (!pump(20))
+        return false;
+    const auto quiesced = view.frames();
+    if (!pump(20))
+        return false;
+    if (view.frames() != quiesced)
+    {
+        std::cerr << "HOOK editor.close FAIL: still painting after close\n";
+        return false;
+    }
+    std::cout << "HOOK editor.close OK: painting stopped\n";
+
+    // A deactivate/activate cycle is an engine restart as far as the editor is
+    // concerned: a new mapping, a new generation, and no stale input replayed
+    // into it.
+    const auto firstName = relay->mappingName();
+    const auto firstGeneration = relay->generation();
+    view.close();
+    if (!ok(processor->setProcessing(false)) || !ok(component->setActive(false)))
+        return false;
+    if (!ok(component->setActive(true)) || !ok(processor->setProcessing(true)))
+        return false;
+    if (relay->mappingName().empty() ||
+        (relay->mappingName() == firstName &&
+         relay->generation() == firstGeneration))
+    {
+        std::cerr << "HOOK editor.restart FAIL: the editor was not told the "
+                     "mapping changed\n";
+        return false;
+    }
+    if (!view.open(relay->mappingName()))
+    {
+        std::cerr << "HOOK editor.restart FAIL: cannot open the new mapping\n";
+        return false;
+    }
+    if (mpvst::acquire_load_u64(&view.state->input_head) != 0U ||
+        mpvst::acquire_load_u64(&view.state->edit_head) != 0U)
+    {
+        std::cerr << "HOOK editor.restart FAIL: cursors carried over\n";
+        return false;
+    }
+    view.setOpen(true);
+    for (int attempt = 0; attempt < 60 && view.frames() == 0U; ++attempt)
+    {
+        if (!pump(10))
+            return false;
+    }
+    if (view.frames() == 0U)
+    {
+        std::cerr << "HOOK editor.restart FAIL: no frames after restarting\n";
+        return false;
+    }
+    std::cout << "HOOK editor.restart OK: generation "
+              << relay->generation() << " painting again\n";
+
+    view.setOpen(false);
+    view.close();
+    (void)processor->setProcessing(false);
+    (void)component->setActive(false);
+    (void)componentConnection->disconnect(relay);
+    (void)component->terminate();
+    return true;
+}
+
 bool patchSelectDeliversProgramChange(const PluginFactory& factory,
                                       const ClassInfo& classInfo,
                                       FUnknown* host)
@@ -1285,6 +1683,7 @@ int main(int argc, char** argv)
         (!mode.empty() && mode != "--expect-micropython" &&
          mode != "--expect-embedded-state" &&
          mode != "--expect-effect-audio" && mode != "--expect-patch-select" &&
+         mode != "--expect-editor" &&
          mode != "--effect-script" && mode != "--instrument-script" &&
          !renderMode))
     {
@@ -1292,6 +1691,7 @@ int main(int argc, char** argv)
                      "[--expect-micropython|--expect-embedded-state|"
                      "--expect-effect-audio|"
                      "--expect-patch-select|"
+                     "--expect-editor|"
                      "--effect-script <script.py>|"
                      "--instrument-script <script.py>|"
                      "--render-reference <out.pcm>]\n";
@@ -1300,6 +1700,7 @@ int main(int argc, char** argv)
     const bool embeddedState = mode == "--expect-embedded-state";
     const bool effectMode = mode == "--expect-effect-audio";
     const bool patchSelectMode = mode == "--expect-patch-select";
+    const bool editorMode = mode == "--expect-editor";
 
     std::string error;
     const auto modulePath = std::filesystem::weakly_canonical(argv[1]).string();
@@ -1378,6 +1779,15 @@ int main(int argc, char** argv)
             }
             std::cout << "HOOK instrument.script OK\n";
         }
+        else if (editorMode)
+        {
+            if (!editorDrivesParameters(factory, classInfo, host))
+            {
+                std::cerr << "HOOK editor FAIL\n";
+                return 5;
+            }
+            std::cout << "HOOK editor OK\n";
+        }
         else if (patchSelectMode)
         {
             if (!patchSelectDeliversProgramChange(factory, classInfo, host))
@@ -1403,7 +1813,8 @@ int main(int argc, char** argv)
         }
         const bool defaultSuite = !embeddedState &&
                                   !renderMode && !effectMode && !scriptProbe &&
-                                  !instrumentProbe && !patchSelectMode;
+                                  !instrumentProbe && !patchSelectMode &&
+                                  !editorMode;
         if (defaultSuite)
             std::cout << "HOOK state.roundtrip OK: legacy_v1=1 malformed=4\n";
 

@@ -45,6 +45,15 @@ if(TARGET mpvst-stage-micropython-engine)
     else()
         set(mpvst_engine_name micropython-vst-engine)
     endif()
+    # LVGL and the PyDevices integration are a permanent part of the engine,
+    # not an option, so a build that quietly drops one has to fail here rather
+    # than at the first editor open. display_driver is deliberately absent
+    # from this list: importing it builds a display, which needs a board -
+    # mpvst_editor_smoke covers it, through the real one.
+    add_test(NAME mpvst_engine_modules COMMAND
+        $<TARGET_FILE_DIR:MicroPythonVST3>/${mpvst_engine_name}
+        -c "import lvgl, vstaudio, vstui, displaydev, appdev, multimer, events")
+
     add_executable(mpvst_reload_tests reload_tests.cpp)
     target_link_libraries(mpvst_reload_tests PRIVATE mpvst_sidecar_transport)
     target_compile_features(mpvst_reload_tests PRIVATE cxx_std_17)
@@ -65,6 +74,12 @@ if(TARGET mpvst-stage-micropython-engine)
         $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-effect-audio)
     add_test(NAME mpvst_patch_select_smoke COMMAND mpvst_smoke_host
         $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-patch-select)
+    # The editor end to end: the controller learns the mapping, the engine
+    # paints only while it is open, injected input reaches the panel, and the
+    # gestures come back as parameter edits pointing the right way.
+    add_test(NAME mpvst_editor_smoke COMMAND mpvst_smoke_host
+        $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-editor)
+    set_tests_properties(mpvst_editor_smoke PROPERTIES TIMEOUT 300)
     # Every class in the shared effects library, through the real sidecar.
     if(MPVST_PYTHON)
         add_test(NAME mpvst_effects_library COMMAND ${MPVST_PYTHON}

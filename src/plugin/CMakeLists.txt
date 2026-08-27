@@ -13,6 +13,9 @@ smtg_add_vst3plugin(${MPVST_PLUGIN_TARGET}
     source/cids.h
     source/controller.cpp
     source/controller.h
+    source/editor.cpp
+    source/editor.h
+    source/editor_message.h
     source/factory.cpp
     source/parameters.h
     source/processor.cpp
@@ -29,6 +32,13 @@ target_link_libraries(${MPVST_PLUGIN_TARGET}
         mpvst_sidecar_transport
         sdk
 )
+
+if(UNIX AND NOT APPLE)
+    # The editor's window on Linux is a plain X11 child of the frame the host
+    # gives us, driven by the host's own run loop. No VSTGUI, no toolkit.
+    find_package(X11 REQUIRED)
+    target_link_libraries(${MPVST_PLUGIN_TARGET} PRIVATE X11::X11)
+endif()
 
 if(WIN32)
     set(MPVST_ENGINE_DEFAULT

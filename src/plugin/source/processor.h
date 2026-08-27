@@ -38,6 +38,8 @@ public:
     Steinberg::tresult PLUGIN_API process (Steinberg::Vst::ProcessData& data) override;
     Steinberg::tresult PLUGIN_API setState (Steinberg::IBStream* state) override;
     Steinberg::tresult PLUGIN_API getState (Steinberg::IBStream* state) override;
+    Steinberg::tresult PLUGIN_API connect (
+        Steinberg::Vst::IConnectionPoint* other) override;
 
 private:
     enum class ReloadFadeState : std::uint8_t
@@ -66,6 +68,10 @@ private:
         Steinberg::Vst::IParameterChanges* changes) noexcept;
     void applyReloadFade (float* left, float* right,
                           std::uint32_t frames) noexcept;
+    // Tell the controller where the editor's mapping is. Sent whenever it
+    // could have changed - a connection, an activation, a deactivation - and
+    // never from the audio thread.
+    void publishUiMapping () noexcept;
     static void clearOutput (Steinberg::Vst::ProcessData& data) noexcept;
 
     std::atomic<Steinberg::uint32> bypass_ {0};

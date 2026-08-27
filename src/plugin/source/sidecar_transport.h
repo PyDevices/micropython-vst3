@@ -3,6 +3,7 @@
 #include "mpvst/child_process.h"
 #include "mpvst/protocol.h"
 #include "mpvst/shared_memory.h"
+#include "mpvst/ui.h"
 
 #include <cstdint>
 #include <atomic>
@@ -98,6 +99,13 @@ public:
     Telemetry telemetry() noexcept;
     void resetTelemetryPeaks() noexcept;
 
+    // The editor's shared mapping, created alongside the audio one and named
+    // after it. Empty when the region could not be created, which costs the
+    // instance an editor and nothing else. The view opens it by name from
+    // whichever process the host puts the controller in.
+    const std::string& uiMappingName() const noexcept { return uiMappingName_; }
+    std::uint32_t uiGeneration() const noexcept { return uiGeneration_; }
+
     std::uint32_t latencySamples() const noexcept { return latencySamples_; }
     bool ready() const noexcept { return available_.load(); }
     std::uint64_t restartCount() const noexcept;
@@ -122,6 +130,7 @@ private:
                        std::uint32_t frames, bool countUnderrun = true) noexcept;
 
     mpvst::SharedMemory mapping_;
+    mpvst::SharedMemory uiMapping_;
     mpvst::ChildProcess child_;
     mpvst_shared_header* header_ = nullptr;
     mpvst_status* status_ = nullptr;
@@ -129,6 +138,8 @@ private:
     mpvst_event* events_ = nullptr;
     mpvst_work_slot* work_ = nullptr;
     std::string mappingName_;
+    std::string uiMappingName_;
+    std::uint32_t uiGeneration_ = 0U;
     std::string scriptSource_;
     ScriptOrigin scriptOrigin_ {ScriptOrigin::RestoredSnapshot};
     std::string materializedScriptPath_;

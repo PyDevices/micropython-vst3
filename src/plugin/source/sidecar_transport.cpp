@@ -179,6 +179,20 @@ bool SidecarTransport::start()
         return false;
     }
 
+    // The editor's surface is a sibling mapping rather than a region of this
+    // one; ui.h has the reasoning. Failing to create it is not fatal: the
+    // engine is simply not told about it and plays without an editor.
+    uiGeneration_ = 1U;
+    uiMappingName_ = mappingName_ + "u";
+    if (!uiMapping_.create(uiMappingName_, mpvst_ui_mapping_bytes()) ||
+        !mpvst_ui_initialize(uiMapping_.data(), mpvst_ui_mapping_bytes(),
+                             uiGeneration_))
+    {
+        uiMapping_.close();
+        uiMappingName_.clear();
+        uiGeneration_ = 0U;
+    }
+
     header_ = static_cast<mpvst_shared_header*>(mapping_.data());
     header_->sample_rate_millihz = sampleRateMillihz_;
     status_ = static_cast<mpvst_status*>(mpvst_region(mapping_.data(),
@@ -267,6 +281,11 @@ bool SidecarTransport::launchEngine()
         arguments.push_back(mappingName_);
         arguments.push_back(std::to_string(mappingBytes_));
         arguments.push_back(selectedScript);
+        // Protocol minor 2. An engine built before it ignores the extra
+        // argument and runs without an editor, which is the whole
+        // compatibility story for this feature.
+        if (!uiMappingName_.empty())
+            arguments.push_back(uiMappingName_);
     }
     else
     {
@@ -308,6 +327,9 @@ void SidecarTransport::stop() noexcept
     events_ = nullptr;
     work_ = nullptr;
     mapping_.close();
+    uiMapping_.close();
+    uiMappingName_.clear();
+    uiGeneration_ = 0U;
     if (!materializedScriptPath_.empty())
     {
         std::error_code ignored;
@@ -438,6 +460,15 @@ bool SidecarTransport::resetMappingForRestart() noexcept
     if (!mpvst_initialize_mapping(mapping_.data(), mappingBytes_, &request,
                                   instanceNonce_))
         return false;
+    // The restarted engine reopens the UI mapping from scratch, so its cursors
+    // and its half-drawn frame have to go with it. Bumping the generation is
+    // how an attached view learns to resync rather than replaying stale input.
+    if (uiMapping_.data() != nullptr)
+    {
+        ++uiGeneration_;
+        (void)mpvst_ui_initialize(uiMapping_.data(), mpvst_ui_mapping_bytes(),
+                                  uiGeneration_);
+    }
     header_ = static_cast<mpvst_shared_header*>(mapping_.data());
     header_->sample_rate_millihz = sampleRateMillihz_;
     mpvst::release_store_u32(&header_->generation, previousGeneration + 1U);

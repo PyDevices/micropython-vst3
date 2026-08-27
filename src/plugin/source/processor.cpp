@@ -1,6 +1,7 @@
 #include "processor.h"
 
 #include "cids.h"
+#include "editor_message.h"
 
 #include "base/source/fstreamer.h"
 #include "pluginterfaces/vst/ivstevents.h"
@@ -115,7 +116,39 @@ tresult PLUGIN_API Processor::setActive (TBool state)
         active_.store (0U, std::memory_order_relaxed);
         sidecar_.stop ();
     }
+    // Either way the mapping the editor should be looking at has changed: on
+    // activation it is new, on deactivation it is gone. An open view resyncs
+    // or goes blank rather than reading a region nobody is writing.
+    publishUiMapping ();
     return AudioEffect::setActive (state);
+}
+
+tresult PLUGIN_API Processor::connect (IConnectionPoint* other)
+{
+    const auto result = AudioEffect::connect (other);
+    if (result == kResultOk)
+        publishUiMapping ();
+    return result;
+}
+
+void Processor::publishUiMapping () noexcept
+{
+    if (peerConnection == nullptr)
+        return;
+    auto* message = allocateMessage ();
+    if (message == nullptr)
+        return;
+    message->setMessageID (kUiMappingMessageId);
+    if (auto* attributes = message->getAttributes ())
+    {
+        const auto& name = sidecar_.uiMappingName ();
+        (void)attributes->setBinary (kUiMappingNameAttribute, name.data (),
+                                     static_cast<uint32> (name.size ()));
+        (void)attributes->setInt (kUiMappingGenerationAttribute,
+                                  sidecar_.uiGeneration ());
+    }
+    (void)peerConnection->notify (message);
+    message->release ();
 }
 
 tresult PLUGIN_API Processor::setProcessing (TBool)
