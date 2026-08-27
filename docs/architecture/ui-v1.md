@@ -34,50 +34,52 @@ structure this document adds.
   input group: clicking focuses a control, wheel deltas adjust the focused
   control (the slider now, the knob later). No keyboard focus handling.
 
-  v1 uses only the vertical axis to adjust the focused control, but a
-  second, genuinely independent horizontal axis turns out to be reachable
-  too — navigating focus between controls, confirmed working during this
-  design pass (see below). It stays out of v1 anyway: reading it means
-  bypassing the shared `display_driver.py`'s existing `_encoder_cb` (single
-  LVGL encoder indev, one axis) with a second, hand-rolled input path, and
-  that shared file is release-gated across lvgl-micropython/-circuitpython/
-  -python — a deliberate v1 scope line, not a limitation of the hardware or
-  the platform.
+  v1 uses only the vertical axis to adjust the focused control. A second,
+  genuinely independent horizontal axis is reachable too — navigating
+  focus between controls — but stays out of v1 regardless of the finding
+  below: reading it means bypassing the shared `display_driver.py`'s
+  existing `_encoder_cb` (single LVGL encoder indev, one axis) with a
+  second, hand-rolled input path, and that shared file is release-gated
+  across lvgl-micropython/-circuitpython/-python — a deliberate scope
+  line, not a limitation of the hardware or the platform.
 
-  Getting a clean per-axis signal at all took real debugging, and the
-  finding is worth keeping even though it complicated rather than
-  simplified the picture: a `MOUSEWHEEL` event carries both a legacy
-  integer `x`/`y` pair and a float `precise_x`/`precise_y` pair, and which
-  one is trustworthy is a **per-build fact about `usdl2`, not a general
-  rule** — confirmed by testing the identical gesture against two
-  different `usdl2` builds on 2026-08-27:
+  A `MOUSEWHEEL` event carries both a legacy integer `x`/`y` pair and a
+  float `precise_x`/`precise_y` pair, and which one (if either) carries
+  real horizontal data turned out to be a **per-`usdl2`-build fact, not a
+  general rule** — tested against two different builds of the same
+  `usdl2` module on 2026-08-27, same physical gesture:
 
-  - CPython (`pydevices-lvgl` wheel in the `pydevices-examples` venv): the
-    legacy integer `x`/`y` is the reliable field and already distinguishes
-    both axes correctly. `precise_x`/`precise_y` are not reliable here — a
-    captured sample showed `precise_x = 1.401298464324817e-45`, the
-    IEEE-754 bit pattern of the small integer `1` reinterpreted as a
-    float32. That is a struct-decoding bug in this build's `usdl2`, not
-    real scroll data; reading it at all reintroduced the exact "nothing
-    responds" failure this section used to describe.
-  - MicroPython (`~/.micropython/lib`, unix port): the opposite. A pure
-    *vertical* swipe was observed setting a spurious nonzero value on the
-    legacy integer `x` field *simultaneously* with the correct
-    `precise_y` — real vertical motion, mislabeled onto the x-channel, at
-    the same time real data legitimately arrived on `precise_y`. Reading
-    `x`/`precise_x` and `y`/`precise_y` as independent per-channel
-    fallbacks (int if nonzero, else precise) double-counted that: one
-    vertical swipe drove both a value-adjust and a focus-navigate at once.
-    Fixed by trusting only `precise_x`/`precise_y` for both axes whenever
-    either is nonzero, ignoring the legacy pair entirely for that event.
+  - MicroPython (`~/.micropython/lib`, unix port): horizontal works. A
+    pure vertical swipe sets a spurious nonzero value on the legacy
+    integer `x` field *simultaneously* with the correct `precise_y` —
+    real vertical motion, mislabeled onto the x-channel, while real data
+    also legitimately arrives on `precise_y`. Reading legacy-or-precise as
+    independent per-channel fallbacks double-counts that (one vertical
+    swipe drives both a value-adjust and a focus-navigate). Fixed by
+    trusting only `precise_x`/`precise_y` for both axes whenever either is
+    nonzero, ignoring the legacy pair entirely for that event. With that
+    fix, a horizontal swipe cleanly navigates and a vertical one cleanly
+    adjusts — this build has a real, usable second axis.
+  - CPython (`pydevices-lvgl` wheel, `pydevices-examples` venv): no second
+    axis exists at all. Vertical reliably arrives on the legacy integer
+    `x` (confirmed all session — this is what backs the v1 vertical-only
+    behavior). A horizontal swipe produces `x=0, y=0` and
+    `precise_x`/`precise_y` that are either exactly `0.0` or the constant
+    `1.401298464324817e-45` — the IEEE-754 bit pattern of the small
+    integer `1` reinterpreted as a float32, i.e. a fixed decoding artifact
+    in this build's `usdl2`, never real motion. There is no field left to
+    read; this build cannot demonstrate horizontal input at all.
 
-  Net effect: there is no portable rule for "which field to trust" baked
-  into the wire format — it has to be established per interpreter/build,
-  probably once, empirically (raw `SDL_MOUSEWHEEL` logging in `usdl2` is
-  the fastest way, as it was here). Whoever wires wheel input for the real
-  engine sidecar (a third `usdl2` build, embedded in MicroPython rather
-  than unix-port standalone) needs to re-run this same check rather than
-  assume either finding above transfers.
+  The practical upshot: this CPython desktop build is a dev/test tool for
+  the panel, not the shipping product — the real engine sidecar runs
+  MicroPython, and that build's `usdl2` already proved a clean second axis
+  is possible. So the CPython limitation just above doesn't bear on
+  whether horizontal is buildable for real; it only means the desktop
+  mockup can't demo it. Whoever wires wheel input for the engine
+  sidecar's own `usdl2` build (a third build, embedded rather than
+  unix-port standalone) still needs to re-run this same empirical check
+  rather than assume either finding above transfers — but "is it possible
+  at all" is now answered yes, by the MicroPython result.
 
   A click moving group focus always drops the group out of edit mode as
   part of that same transition (this is `lv_group_focus_obj` in LVGL core,
