@@ -77,6 +77,13 @@ CASES = {
     "AutoPan": ("audioeffects.AutoPan(src)", "pass"),
     "Vibrato": ("audioeffects.Vibrato(src)", "pass"),
     "Rotary": ("audioeffects.Rotary(src, speed='fast')", "pass"),
+    # audioif's audiomath module, which the engine did not have before -
+    # this case is as much "does the new native module reach the sidecar at
+    # all" as it is a check on the effect.
+    "RingMod": ("audioeffects.RingMod(src, frequency=220)", "pass"),
+    # Driven by patch rather than by argument, so the patch surface itself
+    # is exercised in a real host and not only in audioif's own tests.
+    "RingMod-patch": ("audioeffects.RingMod(src, patch=1)", "pass"),
     "Overdrive": ("audioeffects.Overdrive(src, drive=0.5)", "pass"),
     "Distortion": ("audioeffects.Distortion(src)", "pass"),
     "Fuzz": ("audioeffects.Fuzz(src)", "pass"),
