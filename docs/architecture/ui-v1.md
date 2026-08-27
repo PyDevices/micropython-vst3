@@ -36,12 +36,15 @@ structure this document adds.
 
   v1 uses only the vertical axis to adjust the focused control. A second,
   genuinely independent horizontal axis is reachable too — navigating
-  focus between controls — but stays out of v1 regardless of the finding
-  below: reading it means bypassing the shared `display_driver.py`'s
-  existing `_encoder_cb` (single LVGL encoder indev, one axis) with a
-  second, hand-rolled input path, and that shared file is release-gated
-  across lvgl-micropython/-circuitpython/-python — a deliberate scope
-  line, not a limitation of the hardware or the platform.
+  focus between controls — and is no longer a bypass of shared code: the
+  investigation below fed a fix straight into the canonical
+  `display_driver.py` (`lvgl-bindings/python/display_driver.py`, released
+  to every sister project), which now exposes `set_wheel_mapping(
+  adjust_axis, adjust_sign, navigate)` for exactly this pattern, defaulting
+  to today's v1 behavior (adjust only, no navigation) for every existing
+  consumer. Horizontal-as-navigate stays out of v1 scope for this plug-in
+  regardless — a script author's choice to make later, not a limitation
+  discovered here.
 
   A `MOUSEWHEEL` event carries both a legacy integer `x`/`y` pair and a
   float `precise_x`/`precise_y` pair, and which one (if either) carries
@@ -70,16 +73,28 @@ structure this document adds.
     in this build's `usdl2`, never real motion. There is no field left to
     read; this build cannot demonstrate horizontal input at all.
 
-  The practical upshot: this CPython desktop build is a dev/test tool for
-  the panel, not the shipping product — the real engine sidecar runs
-  MicroPython, and that build's `usdl2` already proved a clean second axis
-  is possible. So the CPython limitation just above doesn't bear on
-  whether horizontal is buildable for real; it only means the desktop
-  mockup can't demo it. Whoever wires wheel input for the engine
-  sidecar's own `usdl2` build (a third build, embedded rather than
-  unix-port standalone) still needs to re-run this same empirical check
-  rather than assume either finding above transfers — but "is it possible
-  at all" is now answered yes, by the MicroPython result.
+  The practical upshot: both builds above are dev/test tooling, not the
+  shipping product. `usdl2` (PyDevices' SDL2 binding, behind
+  `AutoDisplay`/`SDLDisplay`) exists so a panel can be built and clicked
+  around on an ordinary desktop before it ever touches the engine — the
+  shipping engine has no SDL window and never links `usdl2` at all. Its
+  wheel input takes a completely different, simpler path: the native
+  C++ view reads the host platform's own wheel event directly and packs
+  it into `mpvst_ui_input`'s single signed delta field (this document's
+  region layout, above), which `vstui.poll()` surfaces as `encoder_read`
+  in `vst_board_config.py`. On Windows that event (`WM_MOUSEWHEEL`)
+  already reports an unambiguous signed multiple of `WHEEL_DELTA` — the
+  legacy-vs-precise duality this section spent so long on is purely an
+  SDL concept and cannot occur there. Linux may still have a comparable
+  question of its own (X11's legacy button4/5/6/7 wheel clicks vs.
+  XInput2 smooth-scroll valuators are a structurally similar but distinct
+  split), worth checking empirically once the native view's Linux input
+  handling is actually written — but that is a fresh investigation against
+  X11, not a rerun of the `usdl2` check performed here. What today
+  settles is narrower and still worth having: horizontal-as-navigate is a
+  workable interaction (proven against real LVGL group/encoder behavior
+  on the MicroPython desktop build), independent of whichever platform
+  API ends up feeding it in the shipping engine.
 
   A click moving group focus always drops the group out of edit mode as
   part of that same transition (this is `lv_group_focus_obj` in LVGL core,
