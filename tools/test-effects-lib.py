@@ -28,6 +28,17 @@ CASES = {
     "Compressor_fet": ("audioeffects.Compressor(src, threshold_db=-20, ratio=8,"
                        " character='fet')", "squeeze"),
     "Limiter": ("audioeffects.Limiter(src, ceiling_db=-12)", "squeeze"),
+    # The two options audiodynamics gained in phase 11. Both allocate and
+    # both change the detector, so a host run is where a mistake in either
+    # would show up as a stall rather than as a number.
+    "Limiter-lookahead": ("audioeffects.Limiter(src, ceiling_db=-12,"
+                          " lookahead_ms=5, true_peak=True)", "squeeze"),
+    # "pass", not "squeeze": every Limiter patch sets its ceiling within a
+    # decibel or two of full scale, which is what a limiter is for, and this
+    # harness's loud half peaks around -9 dBFS. Nothing to catch is the
+    # correct answer here.
+    "Limiter-patch": ("audioeffects.Limiter(src, patch=2)", "pass"),
+    "Compressor-patch": ("audioeffects.Compressor(src, patch=5)", "squeeze"),
     "Expander": ("audioeffects.Expander(src, threshold_db=-20, ratio=3)",
                  "mute_quiet"),
     "NoiseGate": ("audioeffects.NoiseGate(src, threshold_db=-24)", "mute_quiet"),
@@ -99,6 +110,15 @@ CASES = {
     "Bitcrusher": ("audioeffects.Bitcrusher(src, crush=0.5)", "pass"),
     "Bitcrusher-bits": ("audioeffects.Bitcrusher(src, bits=6)", "pass"),
     "Exciter": ("audioeffects.Exciter(src)", "pass"),
+    # The audioecho module, and the three classes rebuilt on it. The
+    # ping-pong case is the one that could not exist before: its repeats
+    # alternate sides, which needs each channel fed into the other's line.
+    "TapeDelay-loop": ("audioeffects.TapeDelay(src, time_ms=180)", "pass"),
+    "TapeDelay-patch": ("audioeffects.TapeDelay(src, patch=2)", "pass"),
+    "AnalogDelay": ("audioeffects.AnalogDelay(src, time_ms=200)", "pass"),
+    "AnalogDelay-patch": ("audioeffects.AnalogDelay(src, patch=4)", "pass"),
+    "PingPongDelay-cross": (
+        "audioeffects.PingPongDelay(src, time_ms=160)", "pass"),
     "PitchShifter": ("audioeffects.PitchShifter(src, semitones=7)", "pass"),
     "Harmonizer": ("audioeffects.Harmonizer(src)", "pass"),
     "Octaver": ("audioeffects.Octaver(src, down=0.6)", "pass"),
