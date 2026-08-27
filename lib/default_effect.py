@@ -14,6 +14,10 @@ make it do something, build a chain between the two:
     delay = audioeffects.TapeDelay(vstaudio.input())
     vstaudio.output(delay.output)
 
+`NAME` is what the editor's header shows. Change it in your copy - a plug-in
+that says "DEFAULT - passthrough only" while running your code is confusing in
+exactly the way the name is meant to prevent.
+
 To have macro sliders, declare them - that is the whole contract, and it is
 the same `MACRO_LABELS` an audioeffects class or an audioinstruments module
 declares. Undeclared means the plug-in has none, and the editor draws none
@@ -35,5 +39,10 @@ the note handling instead.
 """
 
 import vstaudio
+
+# What the editor calls this instance. Every script may declare one, and this
+# one says what it is so nobody wonders which effect they are looking at: an
+# empty slot, not something they chose. Rename it in your copy.
+NAME = "DEFAULT - passthrough only"
 
 vstaudio.output(vstaudio.input())

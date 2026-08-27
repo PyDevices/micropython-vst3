@@ -2,6 +2,11 @@ import os
 import synthio
 import vstaudio
 
+# What the editor calls this instance. Every script may declare one, and this
+# one says what it is so nobody wonders which instrument they are looking at:
+# an empty slot, not something they chose.
+NAME = "DEFAULT - polyphonic synth"
+
 
 synth = synthio.Synthesizer(sample_rate=vstaudio.sample_rate(), channel_count=2)
 notes = {}
