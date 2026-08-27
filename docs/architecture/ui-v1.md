@@ -85,7 +85,13 @@ structure this document adds.
   in `vst_board_config.py`. On Windows that event (`WM_MOUSEWHEEL`)
   already reports an unambiguous signed multiple of `WHEEL_DELTA` — the
   legacy-vs-precise duality this section spent so long on is purely an
-  SDL concept and cannot occur there. Linux may still have a comparable
+  SDL concept and cannot occur there. Confirmed against a real PyDevices
+  reference: `displaydev.windisplay.WinDisplay._wndproc` handles
+  `WM_MOUSEWHEEL` and `WM_MOUSEHWHEEL` as two separate, correctly-labeled
+  messages with no legacy/precise split at all — vertical and horizontal
+  are already distinct signals on native Windows, which is a better
+  starting point than either desktop test build gave us today. Linux may
+  still have a comparable
   question of its own (X11's legacy button4/5/6/7 wheel clicks vs.
   XInput2 smooth-scroll valuators are a structurally similar but distinct
   split), worth checking empirically once the native view's Linux input
@@ -165,6 +171,29 @@ config and an adapter object (mirroring the `mpvst_adapter` seam) for
 macro values, labels, patches, and status. That keeps the panel runnable
 under `lvgl-python` on the desktop with a mock adapter — which is both the
 development loop and the portability requirement satisfied for free.
+
+`vst_board_config`'s `display_drv` must not set `share_framebuffer`. That
+flag (`displaydev.__init__.DisplayDriver`, canonical `display_driver.py`)
+tells the LVGL bridge to hand LVGL a direct, standing pointer into the
+backend's own buffer (`DISPLAY_RENDER_MODE.DIRECT`, zero-copy, no
+`blit_rect` call at all) — correct for native embedded scanout memory
+addressed from one process, wrong for a seqlock-protected region another
+process reads: the seqlock's odd/even toggle and rectangle-queue publish
+have to happen at one deliberate copy step, not be smeared across LVGL's
+own render/flush internals. Leaving the flag unset keeps the default
+`PARTIAL` path instead — LVGL renders into its own small, process-private
+draw buffer pair (`width × height/10` each, per `DisplayDriver`'s default)
+and calls `blit_rect` per band, which is exactly the seam `vstui.publish`
+hooks. `displaydev.windisplay.WinDisplay` is the reference for this whole
+shape already working: an off-GC-heap persistent buffer (`VirtualAlloc`,
+not a `bytearray`, so it survives independent of the interpreter's
+collector) that its own `blit_rect` writes into and a dirty-band tracker
+presents from — the shared UI region plays the same role its `_buffer`
+does, `vstui.publish` plays the role its own dirty-band present does. On
+Windows specifically, `WinDisplay._present` blits through `StretchDIBits`
+over a 16-bit `BI_BITFIELDS` DIB with no conversion pass, since the
+framebuffer is already RGB565 — the same technique is available to the
+real C++ view's Windows present path for the identical reason.
 
 ## Region layout
 
