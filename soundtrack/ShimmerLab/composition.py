@@ -5,16 +5,17 @@ Shimmer" is band-passed noise with a rising center: a reverse-cymbal, which
 is a sound effect that arrives on a downbeat rather than something that sits
 in a chord. This exists to audition alternatives side by side.
 
-Every variant plays the *same two chords* - eight bars of D minor, then eight
-of B flat - so what differs between them is the sound and nothing else. They
-are laid out one after another in time, so playing the project straight
-through auditions them in order, and each is on its own track so any one can
-be soloed or looped.
+Every variant plays the *same two chords over the same sixteen bars* -
+eight of D minor, then eight of B flat - stacked on four tracks rather than
+laid end to end. All four playing at once sounds terrible and is not the
+point: it means one loop region covers every take, so switching between
+them is a solo button rather than a seek. That is how an A/B actually gets
+done at a desk.
 
-  bars  1-16   A  Air Swell        what Perihelion has now
-  bars 17-32   B  Tuned Air        the same noise engine, band on the note
-  bars 33-48   C  Choir Shimmer    VP-330 choir through an octave-up hall
-  bars 49-64   D  String Shimmer   Solina strings through the same
+  A  Air Swell        what Perihelion had
+  B  Tuned Air        the same noise engine, band on the note
+  C  Choir Shimmer    VP-330 choir through an octave-up hall
+  D  String Shimmer   Solina strings through the same
 
 A and B are the cheap answers: same family, one keeps the piece's identity.
 C and D replace the instrument outright and use the real trick - a copy an
@@ -32,13 +33,13 @@ TITLE = "Shimmer_Lab"
 SAMPLE_RATE = 48000
 MASTER_GAIN_DB = -6.0
 ACTIVE_LIMIT = 4
-CLIMAX_SECTION = "C Choir Shimmer"
+CLIMAX_SECTION = "B Flat"
 BEATS_PER_BAR = 4
-TOTAL_BARS = 64
+TOTAL_BARS = 16
 TAIL_SECONDS = 12.0
 
 # One slow tempo throughout: nothing here is rhythmic, and a swell wants
-# room. 64 bars at 66 bpm is a little under four minutes.
+# room. Sixteen bars at 66 bpm is just under a minute, which loops well.
 TEMPO_MAP = [(0.0, 66.0)]
 
 TOTAL_BEATS = float(TOTAL_BARS * BEATS_PER_BAR)
@@ -71,16 +72,20 @@ DM = (D3, F3, A3, D4)
 BB = (Bb2, D3, F3, Bb3)
 
 
-def variant_notes(first_bar, velocity=0.7):
+def variant_notes(velocity=0.7):
     """The two chords, each held for most of its eight bars.
 
-    Notes stop a beat short of the change so the release and the reverb
-    tail have somewhere to go; a swell that is cut off by the next chord
-    tells you nothing about how it decays.
+    Every variant gets the same call: they overlap in time on purpose, so
+    one loop region covers all four and soloing is the only gesture needed
+    to compare them.
+
+    Notes stop a bar short of the change so the release and the reverb tail
+    have somewhere to go; a swell cut off by the next chord tells you
+    nothing about how it decays.
     """
     out = []
     for offset, chord in ((0, DM), (8, BB)):
-        start = bar(first_bar + offset)
+        start = bar(1 + offset)
         for pitch in chord:
             out.append((start, 7.0 * BEATS_PER_BAR, pitch, velocity))
     return out
@@ -135,7 +140,7 @@ TRACKS = [
     {
         # Exactly Perihelion's settings, only louder and on its own.
         "name": "A Air Swell", "script": "shimmer.py", "gain_db": -9.3,
-        "pan": 0.1, "notes": variant_notes(1),
+        "pan": 0.1, "notes": variant_notes(),
         "macros": {0: 0.55, 1: 0.7},
         "vol": [(bar(1), 1.0)],
         "macro_env": {},
@@ -144,15 +149,15 @@ TRACKS = [
     {
         # Same noise engine, band tracking the note, focused enough to sing.
         "name": "B Tuned Air", "script": "tuned_air.py", "gain_db": -8.8,
-        "pan": -0.1, "notes": variant_notes(17),
+        "pan": -0.1, "notes": variant_notes(),
         "macros": {0: 0.5, 1: 0.7, 2: 0.72, 3: 0.6},
-        "vol": [(bar(17), 1.0)],
+        "vol": [(bar(1), 1.0)],
         "macro_env": {},
         "effects": [FX_SPACE_OPEN],
     },
     {
         "name": "C Choir Shimmer", "script": "vp330.py", "gain_db": -2.2,
-        "pan": 0.05, "notes": variant_notes(33, velocity=0.8),
+        "pan": 0.05, "notes": variant_notes(velocity=0.8),
         # Volume, male choir, female choir, chorus depth, attack, release,
         # formant, vibrato rate, vibrato depth, brilliance, bass, tune.
         # Bass at zero on purpose. The VP-330's bass layer doubles an
@@ -161,18 +166,18 @@ TRACKS = [
         # above a mix, not another thing competing with the bass in it.
         "macros": {0: 0.95, 1: 0.3, 2: 0.85, 3: 0.6, 4: 0.55, 5: 0.7,
                    6: 0.5, 7: 0.35, 8: 0.25, 9: 0.65, 10: 0.0, 11: 0.5},
-        "vol": [(bar(33), 1.0)],
+        "vol": [(bar(1), 1.0)],
         "macro_env": {},
         "effects": [FX_SHIMMER],
     },
     {
         "name": "D String Shimmer", "script": "solina.py", "gain_db": -5.3,
-        "pan": -0.05, "notes": variant_notes(49, velocity=0.6),
+        "pan": -0.05, "notes": variant_notes(velocity=0.6),
         # Volume, violin, viola, cello, chorus depth, attack, release,
         # crescendo, tune.
         "macros": {0: 0.68, 1: 0.7, 2: 0.5, 3: 0.35, 4: 0.75, 5: 0.6,
                    6: 0.7, 7: 0.4, 8: 0.5},
-        "vol": [(bar(49), 1.0)],
+        "vol": [(bar(1), 1.0)],
         "macro_env": {},
         "effects": [FX_SHIMMER_WIDE],
     },
@@ -224,9 +229,9 @@ def active_track_count(beat):
     return count
 
 
+#: The two chords, not the four takes - the takes are tracks now, and the
+#: per-track section RMS table is where they get compared.
 SECTIONS = [
-    ("A Air Swell", bar(1), bar(17)),
-    ("B Tuned Air", bar(17), bar(33)),
-    ("C Choir Shimmer", bar(33), bar(49)),
-    ("D String Shimmer", bar(49), bar(65)),
+    ("A D Minor", bar(1), bar(9)),
+    ("B Flat", bar(9), bar(17)),
 ]
