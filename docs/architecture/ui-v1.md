@@ -1,9 +1,30 @@
 # UI v1 design (LVGL editor)
 
-Status: draft for review, 2026-08-26. Companion to `phase-0.md` (process
-boundary) and `ipc-v1.md` (wire rules). Nothing here weakens either: the
-audio thread rules, slot lifecycle, and bounded-data rules apply to every
-structure this document adds.
+Status: built, 2026-08-27. Companion to `phase-0.md` (process boundary) and
+`ipc-v1.md` (wire rules). Nothing here weakens either: the audio thread
+rules, slot lifecycle, and bounded-data rules apply to every structure this
+document adds.
+
+Three things came out differently from the design below, and each has its
+reasoning where it happened rather than only here:
+
+- **The UI surface is a sibling mapping, not a region of the audio one.**
+  `mpvst_shared_header` is exactly 128 bytes with nothing reserved, so
+  carrying a `ui_offset`/`ui_bytes` pair means growing the header - and both
+  the shipped engine and `mpvst_validate_mapping` reject a header whose size
+  is not their own, so an old engine under a new plug-in would fail to start
+  rather than "simply have no editor". `src/protocol/include/mpvst/ui.h` has
+  the full argument. Compatibility now rests on the extra command-line
+  argument naming the mapping: an engine that does not understand it ignores
+  it and plays without an editor.
+- **The panel edits bypass and reload as well as the patch and the macros.**
+  Both are ordinary automatable parameters the host already exposes, they
+  cost nothing in protocol terms, and a Reload button that did nothing would
+  be worse than no button. This is the one place the editable set below is
+  deliberately wider than it says.
+- **The engine ticks the UI by pumping the timer provider, never by calling
+  `App.poll()`.** They look interchangeable and are not; `lib/vst_editor.py`
+  records why, because the difference silently swallows every click.
 
 ## Decisions
 
@@ -154,11 +175,22 @@ A `vstui` module joins `vstaudio` in the engine usermod:
 
 | Call | Role |
 |---|---|
+| `vstui.open(name)` | map the region the plug-in named; False when there is none |
 | `vstui.configure(w, h)` | declare logical size, once, within the compiled maximum |
+| `vstui.blit(buf, x, y, w, h)` | copy pixels in and publish, both inside the seqlock |
+| `vstui.publish(x, y, w, h)` | publish a rectangle written through `framebuffer()` |
 | `vstui.framebuffer()` | memoryview of the RGB565 framebuffer |
-| `vstui.publish(x, y, w, h)` | seqlock-wrapped dirty-rect publication |
 | `vstui.poll()` | drain pending input events |
+| `vstui.edit(kind, id, value)` | publish one parameter edit |
 | `vstui.editor_open()` | host's editor-attached flag |
+| `vstui.error(code)` | report a panel failure for the view to render |
+
+`blit` is the one the board config uses, and it is why `publish` is not the
+only call: writing pixels through `framebuffer()` and publishing afterwards
+leaves a window where the view can read half-written pixels, which is the
+torn frame the sequence exists to make detectable rather than to cause. One
+call that brackets the copy has no such window. `publish` stays for a caller
+that composes its own pixels and knows when it has finished.
 
 `lib/vst_board_config.py` wraps that into the standard board contract: a
 `display_drv` whose `blit_rect` copies into the shared framebuffer and
@@ -169,6 +201,19 @@ does on hardware — including the virtual encoder device that turns wheel
 deltas into LVGL encoder events — with one loop rule — `app.run()` is never
 called in the sidecar. The engine pumps the same synchronous tick
 `display_driver.event_loop` uses, from its housekeeping step.
+
+Two details of that seam were only settled by building it. The wheel
+arrives as a `MOUSEWHEEL` host event rather than through `encoder_read`,
+because the board contract's encoder is a single absolute position and
+cannot express two axes; a host event carries both, and it means the whole
+canonical wheel path in `display_driver` applies unchanged. And the
+housekeeping tick pumps `multimer`'s `polling` provider directly rather
+than calling `App.poll()`: `poll()` drains every registered device itself,
+including the host-event device `display_driver` drains on the way to
+LVGL's indevs, so ticking with it consumed every click before LVGL saw one.
+Nothing does that on the desktop either — `display_driver.main()` calls
+`app.stop_timer()`, which removes the app's own service tick and leaves
+display_driver's pump as the only reader.
 
 The panel itself imports neither `vstui` nor `vstaudio`; it sees a board
 config and an adapter object (mirroring the `mpvst_adapter` seam) for
@@ -240,8 +285,18 @@ one automation edit rather than dozens. The
 host echoes the change back through the normal `EVENT_PARAMETER` path and
 the existing macro replay rules; the panel treats incoming parameter state
 as truth, which is stable because the echo equals what the panel already
-shows. The editable set in v1 is exactly the patch selector and the 16
-macros (permanent IDs 100–115).
+shows. The editable set in v1 is the patch selector, the 16 macros
+(permanent IDs 100-115), and - see the note at the top - bypass and reload,
+which the host already exposes as ordinary automatable parameters.
+
+The panel sees the engine's side of that echo through `vstaudio.observe`,
+which is new. `vstaudio.on_event` has exactly one owner, the instance
+script, and the panel must not displace it to learn that automation moved a
+macro.
+
+Gestures are closed by quiescence rather than by a release event, because a
+slider drag and a burst of wheel notches both arrive as a stream of value
+changes with no reliable end marker. One rule in the adapter covers both.
 
 ## Scheduling
 
@@ -315,15 +370,27 @@ One implementation, written once, generic forever:
 
 ## Acceptance
 
-1. ctest: staged engines import `lvgl` and `display_driver`; protocol
-   conformance extends to the UI records (identical offsets under MSVC and
-   GCC, seqlock torn-read detection, ring overflow degradation).
-2. Smoke host: open/close editor cycles across engine restarts without
-   leaking mappings or replaying stale input.
-3. REAPER matrix with editor open: zero underruns, panel slider and wheel
-   gestures recorded as automation, echoed parameter state stable (no
-   oscillation).
-4. Parity: PCM identical with and without an editor attached.
+1. ctest: staged engines import `lvgl` and the PyDevices integration
+   (`mpvst_engine_modules`); protocol conformance extends to the UI records
+   (identical offsets under MSVC and GCC, seqlock torn-read detection, ring
+   overflow degradation) in `mpvst_protocol_tests`.
+2. Smoke host (`--expect-editor`): the engine paints only while the editor
+   is open, injected input reaches the panel, a rightward swipe raises the
+   focused macro and a downward one steps to the next control, and a restart
+   hands over a fresh mapping with no stale input in it.
+3. REAPER matrix with the editor open, on both platforms: the host attaches
+   and detaches a real view, the mirrored macro does not drift while it is
+   open, and the engine is healthy afterwards.
+4. Parity: PCM identical with and without an editor attached, checked in the
+   matrix against the same configuration rendered both ways.
+
+Two notes on where the coverage sits. Gestures becoming automation is
+asserted by the smoke test rather than the matrix, because Lua cannot click
+a panel; the matrix asserts the half Lua can see, which is that a real host
+opens and closes a real window and the audio is untouched. And "zero
+underruns" is enforced as sample-exact parity rather than as a counter: the
+renders are offline, where the engine is never idle and therefore never
+ticks the UI at all, and identical PCM is the stronger statement anyway.
 
 ## Deferred
 

@@ -14,17 +14,20 @@ separate sidecar process - one per active plug-in instance - so a script
 that loops forever or exhausts memory takes down its own sidecar and gets
 restarted, rather than taking the DAW with it.
 
-Windows and Linux builds both ship, using the host's generic parameter
-editor. The same script and project state render byte-identical PCM on
-both platforms.
+Windows and Linux builds both ship, each with an LVGL editor of its own -
+a generic panel built from what the instance already declares, painted by
+the engine into shared memory and blitted by a native view. The host's
+generic parameter editor still reaches everything it did. The same script
+and project state render byte-identical PCM on both platforms, with or
+without an editor attached.
 
 ## Repository layout
 
 | | |
 |---|---|
 | `src/` | the C++ that builds the plug-in: `plugin/` (VST3 classes), `protocol/` (the shared-memory wire format), `runtime/` (shared memory and child processes) |
-| `usermods/vstaudio/` | the MicroPython C module that gives scripts their audio API |
-| `lib/` | everything staged into the bundle beside the engine: `instruments/`, `effects/`, the bootstrap, and the default instrument |
+| `usermods/` | the MicroPython C modules the engine binds to: `vstaudio/` (the audio API scripts use) and `vstui/` (the editor's framebuffer, input and edit rings) |
+| `lib/` | everything staged into the bundle beside the engine: `instruments/`, the bootstrap, the default instrument, and the editor's Python half (`vst_editor.py`, `vst_board_config.py`, `vst_panel/`) |
 | `tools/` | developer tooling - `piece.py` and `render_preview.py` for compositions, the `harness.py` CPython sidecar stand-in, and the library test sweeps |
 | `tests/` | the ctest suite and `smoke_host/`, a minimal VST3 host that loads the bundle with no DAW |
 | `scripts/` | build, packaging and setup automation |
@@ -35,9 +38,11 @@ The architecture is written down in
 [docs/architecture/phase-0.md](docs/architecture/phase-0.md) (the system
 boundary and what each process owns) and
 [docs/architecture/ipc-v1.md](docs/architecture/ipc-v1.md) (the
-shared-memory protocol rules). Both still describe the shipping design;
-the canonical structure sizes and offsets live in
-`src/protocol/include/mpvst/protocol.h`.
+shared-memory protocol rules), with
+[docs/architecture/ui-v1.md](docs/architecture/ui-v1.md) covering the
+editor. All three describe the shipping design; the canonical structure
+sizes and offsets live in `src/protocol/include/mpvst/protocol.h` and
+`src/protocol/include/mpvst/ui.h`.
 
 ## Getting started
 
@@ -256,9 +261,11 @@ exit, including after a failed build.
 
 ## Known limitations
 
-- No custom editor and no host-visible diagnostic string. The generic
-  editor shows only the ready and error parameters; the bounded diagnostic
-  text is available through the transport API.
+- No host-visible diagnostic string. Both editors show only the ready and
+  error parameters; the bounded diagnostic text is available through the
+  transport API.
+- The editor is one generic panel. Per-script panels, a shared knob widget,
+  meters, and resizable or zoomable editors are all deferred.
 - State embeds one source file, not a dependency bundle. Imports must
   resolve in the sidecar's own MicroPython environment.
 - `MPVST_SCRIPT_PATH` is process-wide, so two developer-file instances
@@ -277,7 +284,6 @@ exit, including after a failed build.
 
 ## Deferred
 
-- An LVGL editor and its shared framebuffer/input protocol.
 - Effect extras: a wet/dry mix parameter and sidechain input buses.
 - Float64 host processing and a native floating-point audioif graph.
 - macOS bundles, signing, notarisation, and universal binaries.

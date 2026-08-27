@@ -1,4 +1,4 @@
-# Linux generic-editor workflow
+# Linux workflow
 
 The Linux build is the same instrument as the Windows one: the same IPC
 protocol, the same scripts, the same project state, and the same rendered PCM.
@@ -10,8 +10,8 @@ Only the installation paths and the sidecar executable differ.
 2. Unpack the release and copy `MicroPythonVST3.vst3` to `~/.vst3` for the
    current user, or `/usr/lib/vst3` for all users.
 3. Start the DAW and request a VST3 rescan.
-4. Insert **MicroPython Instrument** on an instrument track and use the host's
-   generic parameter editor.
+4. Insert **MicroPython Instrument** on an instrument track and open its
+   editor, or use the host's generic parameter editor.
 
 The bundle contains `Contents/x86_64-linux/`, holding the plug-in itself, the
 `micropython-vst-engine` sidecar, the bootstrap, and the default instrument.
@@ -21,9 +21,16 @@ will leave the plug-in unable to start its engine.
 
 ## Controls
 
-Identical to Windows: `Bypass`, `Reload Script`, `Macro 01` through `Macro 16`
-under whatever labels the script declares, and the read-only `Engine Ready` and
-`Engine Error` status parameters.
+Identical to Windows, including the plug-in's own editor: a patch selector, a
+Reload button, a Bypass switch, a status light, and a slider per macro under
+whatever labels the script declares. Click a control to focus it, then scroll
+or swipe - sideways adjusts it, up and down moves between controls.
+
+The editor is a plain X11 child window driven by the host's own run loop, so a
+host that provides no `IRunLoop` gets no editor and the generic parameter
+editor still works: `Bypass`, `Reload Script`, `Patch`, `Macro 01` through
+`Macro 16`, and the read-only `Engine Ready` and `Engine Error` status
+parameters.
 
 ## Develop a script
 

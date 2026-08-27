@@ -6,13 +6,21 @@
 2. Copy `MicroPythonVST3.vst3` to `%LOCALAPPDATA%\Programs\Common\VST3`
    for the current user, or `%COMMONPROGRAMFILES%\VST3` for all users.
 3. Start the DAW and request a VST3 rescan.
-4. Insert **MicroPython Instrument** on an instrument track and use the host's
-   generic parameter editor.
+4. Insert **MicroPython Instrument** on an instrument track and open its
+   editor, or use the host's generic parameter editor.
 
-The initial release has no custom LVGL editor. Its visible controls are
-`Bypass`, `Reload Script`, and `Macro 01` through `Macro 16` (or labels supplied
-by the script). `Engine Ready` and integer `Engine Error` are read-only status
+The plug-in has an editor of its own: a patch selector, a Reload button, a
+Bypass switch, an engine-status light, and a slider per macro, labelled with
+whatever names the script declares. Click a control to focus it, then scroll
+or swipe - sideways adjusts the focused control, up and down moves between
+them. A drag or a burst of scrolling is recorded as one automation edit.
+
+The same parameters are all there in the host's generic editor: `Bypass`,
+`Reload Script`, `Patch`, and `Macro 01` through `Macro 16` (or the script's
+labels). `Engine Ready` and integer `Engine Error` are read-only status
 controls; error 1 means script load failed and error 2 means rendering failed.
+A script that leaves the panel unable to build shows "Editor unavailable" and
+keeps playing.
 
 ## Develop a script
 
