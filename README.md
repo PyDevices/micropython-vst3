@@ -114,13 +114,15 @@ pressure, pitch bend, and all 128 MIDI CCs across 16 channels. Named
 
 Macro automation arrives through the same callback as
 `vstaudio.EVENT_PARAMETER`: `data0` is the zero-based macro index, `value0`
-the normalised value, `sample_position` the absolute render sample. A
-header comment labels them for the generic editor:
+the normalised value, `sample_position` the absolute render sample. A header
+comment is how a script declares which macros it has - it is the bare-script
+form of `MACRO_LABELS`, not decoration:
 
 ```python
 # mpvst-macro-labels: Gain | Tone | Attack | Release
 ```
 
+A script without the line declares no macros and the editor draws none.
 Changing labels does not change parameter IDs or detach automation.
 
 Every instrument also declares `PATCHES`, whose first entry is the sound
@@ -153,6 +155,17 @@ stay out of the browser. Its class ID is derived from the file path plus
 the name, so a copy of one of ours is automatically a distinct plug-in -
 and renaming the *file* makes a different plug-in, orphaning projects that
 used the old one.
+
+Macros and patches are declared or absent. A plug-in that wants macro
+parameters declares `MACRO_LABELS`; one that wants patches declares
+`PATCHES`. Undeclared does not mean unnamed, it means there are none:
+`mpvst_effect_adapter` registers no parameter handler at all for a class
+without `MACRO_LABELS`, an instrument's macro index selects from a table it
+does not have, and a program change with no `PATCHES` selects from nothing.
+The editor draws exactly what was declared and says so when that is nothing.
+The parameters themselves are unaffected - all sixteen macros and the patch
+parameter are permanent, because they are what a host automates - but a
+plug-in that declared none has none.
 
 `lib/mpvst_adapter.py` is the seam between the two. `vstaudio` speaks the
 normalised floats the VST3 parameter API uses; the instrument API speaks

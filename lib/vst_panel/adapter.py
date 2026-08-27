@@ -206,25 +206,19 @@ _LABEL_PREFIX = "# mpvst-macro-labels:"
 
 
 def _macro_labels(script_path):
-    """The macros this instance has, named. As many as were declared.
+    """The macros this instance declares, named. Nothing declared, none drawn.
 
-    An undeclared macro is not an unnamed one, it is one that does nothing.
-    An effect only gets a parameter handler at all when its class declares
-    MACRO_LABELS - `mpvst_effect_adapter.attach` gates the wiring on it - and
-    an instrument's macros are indices into a table it does not have. So a
-    library plug-in that declares none has none, and the panel draws none.
-
-    Sixteen is the answer only when nothing is there to ask: a script that
-    went through neither adapter registers its own event handler, may act on
-    any macro it likes, and has told us nothing either way.
+    Declaring them is the contract: MACRO_LABELS on the module or the class,
+    or a `# mpvst-macro-labels:` line for a script that is neither. An
+    undeclared macro is not an unnamed one, it is one that does nothing -
+    mpvst_effect_adapter registers no parameter handler at all for a class
+    without MACRO_LABELS, and an instrument's macro index selects from a table
+    it does not have. So drawing none of them is an accurate report rather
+    than a hidden feature.
     """
     declared = _labels_from_source(script_path)
     if not declared:
-        owner = _declared()
-        if owner is None:
-            return ["Macro {:02d}".format(index + 1)
-                    for index in range(MACRO_COUNT)]
-        declared = getattr(owner, "MACRO_LABELS", None)
+        declared = getattr(_declared(), "MACRO_LABELS", None)
     labels = []
     for index, text in enumerate(declared or ()):
         if index >= MACRO_COUNT:
@@ -241,12 +235,12 @@ def _labels_from_source(script_path):
 
 
 def _patch_names():
-    """The patches this instance has, named, or none at all.
+    """The patches this instance declares, named. Nothing declared, none drawn.
 
-    Empty is the honest answer for an effect and for a hand-written script:
-    neither has a patch surface, and a list of 128 entries that select nothing
-    is exactly the control this is here to remove. The Patch parameter itself
-    stays - it is permanent, and a host may still automate it.
+    The same contract as the macros: a plug-in that wants patches declares
+    PATCHES. Without it a program change selects from nothing, so a list of
+    128 entries would be 128 ways to change nothing. The Patch parameter
+    itself stays - it is permanent, and a host may still automate it.
     """
     declared = getattr(_declared(), "PATCHES", None)
     if not isinstance(declared, dict) or not declared:

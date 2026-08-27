@@ -43,7 +43,9 @@ leave the sidecar alive so a corrected script can be reloaded.
 The host output uses a short fade-out, pipeline hold, and fade-in around reload
 to avoid a discontinuity at the graph boundary.
 
-Macro labels are optional metadata and do not alter automation IDs:
+A script declares its macros with a header comment. This is the declaration,
+not a label for one that exists anyway: without it the script has no macros
+and the editor draws none. It does not alter automation IDs.
 
 ```python
 # mpvst-macro-labels: Gain | Tone | Attack | Release
