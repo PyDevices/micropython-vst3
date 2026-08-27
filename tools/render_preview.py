@@ -92,8 +92,19 @@ def effects_for(track):
     for effect in track.get("effects", ()):
         name = "<%s: %s>" % (track["name"], effect["name"])
 
-        def stage(pcm, source=effect["source"], name=name):
-            return EffectRun(source, pcm, SR, name)
+        def stage(pcm, effect=effect, name=name):
+            run = EffectRun(effect["source"], pcm, SR, name)
+            # All sixteen, including the ones the rack does not set, because
+            # that is what the plug-in does: a VST parameter always has a
+            # value, and generate_project.py writes all sixteen into the
+            # project. Delivering only the named ones would leave this
+            # preview disagreeing with the bounce it exists to check - which
+            # it did, silently, until now. Only Perihelion's fx_space reads
+            # them; every other rack in the soundtrack is static.
+            for index in range(16):
+                run.deliver(shim.EVENT_PARAMETER, 0, -1, index,
+                            C.macro_value(effect, index, 0.0), 0.0, 0)
+            return run
 
         yield stage
 
