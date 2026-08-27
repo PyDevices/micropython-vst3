@@ -28,6 +28,29 @@ Processor::Processor (bool effectMode)
                               SidecarTransport::ScriptOrigin::DeveloperFile);
 }
 
+Processor::Processor (const PluginEntry& entry)
+    : scriptSource_ (entry.scriptSource ())
+    , effectMode_ (entry.effect)
+{
+    setControllerClass (entry.controllerId);
+    for (auto& value : macros_)
+        value.store (0.5f, std::memory_order_relaxed);
+    sidecar_.setInputEnabled (effectMode_);
+    // RestoredSnapshot, not DeveloperFile: a named plug-in is its library
+    // module, so there is no file on disk for Reload Script to re-read and
+    // nothing for MPVST_SCRIPT_PATH to override. Reload still rebuilds the
+    // instrument, because the adapter drops the package from sys.modules.
+    sidecar_.setScriptSource (scriptSource_);
+}
+
+FUnknown* Processor::createFromManifest (void* context)
+{
+    const auto* entry = static_cast<const PluginEntry*> (context);
+    if (entry == nullptr)
+        return nullptr;
+    return static_cast<IAudioProcessor*> (new Processor (*entry));
+}
+
 FUnknown* Processor::createInstance (void*)
 {
     return static_cast<IAudioProcessor*> (new Processor ());

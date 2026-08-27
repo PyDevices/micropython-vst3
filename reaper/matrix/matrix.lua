@@ -30,8 +30,8 @@ local SCRIPT = os.getenv("MPVST_SCRIPT_PATH") or ""
 local BAD_SCRIPT = os.getenv("MPVST_BAD_SCRIPT_PATH") or ""
 local EDITED_SCRIPT = os.getenv("MPVST_EDITED_SCRIPT_PATH") or ""
 local EFFECT_SCRIPT = os.getenv("MPVST_EFFECT_SCRIPT_PATH") or ""
-local FX_NAME = "MicroPython Instrument"
-local EFFECT_FX_NAME = "MicroPython Effect"
+local FX_NAME = "MicroPython Script Host"
+local EFFECT_FX_NAME = "MicroPython Script Host (Fx)"
 -- package.config's first line is the platform path separator, so the same
 -- script drives REAPER on Windows and on Linux.
 local SEP = package.config:sub(1, 1)

@@ -43,27 +43,23 @@ and the root [`../reaper.sh`](../reaper.sh) entry point.
   `InstrumentRun` and `EffectRun`; `vstaudio.py` is the shim module
   scripts see as `import vstaudio`. A sibling `audioif` checkout, when
   present, is preferred over any installed wheel.
-- **`generate_shims.py [--check]`** - writes `lib/instruments/*.py`,
-  one two-line loader per `audioinstruments` module, with the
-  macro-label comment synthesized from the module's `MACRO_LABELS` so
-  the controller reads the same names the instrument declares. They are
-  committed because a generated REAPER project embeds the bytes of the
-  script it loads. `--check` regenerates and diffs; registered as the
-  `mpvst_instrument_shims` ctest.
 - **`test-instruments-lib.py [name ...]`** - runs every instrument
-  script against `harness.py` - the 53 shims and the soundtrack's 40
-  piece-private instruments: sweeps each declared macro through
+  script against `harness.py` - the 53 library instruments, whose loader
+  scripts it synthesizes exactly as the plug-in does, and the
+  soundtrack's 40 piece-private instruments: sweeps each declared macro through
   `0.0/0.5/1.0` under held notes, then checks a fresh instance produces
   audible output at default settings. Driving the shims covers the whole
   sidecar path bar the engine (shim to adapter to `audioinstruments`),
   which is the part audioif's own parity goldens cannot see. No engine or
   VST3 host needed; a full pass over all 93 takes about ten seconds.
   Registered as the `mpvst_instruments_library` ctest.
-- **`test-instruments-plugin.py <smoke_host> <bundle.vst3>`** - the same
-  scripts through the real packaged MicroPython Instrument VST3 class
-  (real protocol, real macro/state handling), via `smoke_host`'s
-  `--instrument-script` probe. Slower, higher-fidelity; the final gate.
-  Registered as `mpvst_instruments_plugin`.
+- **`smoke_host --expect-all-named`** - every plug-in the manifest
+  declares, instantiated through the real factory: the class is registered
+  from a file, the processor builds its script from the same entry, and
+  the sidecar imports the library module named in it. Also builds each
+  one's controller, which is what proves a single shared controller class
+  still speaks for whichever instrument named it. Registered as
+  `mpvst_named_plugins`; the final gate.
 - **`test-effects-lib.py <smoke_host> <bundle.vst3>`** - the equivalent
   suite for `audioeffects`: builds each class from `vstaudio.input()` and
   asserts the behavior it promises (squeezes, mutes, or passes a

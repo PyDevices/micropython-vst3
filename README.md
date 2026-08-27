@@ -1,12 +1,16 @@
 # MicroPython VST3
 
-Programmable VST3 instrument and audio effect backed by dedicated
-MicroPython engine processes. One bundle ships two plug-ins: the
-**MicroPython Instrument** (event input, stereo out) and the
-**MicroPython Effect** (stereo in and out), whose script reads the host
-audio through `vstaudio.input()` and can run it through any audioif
-chain - filters, echoes, chorus, freeverb, mixers - or synthesize
-alongside it.
+Programmable VST3 instruments and audio effects backed by dedicated
+MicroPython engine processes. One bundle ships a whole library: every
+`audioinstruments` module and every `audioeffects` class appears in the
+DAW's browser under its own name and category - **TR-808** under
+Instrument|Drum, **Tape Delay** under Fx|Delay - alongside two generic
+**MicroPython Script Host** classes that run any script you point them at.
+
+The list is not compiled in. `scan_plugins.py`, run by the engine itself,
+reads what each library module declares about itself and writes a
+manifest the plug-in loads at startup. Adding an instrument is writing a
+script and re-scanning; there is no build step and no compiler involved.
 
 The VST audio callback stays native and real-time safe. Python, garbage
 collection, filesystem access, and engine lifecycle work all happen in a
@@ -131,13 +135,22 @@ any application can import, not just this plug-in. They are staged beside
 the engine from a sibling audioif checkout (`MPVST_AUDIOIF_LIB` if it is
 somewhere else).
 
-`lib/instruments/*.py` are still one file per instrument, because that is
-the unit the plug-in deals in: the browser lists script files, the
-controller parses macro labels out of the embedded source, and a
-generated REAPER project embeds the bytes of the chosen script. Each is a
-two-line loader written by `tools/generate_shims.py` and committed; a
-ctest regenerates them and diffs, so one cannot go stale. Edit the
-instrument in audioif and regenerate.
+There is no file per instrument. The unit the plug-in deals in is still a
+script - the controller parses macro labels out of the embedded source,
+and a saved project embeds its bytes - but that script is now *built* from
+the manifest entry when a class is instantiated, rather than kept on disk.
+Two lines, synthesized in `PluginEntry::scriptSource`. That is what lets
+the library be the single source of truth for a plug-in's name, category
+and macro labels: there is no generated copy to drift from it.
+
+A plug-in declares itself with four module-level names - `NAME`,
+`CATEGORIES`, `VERSION`, `VENDOR` - or, for an effect, the first three on
+the class and `VENDOR` on the module. `NAME` is the only required one, and
+anything without it is not a plug-in, which is how base and helper classes
+stay out of the browser. Its class ID is derived from the file path plus
+the name, so a copy of one of ours is automatically a distinct plug-in -
+and renaming the *file* makes a different plug-in, orphaning projects that
+used the old one.
 
 `lib/mpvst_adapter.py` is the seam between the two. `vstaudio` speaks the
 normalised floats the VST3 parameter API uses; the instrument API speaks

@@ -121,13 +121,13 @@ if(TARGET mpvst-stage-micropython-engine)
             $<TARGET_FILE_DIR:MicroPythonVST3>/../..)
         set_tests_properties(mpvst_effects_library PROPERTIES TIMEOUT 600)
 
-        # Every lib/instruments/*.py script, through the real VST3 plug-in
-        # class and protocol.
-        add_test(NAME mpvst_instruments_plugin COMMAND ${MPVST_PYTHON}
-            ${CMAKE_SOURCE_DIR}/tools/test-instruments-plugin.py
-            $<TARGET_FILE:mpvst_smoke_host>
-            $<TARGET_FILE_DIR:MicroPythonVST3>/../..)
-        set_tests_properties(mpvst_instruments_plugin PROPERTIES TIMEOUT 900)
+        # Every plug-in the manifest declares, instantiated through the real
+        # factory: the class is registered from a file, the processor builds
+        # its script from the same entry, and the sidecar imports the library
+        # module named in it. Silence anywhere along that chain fails here.
+        add_test(NAME mpvst_named_plugins COMMAND mpvst_smoke_host
+            $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-all-named)
+        set_tests_properties(mpvst_named_plugins PROPERTIES TIMEOUT 1800)
     endif()
 endif()
 
@@ -137,13 +137,6 @@ if(MPVST_PYTHON)
     add_test(NAME mpvst_instruments_library COMMAND ${MPVST_PYTHON}
         ${CMAKE_SOURCE_DIR}/tools/test-instruments-lib.py)
     set_tests_properties(mpvst_instruments_library PROPERTIES TIMEOUT 300)
-
-    # lib/instruments/*.py are generated from audioinstruments and
-    # committed, because a REAPER project embeds the bytes of the script
-    # it loads. A stale shim would keep working and quietly disagree with
-    # the instrument about its macro labels, so regenerate and diff.
-    add_test(NAME mpvst_instrument_shims COMMAND ${MPVST_PYTHON}
-        ${CMAKE_SOURCE_DIR}/tools/generate_shims.py --check)
 
     # Defect linting for the Python half of the repository - the tools, the
     # instrument and effect scripts, the composition modules. Configured in

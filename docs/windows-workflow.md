@@ -5,9 +5,19 @@
 1. Close the DAW.
 2. Copy `MicroPythonVST3.vst3` to `%LOCALAPPDATA%\Programs\Common\VST3`
    for the current user, or `%COMMONPROGRAMFILES%\VST3` for all users.
-3. Start the DAW and request a VST3 rescan.
-4. Insert **MicroPython Instrument** on an instrument track and open its
-   editor, or use the host's generic parameter editor.
+3. Run the scanner once, from `Contents\x86_64-win` inside the installed
+   bundle, so the DAW can see the library:
+
+       micropython-vst-engine.exe scan_plugins.py --write
+
+   It needs nothing installed - that is the engine itself, reading what each
+   library module declares about itself. Run it again after adding or editing
+   a script.
+4. Start the DAW and request a VST3 rescan.
+5. Insert any of them - **TR-808**, **Minimoog**, **Tape Delay** - and open
+   its editor, or use the host's generic parameter editor. **MicroPython
+   Script Host** runs whatever script `MPVST_SCRIPT_PATH` points at, which
+   is the loop for developing one that is not in the library yet.
 
 The plug-in has an editor of its own: a patch selector, a Reload button, a
 Bypass switch, an engine-status light, and a slider per macro, labelled with

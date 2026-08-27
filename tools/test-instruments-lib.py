@@ -37,14 +37,21 @@ not that it sounds like the hardware it emulates.
 Usage: test-instruments-lib.py [name.py ...]   (default: every script)
 """
 
+import importlib
 import importlib.util
 import sys
+import tempfile
 import traceback
 from pathlib import Path
 
 REPO_DIR = Path(__file__).resolve().parent.parent
-INSTRUMENTS_DIR = REPO_DIR / "lib" / "instruments"
 SOUNDTRACK_DIR = REPO_DIR / "soundtrack"
+# The library instruments have no script files of their own any more: the
+# plug-in builds each one's two-line loader from the manifest when the class
+# is instantiated. This synthesises the same two lines so the sweep still
+# drives the real path - shim to mpvst_adapter to audioinstruments - rather
+# than reaching into the package and skipping the seam under test.
+_SYNTHESISED = None
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import harness  # noqa: E402  (also puts audioif and audioif/lib on the path)
@@ -92,10 +99,16 @@ def check_label_line(script_path, module):
     source, so every script carries them as a comment as well as a tuple.
     Two places, one truth - this is what keeps them the same.
     """
-    first = script_path.read_text().split("\n", 1)[0]
+    prefix = "# mpvst-macro-labels:"
+    declared = [line for line in script_path.read_text().split("\n")
+                if line.startswith(prefix)]
+    # Found by its prefix, not by its position: a script carries other
+    # metadata comments too, and which line this one lands on is not the
+    # thing under test.
+    first = declared[0] if declared else "<no %s line>" % prefix
     expected = "# mpvst-macro-labels: " + " | ".join(module.MACRO_LABELS)
     if first != expected:
-        fix = ("run tools/generate_shims.py" if module_of(script_path)
+        fix = ("regenerate it" if module_of(script_path)
                else "edit the comment or MACRO_LABELS so they agree")
         return ["macro labels disagree - %s\n  file:   %s\n  labels: %s"
                 % (fix, first, expected)]
@@ -163,9 +176,32 @@ def run_one(script_path):
     return errors
 
 
+def library_scripts():
+    """A loader script per audioinstruments module, written to a temp dir.
+
+    The same text src/plugin/source/plugin_manifest.cpp builds, for the same
+    reason: everything downstream deals in script source, so the cheapest
+    honest way to test a library instrument is to hand it one.
+    """
+    global _SYNTHESISED
+    if _SYNTHESISED is None:
+        import audioinstruments
+        _SYNTHESISED = Path(tempfile.mkdtemp(prefix="mpvst-instruments-"))
+        for name in audioinstruments.ALL:
+            module = importlib.import_module("audioinstruments." + name)
+            labels = " | ".join(getattr(module, "MACRO_LABELS", ()))
+            (_SYNTHESISED / (name + ".py")).write_text(
+                "# mpvst-macro-labels: %s\n"
+                "# mpvst-module: audioinstruments.%s\n"
+                "import mpvst_adapter\n"
+                "mpvst_adapter.run(\"audioinstruments.%s\")\n"
+                % (labels, name, name))
+    return sorted(_SYNTHESISED.glob("*.py"))
+
+
 def every_script():
     """Every instrument script, labelled by where it lives."""
-    for path in sorted(INSTRUMENTS_DIR.glob("*.py")):
+    for path in library_scripts():
         yield path.stem, path
     for directory in sorted(SOUNDTRACK_DIR.glob("*/instruments")):
         for path in sorted(directory.glob("*.py")):

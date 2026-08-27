@@ -1902,6 +1902,171 @@ bool editorDrivesParameters(const PluginFactory& factory,
     return true;
 }
 
+// Instantiate one of the manifest's named plug-ins and make it play.
+//
+// This is the end of the chain the manifest starts: the factory registered a
+// class it read from a file, the processor built that plug-in's script from
+// the same entry, and the sidecar imported the library module named in it. If
+// any link is wrong the instrument is silent, so silence is the failure.
+bool namedPluginPlays(const PluginFactory& factory, const std::string& wanted,
+                      FUnknown* host)
+{
+    ClassInfo info;
+    if (findAudioClassNamed(factory, wanted, info) == nullptr)
+    {
+        std::cerr << "HOOK named.scan FAIL: no class called " << wanted << '\n';
+        return false;
+    }
+    // Nothing may leak in from the developer loop: a named plug-in is its
+    // library module and must ignore MPVST_SCRIPT_PATH entirely.
+    setScriptPath("/nonexistent/should-be-ignored.py");
+    struct Cleanup { ~Cleanup() { setScriptPath({}); } } cleanup;
+
+    auto component = createComponent(factory, info, host);
+    auto processor = getProcessor(component);
+    if (!component || !processor)
+        return false;
+
+    // subCategories() is a vector of the bar-separated pieces, so the first
+    // one is what says instrument or effect.
+    const auto& categories = info.subCategories();
+    const bool effect = !categories.empty() && categories.front() == "Fx";
+    SpeakerArrangement stereo = SpeakerArr::kStereo;
+    ProcessSetup setup {};
+    setup.processMode = kRealtime;
+    setup.symbolicSampleSize = kSample32;
+    setup.maxSamplesPerBlock = 256;
+    setup.sampleRate = 48000.0;
+    if (!ok(processor->setBusArrangements(effect ? &stereo : nullptr,
+                                          effect ? 1 : 0, &stereo, 1)) ||
+        !ok(component->activateBus(kAudio, kOutput, 0, true)) ||
+        !ok(component->activateBus(kEvent, kInput, 0, true)) ||
+        (effect && !ok(component->activateBus(kAudio, kInput, 0, true))) ||
+        !ok(processor->setupProcessing(setup)) ||
+        !ok(component->setActive(true)) ||
+        !ok(processor->setProcessing(true)))
+        return false;
+
+    std::array<float, 256> left {};
+    std::array<float, 256> right {};
+    Sample32* channels[] = {left.data(), right.data()};
+    AudioBusBuffers output {};
+    output.numChannels = 2;
+    output.channelBuffers32 = channels;
+    AudioBusBuffers input {};
+    input.numChannels = 2;
+    input.channelBuffers32 = channels;
+    ProcessData data {};
+    data.processMode = kRealtime;
+    data.symbolicSampleSize = kSample32;
+    data.numSamples = static_cast<int32>(left.size());
+    data.numOutputs = 1;
+    data.outputs = &output;
+    if (effect)
+    {
+        data.numInputs = 1;
+        data.inputs = &input;
+    }
+
+    EventList events;
+    data.inputEvents = &events;
+    bool heard = false;
+    for (int block = 0; block < 200 && !heard; ++block)
+    {
+        events.clear();
+        if (block == 20)
+        {
+            if (effect)
+            {
+                // An effect has nothing to make on its own: feed it something.
+                for (std::size_t frame = 0; frame < left.size(); ++frame)
+                    left[frame] = right[frame] =
+                        0.4F * std::sin(static_cast<float>(frame) * 0.05F);
+            }
+            else
+            {
+                // Middle C and the General MIDI bass drum. A drum machine
+                // maps neither the whole keyboard nor middle C - TR-707 and
+                // friends answer only around 36 - so asking for one pitch
+                // reports half the library as silent.
+                for (const auto pitch : {60, 36})
+                {
+                    Event note {};
+                    note.type = Event::kNoteOnEvent;
+                    note.noteOn.pitch = static_cast<int16>(pitch);
+                    note.noteOn.velocity = 0.9F;
+                    note.noteOn.noteId = -1;
+                    events.addEvent(note);
+                }
+            }
+        }
+        if (!ok(processor->process(data)))
+            return false;
+        if (block > 20)
+        {
+            for (const auto sample : left)
+                heard = heard || std::abs(sample) > 0.0001F;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(3));
+    }
+
+    (void)processor->setProcessing(false);
+    (void)component->setActive(false);
+    if (!heard)
+    {
+        std::cerr << "HOOK named.play FAIL: " << wanted << " made no sound\n";
+        return false;
+    }
+    std::string joined;
+    for (const auto& piece : categories)
+        joined += (joined.empty() ? "" : "|") + piece;
+    std::cout << "HOOK named.play OK: " << wanted << " (" << joined
+              << ") played\n";
+
+    // Every generated plug-in names the same controller class, so the thing
+    // worth proving is that one class still speaks for whichever instrument
+    // asked for it. Build the controller the component actually names, feed
+    // it that component's state, and read back a macro title: if sharing were
+    // wrong, two instruments would report the same names.
+    TUID controllerCID {};
+    if (!ok(component->getControllerClassId(controllerCID)))
+        return false;
+    const VST3::UID controllerUid(controllerCID);
+    auto controller = factory.createInstance<IEditController>(controllerUid);
+    if (!controller || !ok(controller->initialize(host)))
+    {
+        std::cerr << "HOOK named.controller FAIL: " << wanted
+                  << ": no controller\n";
+        return false;
+    }
+    MemoryStream state;
+    if (ok(component->getState(&state)))
+    {
+        state.seek(0, IBStream::kIBSeekSet, nullptr);
+        (void)controller->setComponentState(&state);
+    }
+    std::string title = "<none>";
+    for (int32 index = 0; index < controller->getParameterCount(); ++index)
+    {
+        ParameterInfo parameter {};
+        if (controller->getParameterInfo(index, parameter) == kResultTrue &&
+            parameter.id == 100U)
+        {
+            std::array<char, 128> ascii {};
+            UString(parameter.title, str16BufferSize(parameter.title))
+                .toAscii(ascii.data(), static_cast<int32>(ascii.size()));
+            title = ascii.data();
+            break;
+        }
+    }
+    (void)controller->terminate();
+    controller = nullptr;
+    std::cout << "HOOK named.controller OK: " << wanted << " controller "
+              << controllerUid.toString() << " macro 01 = \"" << title
+              << "\"\n";
+    return true;
+}
+
 bool patchSelectDeliversProgramChange(const PluginFactory& factory,
                                       const ClassInfo& classInfo,
                                       FUnknown* host)
@@ -2078,18 +2243,21 @@ int main(int argc, char** argv)
     const bool renderMode = mode == "--render-reference";
     const bool frameDump = mode == "--dump-editor-frame";
     const bool windowCapture = mode == "--capture-editor-window";
+    const bool namedMode = mode == "--expect-named";
+    const bool sweepMode = mode == "--expect-all-named";
     const bool scriptProbe = mode == "--effect-script";
     const bool instrumentProbe = mode == "--instrument-script";
     if (argc < 2 || argc > 4 ||
         ((renderMode || scriptProbe || instrumentProbe || frameDump ||
-          windowCapture) && modeArgument.empty()) ||
+          windowCapture || namedMode) && modeArgument.empty()) ||
         (!renderMode && !scriptProbe && !instrumentProbe && !frameDump &&
-         !windowCapture && argc > 3) ||
+         !windowCapture && !namedMode && argc > 3) ||
         (!mode.empty() && mode != "--expect-micropython" &&
          mode != "--expect-embedded-state" &&
          mode != "--expect-effect-audio" && mode != "--expect-patch-select" &&
          mode != "--expect-editor" && mode != "--dump-editor-frame" &&
-         mode != "--capture-editor-window" &&
+         mode != "--capture-editor-window" && mode != "--expect-named" &&
+         mode != "--expect-all-named" &&
          mode != "--effect-script" && mode != "--instrument-script" &&
          !renderMode))
     {
@@ -2100,6 +2268,8 @@ int main(int argc, char** argv)
                      "--expect-editor|"
                      "--dump-editor-frame <out.ppm>|"
                      "--capture-editor-window <out.ppm>|"
+                     "--expect-named <plug-in name>|"
+                     "--expect-all-named|"
                      "--effect-script <script.py>|"
                      "--instrument-script <script.py>|"
                      "--render-reference <out.pcm>]\n";
@@ -2149,7 +2319,7 @@ int main(int argc, char** argv)
         else if (effectMode)
         {
             ClassInfo effectInfo;
-            if (findAudioClassNamed(factory, "MicroPython Effect",
+            if (findAudioClassNamed(factory, "MicroPython Script Host (Fx)",
                                     effectInfo) == nullptr)
             {
                 std::cerr << "HOOK effect.scan FAIL\n";
@@ -2165,7 +2335,7 @@ int main(int argc, char** argv)
         else if (scriptProbe)
         {
             ClassInfo effectInfo;
-            if (findAudioClassNamed(factory, "MicroPython Effect",
+            if (findAudioClassNamed(factory, "MicroPython Script Host (Fx)",
                                     effectInfo) == nullptr)
             {
                 std::cerr << "HOOK effect.scan FAIL\n";
@@ -2186,6 +2356,51 @@ int main(int argc, char** argv)
                 return 5;
             }
             std::cout << "HOOK instrument.script OK\n";
+        }
+        else if (sweepMode)
+        {
+            // Every Audio Module Class the factory offers that is not one of
+            // the two built-in script hosts - i.e. everything the manifest
+            // put there. Asked of the factory rather than read from the
+            // manifest, so a plug-in the scanner declared but the factory
+            // failed to register is a failure and not an omission.
+            std::vector<std::string> names;
+            for (const auto& info : factory.classInfos())
+            {
+                if (info.category() != kVstAudioEffectClass)
+                    continue;
+                if (info.name().rfind("MicroPython Script Host", 0) == 0)
+                    continue;
+                names.push_back(info.name());
+            }
+            if (names.empty())
+            {
+                std::cerr << "HOOK named.sweep FAIL: the factory offers no "
+                             "named plug-ins - has scan_plugins.py been run?\n";
+                return 5;
+            }
+            std::size_t failed = 0;
+            for (const auto& name : names)
+            {
+                if (!namedPluginPlays(factory, name, host))
+                    ++failed;
+            }
+            if (failed != 0)
+            {
+                std::cerr << "HOOK named.sweep FAIL: " << failed << " of "
+                          << names.size() << " named plug-ins failed\n";
+                return 5;
+            }
+            std::cout << "HOOK named.sweep OK: " << names.size()
+                      << " named plug-ins played\n";
+        }
+        else if (namedMode)
+        {
+            if (!namedPluginPlays(factory, modeArgument, host))
+            {
+                std::cerr << "HOOK named FAIL\n";
+                return 5;
+            }
         }
         else if (windowCapture)
         {
@@ -2240,7 +2455,8 @@ int main(int argc, char** argv)
         const bool defaultSuite = !embeddedState &&
                                   !renderMode && !effectMode && !scriptProbe &&
                                   !instrumentProbe && !patchSelectMode &&
-                                  !editorMode && !windowCapture;
+                                  !editorMode && !windowCapture &&
+                                  !namedMode && !sweepMode;
         if (defaultSuite)
             std::cout << "HOOK state.roundtrip OK: legacy_v1=1 malformed=4\n";
 

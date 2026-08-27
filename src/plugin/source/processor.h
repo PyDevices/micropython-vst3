@@ -3,6 +3,7 @@
 #include "public.sdk/source/vst/vstaudioeffect.h"
 
 #include "parameters.h"
+#include "plugin_manifest.h"
 #include "sidecar_transport.h"
 
 #include <array>
@@ -18,9 +19,15 @@ public:
     // effectMode adds a stereo audio-input bus whose blocks travel to the
     // sidecar alongside the events, and gives bypass pass-through semantics.
     explicit Processor (bool effectMode = false);
+    // A named plug-in from the manifest: same processor, but it knows which
+    // script it is and does not consult MPVST_SCRIPT_PATH.
+    explicit Processor (const PluginEntry& entry);
 
     static Steinberg::FUnknown* createInstance (void*);
     static Steinberg::FUnknown* createEffectInstance (void*);
+    // The factory hands the manifest entry through as the class context, so
+    // one create function serves every generated class.
+    static Steinberg::FUnknown* createFromManifest (void* context);
 
     Steinberg::tresult PLUGIN_API initialize (Steinberg::FUnknown* context) override;
     Steinberg::tresult PLUGIN_API setBusArrangements (

@@ -18,6 +18,8 @@ smtg_add_vst3plugin(${MPVST_PLUGIN_TARGET}
     source/editor_message.h
     source/factory.cpp
     source/parameters.h
+    source/plugin_manifest.cpp
+    source/plugin_manifest.h
     source/processor.cpp
     source/processor.h
     source/script_metadata.h
