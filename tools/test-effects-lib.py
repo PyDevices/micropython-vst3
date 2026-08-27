@@ -74,6 +74,14 @@ CASES = {
                      " resonance=0.3)", "pass"),
     "CombFilter": ("audioeffects.CombFilter(src, frequency=440)", "pass"),
     "Reverb": ("audioeffects.Reverb(src, preset='hall', mix=0.4)", "pass"),
+    # Convolution, in the host rather than offline. The sidecar is where a
+    # mistake in the allocation shows up as a stall or a dead instance
+    # instead of as a number, and a quarter second of stereo impulse is
+    # ~390 KB carved out of the engine's heap in one go.
+    "ConvolutionReverb": ("audioeffects.ConvolutionReverb(src, seconds=0.25,"
+                          " mix=0.5)", "pass"),
+    "ConvolutionReverb-patch": ("audioeffects.ConvolutionReverb(src,"
+                                " seconds=0.25, patch=2)", "pass"),
     "Reverb_spring": ("audioeffects.Reverb(src, preset='spring', mix=0.4)",
                       "pass"),
     "DigitalDelay": ("audioeffects.DigitalDelay(src)", "pass"),
@@ -110,6 +118,14 @@ CASES = {
     "Bitcrusher": ("audioeffects.Bitcrusher(src, crush=0.5)", "pass"),
     "Bitcrusher-bits": ("audioeffects.Bitcrusher(src, bits=6)", "pass"),
     "Exciter": ("audioeffects.Exciter(src)", "pass"),
+    # The microcontroller-scale use of the convolver: four partitions, and an
+    # impulse built in Python at construction rather than loaded. The second
+    # case is patch 5 rather than an adjacent one because the probe has only
+    # the 220 Hz tone to work with, and most of the cabinets are within
+    # 0.03 dB of each other there - "Broken Radio" is the one whose response
+    # at that frequency actually differs.
+    "CabinetSim": ("audioeffects.CabinetSim(src, patch=1)", "pass"),
+    "CabinetSim-patch": ("audioeffects.CabinetSim(src, patch=5)", "pass"),
     # The audioecho module, and the three classes rebuilt on it. The
     # ping-pong case is the one that could not exist before: its repeats
     # alternate sides, which needs each channel fed into the other's line.
