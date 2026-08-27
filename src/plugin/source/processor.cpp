@@ -17,7 +17,7 @@ using namespace Steinberg;
 using namespace Steinberg::Vst;
 
 Processor::Processor (bool effectMode)
-    : scriptSource_ (SidecarTransport::initialScriptSource ())
+    : scriptSource_ (SidecarTransport::initialScriptSource (effectMode))
     , effectMode_ (effectMode)
 {
     setControllerClass (effectMode_ ? kEffectControllerUID : kControllerUID);

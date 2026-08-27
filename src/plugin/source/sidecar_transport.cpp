@@ -71,7 +71,16 @@ std::string readScript(const std::filesystem::path& path)
 
 SidecarTransport::~SidecarTransport() { stop(); }
 
-std::string SidecarTransport::initialScriptSource()
+namespace {
+
+const char* defaultScriptName(bool effectMode)
+{
+    return effectMode ? "default_effect.py" : "default_instrument.py";
+}
+
+} // namespace
+
+std::string SidecarTransport::initialScriptSource(bool effectMode)
 {
     const auto engine = enginePath();
     if (std::filesystem::path(engine).stem().string() !=
@@ -79,7 +88,7 @@ std::string SidecarTransport::initialScriptSource()
         return {};
     const auto overridePath = environmentValue("MPVST_SCRIPT_PATH");
     const auto path = overridePath.empty()
-        ? std::filesystem::path(engine).parent_path() / "default_instrument.py"
+        ? std::filesystem::path(engine).parent_path() / defaultScriptName(effectMode)
         : std::filesystem::path(overridePath);
     return readScript(path);
 }
@@ -267,7 +276,7 @@ bool SidecarTransport::launchEngine()
         else
         {
             selectedScript = scriptOverride.empty()
-                ? (directory / "default_instrument.py").string()
+                ? (directory / defaultScriptName(inputEnabled_)).string()
                 : scriptOverride;
         }
         // MPVST_HEAP_BYTES constrains the MicroPython heap. A script that

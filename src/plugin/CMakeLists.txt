@@ -103,6 +103,7 @@ if(EXISTS "${MPVST_MICROPYTHON_ENGINE}")
             "${MPVST_MICROPYTHON_ENGINE}"
             "${CMAKE_SOURCE_DIR}/lib/micropython_vst_bootstrap.py"
             "${CMAKE_SOURCE_DIR}/lib/default_instrument.py"
+            "${CMAKE_SOURCE_DIR}/lib/default_effect.py"
             "${CMAKE_SOURCE_DIR}/lib/mpvst_adapter.py"
         COMMENT "Bundling the headless MicroPython engine and script library")
 endif()

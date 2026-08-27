@@ -31,7 +31,12 @@ public:
         RestoredSnapshot,
     };
 
-    static std::string initialScriptSource();
+    // The script a script-host instance starts with: MPVST_SCRIPT_PATH when
+    // it is set, and otherwise the default that suits the slot - a synth for
+    // an instrument, a pass-through for an effect. An effect host that loaded
+    // the instrument default would be a polyphonic synth in an effect slot,
+    // ignoring its input and silent until something sends it notes.
+    static std::string initialScriptSource(bool effectMode);
     static std::string developerScriptPath();
     void setScriptSource(std::string source,
                          ScriptOrigin origin = ScriptOrigin::RestoredSnapshot);

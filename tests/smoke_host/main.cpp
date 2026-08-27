@@ -695,15 +695,24 @@ bool effectCase(const PluginFactory& factory, const ClassInfo& classInfo,
                 FUnknown* host, const char* source, int32 blockFrames,
                 float gain, float tolerance)
 {
-    const auto sourcePath = std::filesystem::temp_directory_path() /
-        "mpvst-effect-case.py";
+    // A null source means "whatever the bundle ships as the default", which
+    // is the case no other test covers: every one of them hands the plug-in a
+    // script, so default_effect.py could be absent, broken, or a synth and
+    // nothing would notice until an empty Fx slot went silent in a DAW.
+    if (source == nullptr)
+        setScriptPath({});
+    else
     {
-        std::ofstream out(sourcePath, std::ios::binary | std::ios::trunc);
-        if (!out || !out.write(source, static_cast<std::streamsize>(
-                                           std::strlen(source))))
-            return false;
+        const auto sourcePath = std::filesystem::temp_directory_path() /
+            "mpvst-effect-case.py";
+        {
+            std::ofstream out(sourcePath, std::ios::binary | std::ios::trunc);
+            if (!out || !out.write(source, static_cast<std::streamsize>(
+                                               std::strlen(source))))
+                return false;
+        }
+        setScriptPath(sourcePath.string());
     }
-    setScriptPath(sourcePath.string());
 
     auto component = createComponent(factory, classInfo, host);
     auto processor = getProcessor(component);
@@ -779,8 +788,13 @@ bool effectCase(const PluginFactory& factory, const ClassInfo& classInfo,
     const bool terminated = ok(component->terminate());
     component = nullptr;
     setScriptPath({});
-    std::error_code ignored;
-    (void)std::filesystem::remove(sourcePath, ignored);
+    if (source != nullptr)
+    {
+        std::error_code ignored;
+        (void)std::filesystem::remove(
+            std::filesystem::temp_directory_path() / "mpvst-effect-case.py",
+            ignored);
+    }
     if (!stopped || !terminated)
         return false;
 
@@ -835,6 +849,11 @@ bool effectProcessesHostAudio(const PluginFactory& factory,
         "mixer.voice[0].play(vstaudio.input())\n"
         "mixer.voice[0].level = 0.5\n"
         "vstaudio.output(mixer)\n";
+    // The shipped default first: an Fx slot with no script of its own has to
+    // pass its input through, not load a synth and go silent.
+    if (!effectCase(factory, classInfo, host, nullptr, 512, 1.0F, 0.0001F))
+        return false;
+    std::cerr << "case default_effect@512 ok\n";
     if (!effectCase(factory, classInfo, host, passthrough, 128, 1.0F,
                     0.0001F))
         return false;
@@ -2399,7 +2418,7 @@ int main(int argc, char** argv)
                 std::cerr << "HOOK effect.audio FAIL\n";
                 return 5;
             }
-            std::cout << "HOOK effect.audio OK: 4 script/block cases aligned\n";
+            std::cout << "HOOK effect.audio OK: 5 script/block cases aligned\n";
         }
         else if (scriptProbe)
         {
