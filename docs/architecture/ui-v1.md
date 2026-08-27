@@ -44,6 +44,19 @@ structure this document adds.
   a change scoped to this plug-in — so it stays a deferred option, not a v1
   gap to close here.
 
+  A two-finger trackpad swipe, tested under WSLg during this design pass,
+  did not resolve the question either way: a bare `appdev`-level probe (no
+  LVGL, no `display_driver.py`) showed a swipe in *either* direction
+  producing the identical event shape — `Wheel(x=±1, y=0)` — with `y`
+  always zero and no `FINGERMOTION` events at all. Whichever physical axis
+  was swiped, it collapses onto one scroll channel somewhere in the
+  Windows-Precision-Touchpad → WSLg virtual channel → X11/SDL2 pipeline,
+  upstream of every layer this project controls. That may well be specific
+  to testing through WSLg's remoting rather than true of a DAW host running
+  natively — re-test on a native Windows or Linux session (no remoting
+  layer in between) before concluding a two-axis encoder is or isn't
+  possible.
+
   A click moving group focus always drops the group out of edit mode as
   part of that same transition (this is `lv_group_focus_obj` in LVGL core,
   not a PyDevices choice), so the panel must not re-enable editing from a
