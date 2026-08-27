@@ -8,9 +8,11 @@ Instrument|Drum, **Tape Delay** under Fx|Delay - alongside two generic
 **MicroPython Script Host** classes that run any script you point them at.
 
 The list is not compiled in. `scan_plugins.py`, run by the engine itself,
-reads what each library module declares about itself and writes a
-manifest the plug-in loads at startup. Adding an instrument is writing a
-script and re-scanning; there is no build step and no compiler involved.
+reads what each library module declares about itself and writes the
+`moduleinfo.json` the plug-in loads at startup - the same file a host reads
+to enumerate classes without loading the binary. Adding an instrument is
+writing a script and re-scanning; there is no build step and no compiler
+involved.
 
 The VST audio callback stays native and real-time safe. Python, garbage
 collection, filesystem access, and engine lifecycle work all happen in a
@@ -31,7 +33,7 @@ without an editor attached.
 |---|---|
 | `src/` | the C++ that builds the plug-in: `plugin/` (VST3 classes), `protocol/` (the shared-memory wire format), `runtime/` (shared memory and child processes) |
 | `usermods/` | the MicroPython C modules the engine binds to: `vstaudio/` (the audio API scripts use) and `vstui/` (the editor's framebuffer, input and edit rings) |
-| `lib/` | everything staged into the bundle beside the engine: `instruments/`, the bootstrap, the default instrument, and the editor's Python half (`vst_editor.py`, `vst_board_config.py`, `vst_panel/`) |
+| `lib/` | everything staged into the bundle beside the engine: the bootstrap, the adapters, `scan_plugins.py`, the default instrument, and the editor's Python half (`vst_editor.py`, `vst_board_config.py`, `vst_panel/`) |
 | `tools/` | developer tooling - `piece.py` and `render_preview.py` for compositions, the `harness.py` CPython sidecar stand-in, and the library test sweeps |
 | `tests/` | the ctest suite and `smoke_host/`, a minimal VST3 host that loads the bundle with no DAW |
 | `scripts/` | build, packaging and setup automation |
@@ -138,8 +140,8 @@ somewhere else).
 There is no file per instrument. The unit the plug-in deals in is still a
 script - the controller parses macro labels out of the embedded source,
 and a saved project embeds its bytes - but that script is now *built* from
-the manifest entry when a class is instantiated, rather than kept on disk.
-Two lines, synthesized in `PluginEntry::scriptSource`. That is what lets
+its catalog entry when a class is instantiated, rather than kept on disk.
+Two lines, synthesized in `CatalogEntry::scriptSource`. That is what lets
 the library be the single source of truth for a plug-in's name, category
 and macro labels: there is no generated copy to drift from it.
 

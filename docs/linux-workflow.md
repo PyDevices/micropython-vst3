@@ -9,14 +9,16 @@ Only the installation paths and the sidecar executable differ.
 1. Close the DAW.
 2. Unpack the release and copy `MicroPythonVST3.vst3` to `~/.vst3` for the
    current user, or `/usr/lib/vst3` for all users.
-3. Run the scanner once, from `Contents\x86_64-win` inside the installed
+3. Run the scanner once, from `Contents/x86_64-linux` inside the installed
    bundle, so the DAW can see the library:
 
        ./micropython-vst-engine scan_plugins.py --write
 
-   It needs nothing installed - that is the engine itself, reading what each
-   library module declares about itself. Run it again after adding or editing
-   a script.
+   It writes `Contents/Resources/moduleinfo.json`, which is both what the
+   host reads to list the plug-ins and what the plug-in reads to know which
+   ones it offers. The scanner needs nothing installed - it is the engine
+   itself, reading what each library module declares about itself. Run it
+   again after adding or editing a script.
 4. Start the DAW and request a VST3 rescan.
 5. Insert any of them - **TR-808**, **Minimoog**, **Tape Delay** - and open
    its editor, or use the host's generic parameter editor. **MicroPython
