@@ -286,7 +286,16 @@ One implementation, written once, generic forever:
   surface format during the dirty-rect copy, drains the edit ring into
   controller edits, and forwards pointer and wheel events.
 - Attach/detach toggles `editor_open` and starts/stops the timer. The view
-  holds no state worth preserving across detach.
+  holds no state worth preserving across detach. This is host-driven
+  (`IPlugView::removed()`), never a close button on a window this plug-in
+  owns — the view is a child embedded in whatever frame the host provides,
+  so "close the editor" can never mean "quit the engine". That distinction
+  does not need enforcing in the real view; it falls out of not having a
+  top-level window at all. It matters only for the desktop panel-dev
+  mockup (`display_driver`/`appdev.App` owning a real OS window for
+  developing the panel standalone), where closing the one window ending
+  the test process is exactly the ordinary, correct desktop-app behavior
+  — a code path the real view never runs at all.
 
 ## Build and packaging
 
