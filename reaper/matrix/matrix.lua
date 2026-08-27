@@ -335,6 +335,44 @@ step(function()
     end
 end)
 
+-- Reopening is the case that shipped black three times over, each for a
+-- different reason. Lua cannot read the panel's pixels, but it can put the
+-- host through the whole attach/detach/attach cycle against the real view -
+-- which on Linux is the only place the X11 window path runs at all.
+step(function()
+    reaper.TrackFX_Show(S.track, S.fx, 3)
+    sleep_ms(3000)
+end)
+
+step(function()
+    local open = reaper.TrackFX_GetOpen(S.track, S.fx)
+    info("editor_reopened", tostring(open))
+    if open then
+        pass("editor_reattach", "host reopened the plug-in view")
+    else
+        fail("editor_reattach", "the view did not come back")
+    end
+    sleep_ms(500)
+end)
+
+step(function()
+    -- Same configuration again, so verify_renders.py can hold this to the
+    -- same sample-for-sample standard as the first open.
+    render("editor_reopened")
+    sleep_ms(700)
+    local ready = ready_value()
+    local code = error_code()
+    if ready > 0.5 and code == 0 then
+        pass("editor_reopen_healthy",
+             string.format("ready=%.3f error=%d", ready, code))
+    else
+        fail("editor_reopen_healthy",
+             string.format("ready=%.3f error=%d", ready, code))
+    end
+    reaper.TrackFX_Show(S.track, S.fx, 2)
+    sleep_ms(1000)
+end)
+
 -- Developer loop: edit the file the instance was created from, then reload.
 step(function()
     if EDITED_SCRIPT == "" or not copy_file(EDITED_SCRIPT, SCRIPT) then

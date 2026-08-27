@@ -378,9 +378,11 @@ One implementation, written once, generic forever:
    is open, injected input reaches the panel, a rightward swipe raises the
    focused macro and a downward one steps to the next control, and a restart
    hands over a fresh mapping with no stale input in it.
-3. REAPER matrix with the editor open, on both platforms: the host attaches
-   and detaches a real view, the mirrored macro does not drift while it is
-   open, and the engine is healthy afterwards.
+3. REAPER matrix with the editor open, on both platforms: the host attaches,
+   detaches and *re-attaches* a real view, the mirrored macro does not drift
+   while it is open, and the engine is healthy afterwards. On Linux this is
+   the only place the X11 window path runs at all, which is why the reopen
+   cycle lives here rather than only in the Windows capture.
 4. Parity: PCM identical with and without an editor attached, checked in the
    matrix against the same configuration rendered both ways.
 

@@ -199,7 +199,8 @@ def main() -> int:
     # one with the plug-in's view attached and one after the host closed it.
     plateau("editor_open", 0.25)
     plateau("editor_closed", 0.25)
-    for name in ("editor_open", "editor_closed"):
+    plateau("editor_reopened", 0.25)
+    for name in ("editor_open", "editor_closed", "editor_reopened"):
         reference = directory / "macro_full.wav"
         candidate = directory / ("%s.wav" % name)
         if not reference.exists() or not candidate.exists():

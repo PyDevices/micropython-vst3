@@ -15,12 +15,15 @@ INFO editor_macro 1.0
 PASS editor_stable macro=1.000 ready=1.000 error=0
 PASS editor_detach host closed the plug-in view
 PASS editor_survived ready=1.000 error=0
+INFO editor_reopened true
+PASS editor_reattach host reopened the plug-in view
+PASS editor_reopen_healthy ready=1.000 error=0
 PASS edit_script installed edited source
 INFO edited_ready 1.0
 INFO edited_error 0
 PASS reload_edited ready=1.000 error=0
 PASS restore_script reinstalled original source
-PASS save_project bytes=7138
+PASS save_project bytes=7139
 INFO reopen_macro 1.0
 PASS reopen_project macro=1.000 ready=1.000 params=2103
 PASS reopened_ignores_edit rendered reopened_after_edit.wav
