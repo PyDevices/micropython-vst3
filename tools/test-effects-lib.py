@@ -73,11 +73,22 @@ CASES = {
     "Distortion": ("audioeffects.Distortion(src)", "pass"),
     "Fuzz": ("audioeffects.Fuzz(src)", "pass"),
     "Saturation": ("audioeffects.Saturation(src)", "pass"),
+    # The three characters are different curves, not one curve with
+    # presets, so each gets its own trip through the host.
+    "Saturation-tape": (
+        "audioeffects.Saturation(src, amount=0.6, character='tape')",
+        "pass"),
+    "Saturation-console": (
+        "audioeffects.Saturation(src, amount=0.6, character='console')",
+        "pass"),
     "Bitcrusher": ("audioeffects.Bitcrusher(src, crush=0.5)", "pass"),
+    "Bitcrusher-bits": ("audioeffects.Bitcrusher(src, bits=6)", "pass"),
     "Exciter": ("audioeffects.Exciter(src)", "pass"),
     "PitchShifter": ("audioeffects.PitchShifter(src, semitones=7)", "pass"),
     "Harmonizer": ("audioeffects.Harmonizer(src)", "pass"),
     "Octaver": ("audioeffects.Octaver(src, down=0.6)", "pass"),
+    "Octaver-two-octaves": (
+        "audioeffects.Octaver(src, down=0.4, down2=0.3, up=0.2)", "pass"),
     "StereoWidener": ("audioeffects.StereoWidener(src)", "pass"),
 }
 
