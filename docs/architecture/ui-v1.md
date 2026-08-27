@@ -26,9 +26,13 @@ structure this document adds.
   compile-time maximum of 1024x600. The stock panel uses 800x480. The size
   is fixed for the life of the engine generation; the view scales, the
   engine never re-lays-out.
-- **Pointer input only.** Mouse down/up/move, delivered as the same
-  mouse-as-touch model the desktop board configs use. No keyboard focus
-  handling; the wheel field exists in the record but is unused in v1.
+- **Pointer and wheel input, no keyboard.** Mouse down/up/move is delivered
+  as the same mouse-as-touch model the desktop board configs use. The wheel
+  is delivered as encoder input — the board contract's `encoder_read` — so
+  it surfaces in LVGL as encoder events on the virtual encoder device
+  `display_driver` already creates. The panel keeps its controls in an
+  input group: clicking focuses a control, wheel deltas adjust the focused
+  control (the slider now, the knob later). No keyboard focus handling.
 - **v1 ships exactly one panel**: a generic panel built from metadata the
   bundle already carries (macro labels, `PATCHES`, engine status), using
   stock `lv.slider` and `lv.switch` controls. A single shared knob widget
@@ -79,9 +83,11 @@ A `vstui` module joins `vstaudio` in the engine usermod:
 
 `lib/vst_board_config.py` wraps that into the standard board contract: a
 `display_drv` whose `blit_rect` copies into the shared framebuffer and
-publishes, and a `touch_read` fed from `vstui.poll()`. Above that line the
-stack is stock PyDevices: `display_driver` wires LVGL to the board config
-exactly as it does on hardware, with one loop rule — `app.run()` is never
+publishes, plus `touch_read` (pointer) and `encoder_read` (wheel deltas)
+both fed from `vstui.poll()`. Above that line the stack is stock
+PyDevices: `display_driver` wires LVGL to the board config exactly as it
+does on hardware — including the virtual encoder device that turns wheel
+deltas into LVGL encoder events — with one loop rule — `app.run()` is never
 called in the sidecar. The engine pumps the same synchronous tick
 `display_driver.event_loop` uses, from its housekeeping step.
 
@@ -102,15 +108,15 @@ sample precision.
 |---|---:|---|
 | `mpvst_ui_state` | 128 | logical and maximum size, pixel format, editor-open flag, content scale, frame seqlock, ring cursors, UI error code, heartbeat |
 | `mpvst_ui_rect` | 16 | dirty rectangle keyed to a frame sequence |
-| `mpvst_ui_input` | 32 | pointer event: type, buttons, logical x/y, reserved wheel, sequence |
+| `mpvst_ui_input` | 32 | input event: type, buttons, logical x/y, signed wheel delta, sequence |
 | `mpvst_ui_edit` | 32 | parameter edit: kind (begin/perform/end), parameter ID, normalized float32 value, sequence |
 | framebuffer | 1024x600x2, 64-byte aligned | RGB565 little-endian pixels at the maximum size; the logical size indexes into the same stride |
 
 Ring capacities: 64 dirty rectangles, 256 input events, 64 edits. Rings
 overflow by bounded, counted degradation, never by waiting: a full dirty
 ring coalesces to one full-frame rectangle, pointer-move events coalesce to
-the latest position, and a full edit ring drops `perform` records but never
-a `begin` or `end`.
+the latest position, wheel events coalesce by summing their deltas, and a
+full edit ring drops `perform` records but never a `begin` or `end`.
 
 **Frame publication** is a seqlock, not slot exchange, because a frame is
 too large to double-buffer per instance and a torn read costs only one
@@ -125,7 +131,10 @@ on the way out; the engine never sees DPI.
 
 **Edits** flow engine-to-host so panel gestures become recordable
 automation: slider drag produces `begin`, a bounded stream of `perform`,
-then `end`, which the view replays into the controller on its timer. The
+then `end`, which the view replays into the controller on its timer. A
+burst of wheel ticks on a focused control is one gesture: `begin` on the
+first tick, `end` after a short quiescence, so wheel adjustments record as
+one automation edit rather than dozens. The
 host echoes the change back through the normal `EVENT_PARAMETER` path and
 the existing macro replay rules; the panel treats incoming parameter state
 as truth, which is stable because the echo equals what the panel already
@@ -177,7 +186,7 @@ One implementation, written once, generic forever:
 - A 30–60 Hz timer per platform idiom (Windows HWND timer, X11 runloop
   timer on Linux) samples the seqlock, converts RGB565 to the native
   surface format during the dirty-rect copy, drains the edit ring into
-  controller edits, and forwards pointer events.
+  controller edits, and forwards pointer and wheel events.
 - Attach/detach toggles `editor_open` and starts/stops the timer. The view
   holds no state worth preserving across detach.
 
@@ -200,15 +209,15 @@ One implementation, written once, generic forever:
    GCC, seqlock torn-read detection, ring overflow degradation).
 2. Smoke host: open/close editor cycles across engine restarts without
    leaking mappings or replaying stale input.
-3. REAPER matrix with editor open: zero underruns, panel slider gestures
-   recorded as automation, echoed parameter state stable (no oscillation).
+3. REAPER matrix with editor open: zero underruns, panel slider and wheel
+   gestures recorded as automation, echoed parameter state stable (no
+   oscillation).
 4. Parity: PCM identical with and without an editor attached.
 
 ## Deferred
 
 - Per-script custom panels (the panel-module replacement path above).
-- The shared knob widget, meters and scope taps, wheel-to-encoder input,
-  and host keyboard focus.
+- The shared knob widget, meters and scope taps, and host keyboard focus.
 - User-resizable or zoomable editors.
 - A dedicated UI sidecar process (kept possible, not built).
 - macOS, with the rest of the platform work.
