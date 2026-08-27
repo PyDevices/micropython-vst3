@@ -1,6 +1,7 @@
 #include "mpvst/atomic.h"
 #include "mpvst/protocol.h"
 #include "mpvst/spsc_ring.h"
+#include "mpvst/ui.h"
 
 #include <cmath>
 #include <cstdint>
@@ -209,6 +210,174 @@ void testInputRegionLayout()
           "zero input slots matches the instrument layout exactly");
 }
 
+void testUiLayoutAndValidation()
+{
+    const auto bytes = mpvst_ui_mapping_bytes();
+    check(bytes % MPVST_UI_CACHE_LINE_BYTES == 0U,
+          "ui mapping is cache-line aligned");
+    check(mpvst_ui_rects_offset() % 64U == 0U &&
+              mpvst_ui_inputs_offset() % 64U == 0U &&
+              mpvst_ui_edits_offset() % 64U == 0U &&
+              mpvst_ui_framebuffer_offset() % 64U == 0U,
+          "every ui region is cache-line aligned");
+    check(mpvst_ui_framebuffer_bytes() ==
+              mpvst_ui_stride_bytes() * MPVST_UI_MAX_HEIGHT,
+          "framebuffer covers the maximum size at a fixed stride");
+    // Rings must not overlap the framebuffer, which is the whole reason the
+    // offsets are derived and checked rather than trusted from the mapping.
+    check(mpvst_ui_framebuffer_offset() >=
+              mpvst_ui_edits_offset() +
+                  MPVST_UI_EDIT_CAPACITY * sizeof(mpvst_ui_edit),
+          "regions do not overlap");
+
+    std::vector<std::uint64_t> storage((bytes + 7U) / 8U);
+    check(mpvst_ui_initialize(storage.data(), bytes, 3U) == 1,
+          "ui mapping initializes");
+    check(mpvst_ui_validate(storage.data(), bytes) == 1, "ui mapping validates");
+    check(mpvst_ui_initialize(storage.data(), bytes - 64U, 3U) == 0,
+          "a wrongly sized ui mapping is refused");
+
+    auto* state = reinterpret_cast<mpvst_ui_state*>(storage.data());
+    check(state->width == MPVST_UI_DEFAULT_WIDTH &&
+              state->height == MPVST_UI_DEFAULT_HEIGHT &&
+              state->content_scale_ppm == MPVST_UI_SCALE_UNITY &&
+              state->generation == 3U && state->editor_open == 0U,
+          "ui state starts closed at the default logical size");
+
+    struct Mutation
+    {
+        const char* name;
+        void (*apply)(mpvst_ui_state&);
+    };
+    const Mutation mutations[] = {
+        {"ui magic", [](mpvst_ui_state& value) { value.magic = 0U; }},
+        {"ui major", [](mpvst_ui_state& value) { ++value.ui_major; }},
+        {"ui state size", [](mpvst_ui_state& value) { value.state_bytes = 0U; }},
+        {"ui endian marker", [](mpvst_ui_state& value) { value.endian_marker = 0U; }},
+        {"ui mapping size", [](mpvst_ui_state& value) { value.mapping_bytes += 64U; }},
+        {"ui maximum size", [](mpvst_ui_state& value) { value.max_width += 1U; }},
+        {"ui pixel format", [](mpvst_ui_state& value) { value.pixel_format = 0U; }},
+        {"oversized logical width", [](mpvst_ui_state& value) {
+             value.width = MPVST_UI_MAX_WIDTH + 1U;
+         }},
+        {"zero logical height", [](mpvst_ui_state& value) { value.height = 0U; }},
+    };
+    const auto valid = *state;
+    for (const auto& mutation : mutations)
+    {
+        *state = valid;
+        mutation.apply(*state);
+        check(mpvst_ui_validate(storage.data(), bytes) == 0, mutation.name);
+    }
+    *state = valid;
+}
+
+void testUiFrameSeqlock()
+{
+    const auto bytes = mpvst_ui_mapping_bytes();
+    std::vector<std::uint64_t> storage((bytes + 7U) / 8U);
+    (void)mpvst_ui_initialize(storage.data(), bytes, 1U);
+    auto* state = reinterpret_cast<mpvst_ui_state*>(storage.data());
+    auto* rects = mpvst_ui_rects(storage.data());
+    auto* pixels = mpvst_ui_framebuffer(storage.data());
+
+    // The engine's publish step, written out longhand so the test exercises
+    // the ordering the real one has to keep: odd, write, even.
+    const auto publish = [&](std::uint16_t x, std::uint16_t y) {
+        const auto sequence = mpvst::acquire_load_u64(&state->frame_sequence) + 1U;
+        mpvst::release_store_u64(&state->frame_sequence, sequence);
+        pixels[0] = static_cast<std::uint8_t>(x);
+        auto& rect = rects[state->rect_head % MPVST_UI_RECT_CAPACITY];
+        rect.frame_sequence = sequence;
+        rect.x = x;
+        rect.y = y;
+        rect.width = 8U;
+        rect.height = 8U;
+        mpvst::release_store_u64(&state->rect_head, state->rect_head + 1U);
+        mpvst::release_store_u64(&state->frame_sequence, sequence + 1U);
+    };
+
+    publish(4U, 5U);
+    const auto settled = mpvst::acquire_load_u64(&state->frame_sequence);
+    check(settled % 2U == 0U, "a settled frame leaves the sequence even");
+    check(rects[0].frame_sequence == settled - 1U && rects[0].x == 4U,
+          "a rectangle is keyed to the frame that produced it");
+
+    // Mid-write the sequence is odd, which is the view's whole test: sample,
+    // copy, re-sample, discard on any difference.
+    mpvst::release_store_u64(&state->frame_sequence, settled + 1U);
+    check(mpvst::acquire_load_u64(&state->frame_sequence) % 2U == 1U,
+          "a frame in progress is detectable as torn");
+    mpvst::release_store_u64(&state->frame_sequence, settled + 2U);
+    const auto before = mpvst::acquire_load_u64(&state->frame_sequence);
+    publish(6U, 7U);
+    check(mpvst::acquire_load_u64(&state->frame_sequence) != before,
+          "a frame published between two samples is detectable");
+}
+
+void testUiRingsDegradeWithoutWaiting()
+{
+    const auto bytes = mpvst_ui_mapping_bytes();
+    std::vector<std::uint64_t> storage((bytes + 7U) / 8U);
+    (void)mpvst_ui_initialize(storage.data(), bytes, 1U);
+    auto* state = reinterpret_cast<mpvst_ui_state*>(storage.data());
+    auto* inputs = mpvst_ui_inputs(storage.data());
+    auto* edits = mpvst_ui_edits(storage.data());
+
+    // Input ring: the view fills it without a consumer draining. Overflow has
+    // to be visible as a bounded difference, never as a blocked producer.
+    for (std::uint64_t index = 0; index < MPVST_UI_INPUT_CAPACITY * 3U; ++index)
+    {
+        auto& record = inputs[state->input_head % MPVST_UI_INPUT_CAPACITY];
+        record.sequence = state->input_head + 1U;
+        record.type = MPVST_UI_INPUT_POINTER_MOVE;
+        record.x = static_cast<std::int32_t>(index);
+        mpvst::release_store_u64(&state->input_head, state->input_head + 1U);
+        if (state->input_head - state->input_tail > MPVST_UI_INPUT_CAPACITY)
+            mpvst::release_store_u64(&state->input_tail,
+                                     state->input_head - MPVST_UI_INPUT_CAPACITY);
+    }
+    check(state->input_head - state->input_tail == MPVST_UI_INPUT_CAPACITY,
+          "an undrained input ring drops the oldest and stays bounded");
+    check(inputs[state->input_tail % MPVST_UI_INPUT_CAPACITY].x ==
+              static_cast<std::int32_t>(MPVST_UI_INPUT_CAPACITY * 2U),
+          "the surviving input records are the newest ones");
+
+    // Edit ring: a full ring drops perform records, never a begin or an end.
+    // The engine's rule, exercised here against the record layout it uses.
+    std::uint32_t droppedPerforms = 0;
+    const auto pushEdit = [&](std::uint32_t kind, float value) {
+        const auto used = state->edit_head - state->edit_tail;
+        if (used >= MPVST_UI_EDIT_CAPACITY)
+        {
+            if (kind == MPVST_UI_EDIT_PERFORM)
+            {
+                ++droppedPerforms;
+                return;
+            }
+            // Reclaim the oldest perform so a begin/end always fits.
+            mpvst::release_store_u64(&state->edit_tail, state->edit_tail + 1U);
+        }
+        auto& record = edits[state->edit_head % MPVST_UI_EDIT_CAPACITY];
+        record.sequence = state->edit_head + 1U;
+        record.kind = kind;
+        record.parameter_id = 100U;
+        record.value = value;
+        mpvst::release_store_u64(&state->edit_head, state->edit_head + 1U);
+    };
+
+    pushEdit(MPVST_UI_EDIT_BEGIN, 0.0F);
+    for (std::uint32_t index = 0; index < MPVST_UI_EDIT_CAPACITY * 2U; ++index)
+        pushEdit(MPVST_UI_EDIT_PERFORM, static_cast<float>(index) / 512.0F);
+    pushEdit(MPVST_UI_EDIT_END, 1.0F);
+    check(droppedPerforms != 0U, "a full edit ring drops perform records");
+    check(state->edit_head - state->edit_tail <= MPVST_UI_EDIT_CAPACITY,
+          "the edit ring stays bounded");
+    const auto& last = edits[(state->edit_head - 1U) % MPVST_UI_EDIT_CAPACITY];
+    check(last.kind == MPVST_UI_EDIT_END && last.value == 1.0F,
+          "the end of a gesture is never the record that gets dropped");
+}
+
 } // namespace
 
 int main()
@@ -217,6 +386,9 @@ int main()
     testBoundedWorkRing();
     testOutputAndGeneration();
     testInputRegionLayout();
+    testUiLayoutAndValidation();
+    testUiFrameSeqlock();
+    testUiRingsDegradeWithoutWaiting();
     if (failures != 0)
         return 1;
     std::cout << "mpvst protocol layout and bounded-ring tests passed\n";

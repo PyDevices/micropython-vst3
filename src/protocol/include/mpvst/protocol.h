@@ -21,8 +21,15 @@
    max_frames per channel, each block aligned to a cache line). The block for
    a work slot is written before the slot's sequence is published, so the
    consumer's acquire on the sequence covers the audio. A mapping with
-   optional_bytes of zero is exactly a minor-0 mapping. */
-#define MPVST_PROTOCOL_MINOR UINT16_C(1)
+   optional_bytes of zero is exactly a minor-0 mapping.
+
+   Minor 2 adds the editor. It changes nothing in this mapping - see ui.h for
+   why the UI surface is a sibling mapping rather than a region here - and
+   only says that the plug-in may hand the engine a fourth argument naming
+   that mapping. An engine built before minor 2 ignores the extra argument and
+   runs without an editor, which is exactly the degradation an unknown
+   optional region would have given. */
+#define MPVST_PROTOCOL_MINOR UINT16_C(2)
 #define MPVST_ENDIAN_MARKER UINT32_C(0x01020304)
 #define MPVST_CACHE_LINE_BYTES UINT32_C(64)
 #define MPVST_DIAGNOSTIC_BYTES UINT32_C(56)
