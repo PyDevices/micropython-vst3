@@ -34,22 +34,45 @@ module_name = None
 class_name = None
 
 
+def _midi_byte(value):
+    """Convert a normalized VST scalar to the provider's MIDI data byte."""
+    value = max(0.0, min(1.0, float(value)))
+    return int(value * 127.0 + 0.5)
+
+
 def attach(factory, **kwargs):
     """Build a component through its factory around the host input bus."""
     global effect
     effect = factory(vstaudio.input(), vstaudio.sample_rate(), **kwargs)
 
-    if (getattr(effect, "MACRO_LABELS", ())
-            or getattr(effect, "PATCHES", {})):
+    labels = getattr(effect, "MACRO_LABELS", ())
+    patches = getattr(effect, "PATCHES", {})
+    if labels or patches:
         def dispatch(event_type, channel, note_id, data0, value0, value1,
                      sample_position):
             # Effects take no notes. A parameter change is the only event
             # that means anything here, and patches are the one other
             # component event an effect may consume.
             if event_type == vstaudio.EVENT_PARAMETER:
-                effect.set_macro(data0, value0 * 127.0)
+                if 0 <= data0 < len(labels):
+                    effect.set_macro(data0, value0 * 127.0, channel, note_id,
+                                     sample_position)
             elif event_type == vstaudio.EVENT_PROGRAM_CHANGE:
-                effect.program_change(data0)
+                effect.program_change(data0, channel, note_id,
+                                      sample_position)
+            elif event_type == vstaudio.EVENT_PITCH_BEND:
+                effect.pitch_bend(int(max(0.0, min(1.0, float(value0))) *
+                                  16383.0 + 0.5), channel, sample_position)
+            elif event_type == vstaudio.EVENT_CONTROL_CHANGE:
+                effect.control_change(data0, _midi_byte(value0), channel,
+                                      sample_position)
+            elif event_type == vstaudio.EVENT_CHANNEL_PRESSURE:
+                effect.channel_pressure(_midi_byte(value0), channel,
+                                        sample_position)
+            elif event_type == vstaudio.EVENT_POLY_PRESSURE:
+                effect.poly_pressure(data0, _midi_byte(value0), channel,
+                                     note_id,
+                                     sample_position)
 
         vstaudio.on_event(dispatch)
 

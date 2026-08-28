@@ -1,12 +1,12 @@
 """Play an `audioinstruments` module inside the sidecar.
 
 The instrument library lives in audioif now, where it knows nothing about
-this plug-in: an instrument is a `create(sample_rate, transport=None)`
-factory returning an object with `note_on`/`note_off`/`set_macro`/
-`program_change` and an `output` to pull PCM from. This module is the one
-place that knows both halves. It binds such a factory to `vstaudio`, so a
-script here shrinks to two lines. This is the instrument side of audioif's
-component factory boundary:
+this plug-in: an instrument is constructed through
+`audioinstruments.create(name, sample_rate, ...)`, returning an object with
+`note_on`/`note_off`/`set_macro`/`program_change` and an `output` to pull PCM
+from. This module is the one place that knows both halves. It binds that
+factory to `vstaudio`, so a script here shrinks to two lines. This is the
+instrument side of audioif's component factory boundary:
 
     import mpvst_adapter
     mpvst_adapter.run("audioinstruments.tr808")
@@ -39,6 +39,12 @@ instrument = None
 module_name = None
 
 
+def _midi_byte(value):
+    """Convert a normalized VST scalar to the provider's MIDI data byte."""
+    value = max(0.0, min(1.0, float(value)))
+    return int(value * 127.0 + 0.5)
+
+
 def attach(create):
     """Build an instrument from `create` and wire it to the host.
 
@@ -47,6 +53,9 @@ def attach(create):
     """
     global instrument
     instrument = create(vstaudio.sample_rate(), transport=vstaudio.transport)
+    labels = getattr(instrument, "MACRO_LABELS", None)
+    if labels is None:
+        labels = getattr(instrument, "macro_labels", ())
 
     def dispatch(event_type, channel, note_id, data0, value0, value1,
                  sample_position):
@@ -54,26 +63,33 @@ def attach(create):
             # `value1` is a fractional pitch offset in semitones, already in
             # the units the instrument API wants - the host's own detune,
             # not something scaled to a controller range.
-            instrument.note_on(data0, value0 * 127.0, value1, channel,
+            instrument.note_on(data0, _midi_byte(value0), value1, channel,
                                note_id, sample_position)
         elif event_type == vstaudio.EVENT_NOTE_OFF:
             instrument.note_off(data0, channel, note_id, sample_position)
         elif event_type == vstaudio.EVENT_PARAMETER:
-            instrument.set_macro(data0, value0 * 127.0, channel, note_id,
-                                 sample_position)
+            if 0 <= data0 < len(labels):
+                instrument.set_macro(data0, value0 * 127.0, channel, note_id,
+                                     sample_position)
         elif event_type == vstaudio.EVENT_PROGRAM_CHANGE:
             instrument.program_change(data0, channel, note_id,
                                       sample_position)
+        elif event_type == vstaudio.EVENT_PITCH_BEND:
+            instrument.pitch_bend(int(max(0.0, min(1.0, float(value0))) *
+                                    16383.0 + 0.5), channel,
+                                  sample_position)
+        elif event_type == vstaudio.EVENT_CONTROL_CHANGE:
+            instrument.control_change(data0, _midi_byte(value0), channel,
+                                      sample_position)
         elif event_type == vstaudio.EVENT_CHANNEL_PRESSURE:
-            instrument.channel_pressure(value0 * 127.0, channel,
+            instrument.channel_pressure(_midi_byte(value0), channel,
                                         sample_position)
         elif event_type == vstaudio.EVENT_POLY_PRESSURE:
-            instrument.poly_pressure(data0, value0 * 127.0, channel, note_id,
+            instrument.poly_pressure(data0, _midi_byte(value0), channel,
+                                     note_id,
                                      sample_position)
-        # PITCH_BEND, CONTROL_CHANGE and TRANSPORT are deliberately not
-        # forwarded: no instrument in the library reads them. Transport is
-        # not an event to these instruments at all - the ones that sync to
-        # tempo call the `transport` callable when they need a reading,
+        # TRANSPORT is not an event to these instruments. The ones that sync
+        # to tempo call the `transport` callable when they need a reading,
         # which is why it is passed to `create` above.
 
     vstaudio.on_event(dispatch)
@@ -82,7 +98,7 @@ def attach(create):
 
 
 def run(name):
-    """Import `name` fresh and attach its `create`."""
+    """Import `name` fresh and attach the package factory for that module."""
     # The sidecar reloads a script by re-exec'ing this file, but an import
     # is cached: without this, editing an instrument and hitting reload
     # would rebuild the old code. Drop the whole library rather than just
@@ -94,5 +110,13 @@ def run(name):
         if cached == root or cached.startswith(root + "."):
             del sys.modules[cached]
     __import__(name)
+    import audioinstruments
+
+    instrument_name = name.rsplit(".", 1)[-1]
+
+    def factory(sample_rate, transport=None):
+        return audioinstruments.create(
+            instrument_name, sample_rate, transport=transport)
+
     module_name = name
-    return attach(sys.modules[name].create)
+    return attach(factory)

@@ -6,8 +6,8 @@ in audioif's `audiorender`. What stays here is the part that is about this
 plug-in: instruments are loaded the way the sidecar loads them - a script
 exec'd against the vstaudio shim - rather than imported as
 `audioinstruments` modules. That keeps the preview a check on the same
-path the bounce takes, and keeps the macro values it sends bit-identical
-to the ones a script receives in a host.
+path the bounce takes. The shim drives the same adapter as the sidecar, so
+normalized host values cross the same MIDI-unit boundary in both paths.
 
 Writes a stereo master WAV plus an analysis report (peaks, RMS per
 section, simultaneous-track counts).
@@ -49,9 +49,9 @@ EVENT_OF = {
 class ScriptVoice:
     """One instrument script, driven through the sidecar's own API.
 
-    Values reach the script normalized, exactly as the plug-in delivers
-    them - no trip through MIDI integers and back, which is the one thing
-    that could make this preview and a script's own arithmetic differ.
+    Values cross the same normalized-host-to-MIDI-provider conversion as the
+    plug-in. That keeps this preview's contract check honest: the script sees
+    the units the real sidecar sends, including MIDI's 128-step quantization.
     """
 
     def __init__(self, script_path):

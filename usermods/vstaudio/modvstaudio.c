@@ -423,11 +423,19 @@ static const audiosample_p_t vstaudio_input_proto = {
     .get_buffer = vstaudio_input_get_buffer,
 };
 
+static const mp_rom_map_elem_t vstaudio_input_locals_dict_table[] = {
+    AUDIOSAMPLE_FIELDS,
+};
+static MP_DEFINE_CONST_DICT(vstaudio_input_locals_dict,
+    vstaudio_input_locals_dict_table);
+
 MP_DEFINE_CONST_OBJ_TYPE(
     vstaudio_input_type,
     MP_QSTR_InputStream,
-    MP_TYPE_FLAG_NONE,
-    protocol, &vstaudio_input_proto
+    MP_TYPE_FLAG_HAS_SPECIAL_ACCESSORS,
+    attr, cp_compat_attr,
+    protocol, &vstaudio_input_proto,
+    locals_dict, &vstaudio_input_locals_dict
     );
 
 static vstaudio_input_obj_t vstaudio_input_singleton;
