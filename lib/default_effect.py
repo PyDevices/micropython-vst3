@@ -10,8 +10,8 @@ the host sends this track; `vstaudio.output()` is what the host gets back. To
 make it do something, build a chain between the two:
 
     import audioeffects
-    audioeffects.configure(vstaudio.sample_rate())
-    delay = audioeffects.TapeDelay(vstaudio.input())
+    delay = audioeffects.create("TapeDelay", vstaudio.input(),
+                                vstaudio.sample_rate())
     vstaudio.output(delay.output)
 
 `NAME` is what the editor's header shows. Change it in your copy - a plug-in
@@ -43,6 +43,10 @@ import vstaudio
 # What the editor calls this instance. Every script may declare one, and this
 # one says what it is so nobody wonders which effect they are looking at: an
 # empty slot, not something they chose. Rename it in your copy.
-NAME = "DEFAULT - passthrough only"
+NAME = "default_effect"
+DISPLAY_NAME = "DEFAULT - passthrough only"
+MACRO_LABELS = ()
+MACRO_MODES = {}
+PATCHES = {0: ("Default", ())}
 
 vstaudio.output(vstaudio.input())

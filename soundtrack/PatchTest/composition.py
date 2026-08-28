@@ -81,7 +81,7 @@ TRACKS = [
         "name": "Minimoog", "script": "minimoog.py", "gain_db": -6.0,
         "pan": 0.0, "notes": riff_notes(),
         # No macros set at all: every one resolves to the instrument's
-        # Patch 1, and the program changes below replace them wholesale.
+        # Patch 0, and the program changes below replace them wholesale.
         # That is the point - if patches did not work, this would be
         # sixteen macros of whatever the fallback happened to be.
         "macros": {},

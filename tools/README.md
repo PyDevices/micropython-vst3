@@ -90,7 +90,7 @@ doesn't crash and isn't silent. Hearing it is still on you.
 ## Patches
 
 - **`derive_patches.py [--write [--force]] [name ...]`** - gives an
-  instrument the Patch 1 that describes the sound it already makes, by
+  instrument patch 0 (the default patch) that describes the sound it already makes, by
   measuring it rather than inventing it: snapshot every number the
   instrument's event handler can reach, feed each macro 0 then 127 to see
   which of them it moves, then scan all 128 settings and keep the one
@@ -99,10 +99,10 @@ doesn't crash and isn't silent. Hearing it is still on you.
   all of them is exact.
 
   It builds the instrument with `create()`'s own `program_change(0)`
-  suppressed, or deriving Patch 1 from an instrument that has just
-  applied Patch 1 would be circular.
+  suppressed, or deriving patch 0 from an instrument that has just
+  applied patch 0 would be circular.
 
-  An existing Patch 1 is left alone: not all of them are derived -
+  An existing patch 0 is left alone: not all of them are derived -
   minimoog's is one of three designed patches - so overwriting takes
   `--force`. Run with no arguments to report. `!` marks a macro that
   cannot reach its default, naming the parameter and both values; `~`

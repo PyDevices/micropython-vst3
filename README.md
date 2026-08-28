@@ -102,7 +102,9 @@ point at an existing SDK checkout instead of the fetched one.
 
 ## Writing a script
 
-A script registers a callback and an output; everything else is optional.
+A script registers a callback and an output. For a cataloged audioif
+component, the provider metadata is mandatory; a consumer such as this
+plug-in remains tolerant of missing optional fields.
 The bundled `lib/default_instrument.py` is the working reference - it
 tracks voices by VST note ID, maps velocity to amplitude, applies pressure
 and pitch bend, and uses an explicit 50 ms release.
@@ -120,10 +122,15 @@ module-level tuple:
 
 ```python
 MACRO_LABELS = ("Gain", "Tone", "Attack", "Release")
+MACRO_MODES = {0: "UNIPOLAR", 1: "UNIPOLAR", 2: "UNIPOLAR", 3: "UNIPOLAR"}
+PATCHES = {0: ("Default", (64, 64, 64, 64))}
 ```
 
-A script without it declares no macros and the editor draws none. Renaming a
-label does not change parameter IDs or detach automation.
+A bare script without those declarations is still accepted by this consumer
+for compatibility and the editor draws no macros or patches. Audioif
+providers must declare the empty forms explicitly when they expose no
+controls. Renaming a label does not change parameter IDs or detach
+automation.
 
 Every instrument also declares `PATCHES`, whose first entry is the sound
 its own defaults describe. That is what an unset macro resolves to - not
@@ -147,31 +154,26 @@ Two lines, synthesized in `CatalogEntry::scriptSource`. That is what lets
 the library be the single source of truth for a plug-in's name, category
 and macro labels: there is no generated copy to drift from it.
 
-A plug-in declares itself with four module-level names - `NAME`,
-`CATEGORIES`, `VERSION`, `VENDOR` - or, for an effect, the first three on
-the class and `VENDOR` on the module. `NAME` is the only required one, and
-anything without it is not a plug-in, which is how base and helper classes
-stay out of the browser. Its class ID is derived from the file path plus
-the name, so a copy of one of ours is automatically a distinct plug-in -
-and renaming the *file* makes a different plug-in, orphaning projects that
-used the old one.
+An audioif provider declares `NAME`, `MACRO_LABELS`, `MACRO_MODES`, and
+`PATCHES`; percussion instruments also declare `NOTE_MAP`. `CATEGORIES`,
+`VERSION`, `VENDOR`, and `DISPLAY_NAME` are optional. This consumer requires
+only `NAME` when it discovers a component, and uses `DISPLAY_NAME` when
+available for the host-facing title. Its class ID is derived from the file
+path plus the stable `NAME`, so a copy of one of ours is automatically a
+distinct plug-in - and renaming the file or `NAME` is a breaking identity
+change.
 
 `mpvst-` marker comments live in `moduleinfo.json` and nowhere else. A `.py`
 file - a library module, an effect class, a script you wrote - declares itself
 with variables. JSON5 comments are the only extension slot moduleinfo.json
 has, which is why they exist there; nothing reads one out of Python.
 
-Macros and patches are declared or absent, and `MACRO_LABELS` is the whole of
-how a macro is declared - on the module for an instrument, on the class for an
-effect, at module level in a bare script. A plug-in that wants patches
-declares `PATCHES` the same way. Undeclared does not mean unnamed, it means there are none:
-`mpvst_effect_adapter` registers no parameter handler at all for a class
-without `MACRO_LABELS`, an instrument's macro index selects from a table it
-does not have, and a program change with no `PATCHES` selects from nothing.
-The editor draws exactly what was declared and says so when that is nothing.
-The parameters themselves are unaffected - all sixteen macros and the patch
-parameter are permanent, because they are what a host automates - but a
-plug-in that declared none has none.
+The consumer reads `MACRO_LABELS` and `PATCHES` when present, and reads
+`MACRO_MODES` when a UI wants to distinguish a unipolar, bipolar, or toggle
+control. A missing field is treated as absent. The parameters themselves are
+unaffected - all sixteen macro slots and the patch parameter are permanent,
+because they are what a host automates - but an undeclared optional surface
+does not receive a fabricated control.
 
 `lib/mpvst_adapter.py` is the seam between the two. `vstaudio` speaks the
 normalised floats the VST3 parameter API uses; the instrument API speaks
@@ -185,14 +187,17 @@ own piece directory - those files *are* the patches - and end in a
 `__main__` guard handing `create` to the same adapter.
 
 `audioeffects` is forty-plus effect classes (dynamics, EQ, reverb, delay,
-modulation, drive, pitch and stereo) importable from any effect script.
+modulation, drive, pitch and stereo) importable from any effect script. Build
+them through `audioeffects.create(name, source, sample_rate, **options)` so
+the construction boundary stays portable across CPython, MicroPython and
+CircuitPython; direct class constructors remain an implementation convenience.
 It compensates for two CircuitPython biquad quirks that audioif
 reproduces deliberately: filters in a stereo `audiofilters.Filter` centre
 at twice the requested frequency, so the library halves what it asks for;
 and peaking EQ's `b2` sign is wrong upstream, so bells are built from
-notch and band-pass sections instead. Call `audioeffects.configure(rate)`
-before building anything - it replaces the sample rate the library used
-to read from the host at import.
+notch and band-pass sections instead. The factory configures the sample rate
+for each component before construction; scripts do not need to manage a
+process-wide rate.
 
 ## Parameters and state
 

@@ -142,12 +142,30 @@ CHASE_CHORDS = [
 # Effect racks ---------------------------------------------------------------
 
 def rack(name, imports, body):
-    source = ("# mpvst-macro-labels: Rack 01 | Rack 02 | Rack 03 | Rack 04\n"
-              "import vstaudio\n"
-              "from audioeffects import configure, %s\n"
+    stable_name = name.lower().replace(" ", "_")
+    factory_body = body
+    for effect_name in imports.split(", "):
+        factory_body = factory_body.replace(
+            effect_name + "(", 'effect("%s", ' % effect_name)
+    source = ("NAME = %r\n"
+              "DISPLAY_NAME = %r\n"
+              "CATEGORIES = ('Effect Rack',)\n"
+              "VERSION = '0.0.1'\n"
+              "VENDOR = 'PyDevices'\n"
+              "MACRO_LABELS = ()\n"
+              "MACRO_MODES = {}\n"
+              "PATCHES = {0: (%r, ())}\n"
               "\n"
-              "configure(vstaudio.sample_rate())\n"
-              "source = vstaudio.input()\n%s\n" % (imports, body))
+              "import audioeffects\n"
+              "import vstaudio\n"
+              "\n"
+              "RATE = vstaudio.sample_rate()\n"
+              "\n"
+              "def effect(name, source, **options):\n"
+              "    return audioeffects.create(name, source, RATE, **options)\n"
+              "\n"
+              "source = vstaudio.input()\n%s\n" %
+              (stable_name, name, name, factory_body))
     return {"name": name, "source": source, "macros": {}, "macro_env": {}}
 
 

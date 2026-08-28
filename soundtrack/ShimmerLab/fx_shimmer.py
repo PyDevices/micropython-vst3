@@ -1,4 +1,3 @@
-# mpvst-macro-labels: Shimmer | Echo | Space | Tone
 """The classic shimmer: the signal plus a copy of itself an octave up,
 smeared through a tape echo and a long hall.
 
@@ -12,15 +11,27 @@ Macro 1 is how loud the octave sits under the dry, macro 2 the echo, macro 3
 the room, macro 4 how bright the repeats stay.
 """
 
+NAME = "fx_shimmer"
+DISPLAY_NAME = "Shimmer Hall"
+CATEGORIES = ("Effect Rack", "Reverb")
+VERSION = "0.0.1"
+VENDOR = "PyDevices"
+MACRO_LABELS = ("Shimmer", "Echo", "Space", "Tone")
+MACRO_MODES = {0: "UNIPOLAR", 1: "UNIPOLAR", 2: "UNIPOLAR", 3: "UNIPOLAR"}
+PATCHES = {0: ("Shimmer Hall", (70, 57, 76, 79))}
+
 import vstaudio
-from audioeffects import configure, Octaver, Reverb, TapeDelay
+import audioeffects
 
-configure(vstaudio.sample_rate())
+RATE = vstaudio.sample_rate()
 
-octave = Octaver(vstaudio.input(), down=0.0, up=0.55)
-tape = TapeDelay(octave.output, time_ms=420.0, feedback=0.5, mix=0.4,
-                 wow=0.3, tone_hz=5600.0, drive=0.2)
-hall = Reverb(tape.output, preset="hall", mix=0.45)
+octave = audioeffects.create("Octaver", vstaudio.input(), RATE,
+                             down=0.0, up=0.55)
+tape = audioeffects.create("TapeDelay", octave.output, RATE, time_ms=420.0,
+                           feedback=0.5, mix=0.4, wow=0.3,
+                           tone_hz=5600.0, drive=0.2)
+hall = audioeffects.create("Reverb", tape.output, RATE, preset="hall",
+                           mix=0.45)
 
 
 def logmap(value, lo, hi):
@@ -29,6 +40,13 @@ def logmap(value, lo, hi):
 
 def handle_event(event_type, channel, note_id, data0, value0, value1,
                  sample_position):
+    if event_type == vstaudio.EVENT_PROGRAM_CHANGE:
+        patch = PATCHES.get(data0)
+        if patch is not None:
+            for index, value in enumerate(patch[1]):
+                handle_event(vstaudio.EVENT_PARAMETER, channel, note_id, index,
+                             value / 127.0, 0.0, sample_position)
+        return
     if event_type != vstaudio.EVENT_PARAMETER:
         return
     if data0 == 0:

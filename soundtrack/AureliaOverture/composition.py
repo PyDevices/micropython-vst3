@@ -167,15 +167,28 @@ CODA_HARMONY = (
 
 def room_rack(name, preset, mix, extra=""):
     room_source = "width.output" if extra else "source"
-    source = ("# mpvst-macro-labels: Room 01 | Room 02 | Room 03 | Room 04\n"
-              "import vstaudio\n"
-              "from audioeffects import configure, Reverb%s\n"
+    stable_name = name.lower().replace(" ", "_")
+    factory_extra = extra.replace(
+        "width = Chorus(source,",
+        'width = audioeffects.create("Chorus", source, RATE,')
+    source = ("NAME = %r\n"
+              "DISPLAY_NAME = %r\n"
+              "CATEGORIES = ('Effect Rack', 'Reverb')\n"
+              "VERSION = '0.0.1'\n"
+              "VENDOR = 'PyDevices'\n"
+              "MACRO_LABELS = ()\n"
+              "MACRO_MODES = {}\n"
+              "PATCHES = {0: (%r, ())}\n"
               "\n"
-              "configure(vstaudio.sample_rate())\n"
+              "import audioeffects\n"
+              "import vstaudio\n"
+              "\n"
+              "RATE = vstaudio.sample_rate()\n"
               "source = vstaudio.input()\n%s"
-              "room = Reverb(%s, preset='%s', mix=%.3f)\n"
+              "room = audioeffects.create(\"Reverb\", %s, RATE, "
+              "preset='%s', mix=%.3f)\n"
               "vstaudio.output(room.output)\n" %
-              (", Chorus" if extra else "", extra, room_source, preset, mix))
+              (stable_name, name, name, factory_extra, room_source, preset, mix))
     return {"name": name, "source": source, "macros": {}, "macro_env": {}}
 
 

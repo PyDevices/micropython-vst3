@@ -79,7 +79,7 @@ def voice_for(track, _clock):
 
 
 def patch_for(track):
-    """Patch 1's macros - what a macro the composition does not set means.
+    """Patch 0's macros - what a macro the composition does not set means.
 
     Read the same way generate_project.py reads it. If these two disagree
     the preview stops being a usable check on the bounce.

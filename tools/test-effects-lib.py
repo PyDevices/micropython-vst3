@@ -50,7 +50,7 @@ CASES = {
     "ParametricEQ": ("audioeffects.ParametricEQ(src, bands=[(220, -12, 2)])",
                      "squeeze"),
     "GraphicEQ": ("audioeffects.GraphicEQ(src,"
-                  " [0, 0, -9, -9, 0, 0, 0, 0, 0, 0])", "pass"),
+                  " gains_db=[0, 0, -9, -9, 0, 0, 0, 0, 0, 0])", "pass"),
     "DynamicEQ": ("audioeffects.DynamicEQ(src, frequency=220,"
                   " threshold_db=-30)", "pass"),
     "LowPass": ("audioeffects.LowPass(src, frequency=2000)", "pass"),
@@ -61,7 +61,7 @@ CASES = {
     # docs/upstream-diff.md, "The biquads are Q15, so they cannot go low".
     "LowPass-100Hz": ("audioeffects.LowPass(src, frequency=100)", "pass"),
     "GraphicEQ-low": ("audioeffects.GraphicEQ(src,"
-                      " [9, 9, 9, 0, 0, 0, 0, 0, 0, 0])", "pass"),
+                      " gains_db=[9, 9, 9, 0, 0, 0, 0, 0, 0, 0])", "pass"),
     "HighPass": ("audioeffects.HighPass(src, frequency=1000)", "kill"),
     "BandPass": ("audioeffects.BandPass(src, frequency=220, q=2)", "pass"),
     # Tuned to the probe's own 220 Hz tone, so it annihilates it (-45 dB)
@@ -146,11 +146,20 @@ CASES = {
 TEMPLATE = """import vstaudio
 import audioeffects
 
-audioeffects.configure(vstaudio.sample_rate())
 src = vstaudio.input()
 fx = {ctor}
 vstaudio.output(fx.output)
 """
+
+
+def factory_constructor(expression):
+    """Turn a legacy constructor expression into the public factory call."""
+    match = re.match(r"audioeffects\.([A-Za-z]+)\(src(.*)\)$", expression)
+    if match is None:
+        raise ValueError("not an audioeffects constructor: %s" % expression)
+    name, options = match.groups()
+    return ('audioeffects.create("%s", src, vstaudio.sample_rate()%s)'
+            % (name, options))
 
 
 def main():
@@ -159,7 +168,8 @@ def main():
     with tempfile.TemporaryDirectory() as workdir:
         for name, (ctor, check) in sorted(CASES.items()):
             script = Path(workdir) / (name + ".py")
-            script.write_text(TEMPLATE.format(ctor=ctor))
+            script.write_text(TEMPLATE.format(
+                ctor=factory_constructor(ctor)))
             result = subprocess.run(
                 [smoke, bundle, "--effect-script", str(script)],
                 capture_output=True, text=True, timeout=300)

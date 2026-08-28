@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Give every instrument a Patch 1 describing the sound it already makes.
+"""Give every instrument patch 0 describing the sound it already makes.
 
 Every instrument must declare at least one patch: piece.py resolves an
-unset macro to the instrument's Patch 1 rather than to the middle of its
+unset macro to the instrument's patch 0 rather than to the middle of its
 range, and the middle of a range is not "off" and not what the author
 intended. That contract is only safe if the patch is genuinely the
 instrument's designed sound, so this derives it rather than inventing it.
@@ -26,7 +26,7 @@ Two things make this different from probing a module's globals, which is
 what it used to do. An instrument's parameters live in the closure that
 `create()` builds, so they are read through `handle_event`'s free
 variables - the same per-instance state, reached the only way it can be.
-And `create()` ends by applying Patch 1, which would make deriving Patch 1
+And `create()` ends by applying patch 0, which would make deriving patch 0
 circular, so the instrument is built with that step suppressed: what gets
 measured is the sound its own code leaves behind.
 
@@ -87,10 +87,10 @@ def load(path):
 
 
 def build(module):
-    """The instrument as its own code leaves it, before Patch 1 is applied.
+    """The instrument as its own code leaves it, before patch 0 is applied.
 
-    create() finishes by applying Patch 1 so that a fresh instance and
-    Patch 1 are the same thing. That is exactly what makes it circular to
+    create() finishes by applying patch 0 so that a fresh instance and
+    patch 0 are the same thing. That is exactly what makes it circular to
     measure here, so the step is suppressed for the length of the call.
     """
     original = Instrument.program_change

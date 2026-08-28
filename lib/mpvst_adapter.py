@@ -5,7 +5,8 @@ this plug-in: an instrument is a `create(sample_rate, transport=None)`
 factory returning an object with `note_on`/`note_off`/`set_macro`/
 `program_change` and an `output` to pull PCM from. This module is the one
 place that knows both halves. It binds such a factory to `vstaudio`, so a
-script here shrinks to two lines:
+script here shrinks to two lines. This is the instrument side of audioif's
+component factory boundary:
 
     import mpvst_adapter
     mpvst_adapter.run("audioinstruments.tr808")

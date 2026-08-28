@@ -177,7 +177,7 @@ def _script_name(script_path):
     filename is only worth using when there is no declaration to read - a
     hand-written sketch that never went through either adapter.
     """
-    declared = _declared("NAME")
+    declared = _declared("DISPLAY_NAME") or _declared("NAME")
     if declared:
         return declared
     if not script_path:
@@ -187,16 +187,12 @@ def _script_name(script_path):
 
 
 def _macro_labels():
-    """The macros this instance declares, named. Nothing declared, none drawn.
+    """The macros this instance declares, named. Missing means none drawn.
 
-    Declaring them is the contract, and MACRO_LABELS is the whole of it: on
-    the module for an instrument, on the class for an effect, and at module
-    level in a script that is neither. An undeclared macro is not an unnamed
-    one, it is one that does nothing -
-    mpvst_effect_adapter registers no parameter handler at all for a class
-    without MACRO_LABELS, and an instrument's macro index selects from a table
-    it does not have. So drawing none of them is an accurate report rather
-    than a hidden feature.
+    Provider components declare the tuple: on the module for an instrument,
+    on the class for an effect, and at module level in a bare script. This
+    consumer also accepts a missing field for compatibility and draws none;
+    `NAME` remains the only metadata it must require.
     """
     declared = _declared("MACRO_LABELS")
     labels = []
@@ -208,12 +204,11 @@ def _macro_labels():
 
 
 def _patch_names():
-    """The patches this instance declares, named. Nothing declared, none drawn.
+    """The patches this instance declares, named. Missing means none drawn.
 
-    The same contract as the macros: a plug-in that wants patches declares
-    PATCHES. Without it a program change selects from nothing, so a list of
-    128 entries would be 128 ways to change nothing. The Patch parameter
-    itself stays - it is permanent, and a host may still automate it.
+    Providers declare PATCHES. This consumer tolerates a missing declaration,
+    so a program change selects from nothing and no list is drawn. The Patch
+    parameter itself stays permanent, and a host may still automate it.
     """
     declared = _declared("PATCHES")
     if not isinstance(declared, dict) or not declared:

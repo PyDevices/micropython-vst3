@@ -34,6 +34,7 @@ import ast
 import importlib.util
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_DIR = Path(__file__).resolve().parent.parent
@@ -50,6 +51,7 @@ AUDIOIF_LIB = Path(os.environ.get("MPVST_AUDIOIF_LIB",
 #: rather than guessing from the filename - and reads the call rather than a
 #: comment, because mpvst markers live in moduleinfo.json and never in a .py.
 MODULE_CALL = 'mpvst_adapter.run("'
+_SHARED_INSTRUMENTS = None
 
 
 def module_of(script_path):
@@ -61,7 +63,11 @@ def module_of(script_path):
     long.
     """
     with open(str(script_path)) as handle:
-        for _ in range(8):
+        # Generated shims keep marker comments and a short explanatory
+        # docstring before the adapter call. Read the whole small header so
+        # metadata such as PATCHES is resolved from the audioif module rather
+        # than mistaking a generated loader for a private patch script.
+        for _ in range(32):
             line = handle.readline()
             if not line:
                 break
@@ -116,13 +122,77 @@ def load_piece(name="perihelion"):
     instruments = Path(instruments)
     if not instruments.is_absolute():
         instruments = (piece_dir / instruments).resolve()
+    if (not instruments.is_dir()
+            or not any(instruments.glob("*.py"))):
+        instruments = shared_instruments()
     return module, instruments
 
 
-def patch_macros(script_path):
-    """Patch 1's macro values for an instrument, as {index: value}.
+def _literal_metadata(path):
+    """Read the static metadata needed by a synthesized library loader."""
+    tree = ast.parse(path.read_text(), str(path))
+    values = {}
+    wanted = ("NAME", "DISPLAY_NAME", "MACRO_LABELS", "MACRO_MODES",
+              "PATCHES")
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name) and target.id in wanted:
+                values[target.id] = ast.literal_eval(node.value)
+    return values
 
-    Every instrument must declare PATCHES; Patch 1 (Program Change 0) is
+
+def shared_instruments():
+    """Materialize loaders for audioif's shared instruments when requested.
+
+    The plug-in stages audioif's packages directly and discovers them from
+    moduleinfo; it does not need a checked-in lib/instruments mirror.
+    Project generation and the preview renderer still need a script file to
+    embed or exec, so create the same tiny loader in a temporary directory.
+    The loader carries the static declarations that a host can read without
+    importing synthio, then delegates construction to audioinstruments.
+    """
+    global _SHARED_INSTRUMENTS
+    if _SHARED_INSTRUMENTS is not None:
+        return _SHARED_INSTRUMENTS
+    package_dir = AUDIOIF_LIB / "audioinstruments"
+    if not package_dir.is_dir():
+        raise SystemExit(
+            "shared instrument directory is missing: %s\n"
+            "Set MPVST_AUDIOIF_LIB to audioif's lib/ directory." % package_dir)
+    output = Path(tempfile.mkdtemp(prefix="mpvst-instruments-"))
+    for source in sorted(package_dir.glob("*.py")):
+        if source.name.startswith("_") or source.name == "__init__.py":
+            continue
+        values = _literal_metadata(source)
+        if "NAME" not in values:
+            continue
+        name = values["NAME"]
+        lines = [
+            "# mpvst-module: audioinstruments.%s" % source.stem,
+            "NAME = %r" % name,
+        ]
+        for field in ("DISPLAY_NAME", "MACRO_LABELS", "MACRO_MODES",
+                      "PATCHES"):
+            if field in values:
+                lines.append("%s = %r" % (field, values[field]))
+        lines.extend([
+            "",
+            "import mpvst_adapter",
+            "",
+            "mpvst_adapter.run(\"audioinstruments.%s\")" % source.stem,
+            "",
+        ])
+        (output / source.name).write_text("\n".join(lines))
+    _SHARED_INSTRUMENTS = output
+    return output
+
+
+def patch_macros(script_path):
+    """Patch 0's macro values for an instrument, as {index: value}.
+
+    Every instrument must declare PATCHES; patch 0 (Program Change 0) is
     the sound its module-level defaults describe. A macro a composition
     does not set resolves here rather than to 0.5, because 0.5 is the
     middle of a range - not "off", and not what the instrument's author
@@ -166,7 +236,7 @@ def patch_macros(script_path):
         return {i: v / 127.0 for i, v in enumerate(values)}, name
     raise SystemExit(
         "%s declares no PATCHES.\n"
-        "Every instrument must define Patch 1 - it is what an unset macro\n"
+        "Every instrument must define patch 0 - it is what an unset macro\n"
         "resolves to, and without it every unset macro falls back to 0.5,\n"
         "which is the middle of a range rather than the intended sound.\n"
         "Generate one with:  tools/derive_patches.py --write %s"

@@ -123,7 +123,8 @@ BUILTIN_CLASSES = (
      "MicroPython Script Host (Fx) Controller", None),
 )
 
-FIELDS = ("NAME", "CATEGORIES", "VERSION", "VENDOR", "MACRO_LABELS")
+FIELDS = ("NAME", "DISPLAY_NAME", "CATEGORIES", "VERSION", "VENDOR",
+          "MACRO_LABELS")
 
 
 def here():
@@ -221,6 +222,7 @@ def plugins(root):
                     "class": owner,
                     "kind": kind,
                     "name": name[0],
+                    "display_name": (fields.get("DISPLAY_NAME") or name)[0],
                     # The package supplies the top-level category; the file
                     # only ever says which kind of instrument or effect.
                     "categories": [kind] + fields.get("CATEGORIES", []),
@@ -398,7 +400,7 @@ def module_info(write, entries, module):
     for entry in entries:
         write(separator + comment_lines(entry))
         write(json.dumps(class_object(
-            entry["cid"], entry["name"], entry["categories"],
+            entry["cid"], entry["display_name"], entry["categories"],
             entry["vendor"], entry["version"], module)))
         separator = ",\n"
     write("\n]}\n")
