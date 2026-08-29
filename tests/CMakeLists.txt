@@ -156,7 +156,10 @@ if(MPVST_PYTHON)
     # Defect linting for the Python half of the repository - the tools, the
     # instrument and effect scripts, the composition modules. Configured in
     # .flake8 to pyflakes-level checks only, so it reports bugs rather than
-    # layout. There is no hosted CI for this repository; ctest is the gate.
+    # layout. There is deliberately no hosted CI for this repository; this
+    # ctest suite is the gate, run locally, per the decision recorded in
+    # README.md's testing section (hosted CI arrives with the post-program
+    # refactor).
     #
     # The repository's own .venv is searched first, because a distribution
     # Python is usually externally managed and cannot have flake8 installed

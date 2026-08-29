@@ -106,6 +106,25 @@ if(EXISTS "${MPVST_MICROPYTHON_ENGINE}")
             "${CMAKE_SOURCE_DIR}/lib/default_effect.py"
             "${CMAKE_SOURCE_DIR}/lib/mpvst_adapter.py"
         COMMENT "Bundling the headless MicroPython engine and script library")
+else()
+    # Unlike MPVST_AUDIOIF_LIB above, a missing engine is not fatal: the
+    # plug-in target still builds and links without it. But tests/CMakeLists.txt
+    # gates its entire engine-dependent suite (mpvst_engine_modules,
+    # mpvst_reload_tests, every mpvst_smoke_host test, mpvst_effects_library,
+    # mpvst_named_plugins) on TARGET mpvst-stage-micropython-engine, which
+    # this branch never defines - so a silent skip here means most of the
+    # test matrix silently vanishes instead of failing loudly. Warn instead
+    # of staying quiet.
+    message(WARNING
+        "No MicroPython engine found at ${MPVST_MICROPYTHON_ENGINE}. The "
+        "plug-in will build, but it will ship with no engine to stage, and "
+        "every engine-dependent ctest (mpvst_engine_modules, "
+        "mpvst_reload_tests, the mpvst_smoke_host tests, "
+        "mpvst_effects_library, mpvst_named_plugins) will be silently "
+        "absent from the suite rather than failing. Run "
+        "scripts/build-micropython-engine.sh (--port windows or --port "
+        "unix) to build one, or set MPVST_MICROPYTHON_ENGINE to point at "
+        "an existing build.")
 endif()
 
 target_compile_features(${MPVST_PLUGIN_TARGET} PRIVATE cxx_std_17)

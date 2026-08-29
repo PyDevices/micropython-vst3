@@ -14,7 +14,7 @@ status read is preceded by a short render (see the DAW matrix notes).
 local REPORT = os.getenv("MPVST_SCORE_REPORT")
 local WORKDIR = os.getenv("MPVST_SCORE_WORKDIR")
 local RENDER_SECONDS = tonumber(os.getenv("MPVST_SCORE_SECONDS") or "238.1")
--- Base name for the rendered file; launch.sh looks for <name>.wav.
+-- Base name for the rendered file; reaper.sh looks for <name>.wav.
 local BOUNCE = os.getenv("MPVST_SCORE_BOUNCE") or "perihelion_bounce"
 local TRACKS = tonumber(os.getenv("MPVST_SCORE_TRACKS") or "16")
 local INSTANCES = tonumber(os.getenv("MPVST_SCORE_INSTANCES") or tostring(TRACKS))

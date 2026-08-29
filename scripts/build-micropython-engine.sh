@@ -29,8 +29,17 @@ cmods_dir=${CMODS_DIR:-"$workspace_dir/cmods"}
 mp_dir=${MICROPYTHON_DIR:-"$cmods_dir/micropython"}
 output_dir="$repo_dir/.deps/engine"
 
-test -f "$mp_dir/ports/$port/Makefile"
-test -f "$workspace_dir/audioif/micropython.mk"
+if [[ ! -f "$mp_dir/ports/$port/Makefile" ]]; then
+    echo "error: no Makefile at $mp_dir/ports/$port - the sibling cmods/micropython" \
+        "checkout is missing or incomplete. Run scripts/fetch-sibling-repos.sh," \
+        "or point CMODS_DIR/MICROPYTHON_DIR at an existing checkout." >&2
+    exit 1
+fi
+if [[ ! -f "$workspace_dir/audioif/micropython.mk" ]]; then
+    echo "error: no micropython.mk at $workspace_dir/audioif - the sibling audioif" \
+        "checkout is missing or incomplete. Run scripts/fetch-sibling-repos.sh." >&2
+    exit 1
+fi
 
 mkdir -p "$output_dir"
 

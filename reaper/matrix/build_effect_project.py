@@ -55,10 +55,10 @@ EFFECT_HEADER = [0x5996706A, 0xFEED5EEE,
                  0x2, 0x1, 0x0, 0x2, 0x0,
                  None, 0x1, 0xFFFF]
 
-INSTRUMENT_VST = ('<VST "VST3i: MicroPython Instrument (PyDevices)" '
+INSTRUMENT_VST = ('<VST "VST3i: MicroPython Script Host" '
                   'MicroPythonVST3.vst3 0 "" '
                   '896536053{60A40168727C4E7DAAF808B790961DAA} ""')
-EFFECT_VST = ('<VST "VST3: MicroPython Effect (PyDevices)" '
+EFFECT_VST = ('<VST "VST3: MicroPython Script Host (Fx)" '
               'MicroPythonVST3.vst3 0 "" '
               '1503031402{910677E28594410985AD7A76CA68106C} ""')
 

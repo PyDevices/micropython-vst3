@@ -1,7 +1,7 @@
 --[[
 One-shot autoplay for the Perihelion project.
 
-launch.sh copies this file to Scripts/__startup.lua right before starting
+reaper.sh copies this file to Scripts/__startup.lua right before starting
 REAPER with the project. It deletes itself immediately - a leftover
 __startup.lua would hijack the next interactive REAPER session - then gives
 the sixteen MicroPython sidecars a moment to come up and starts playback

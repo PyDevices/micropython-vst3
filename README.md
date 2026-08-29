@@ -46,9 +46,35 @@ boundary and what each process owns) and
 [docs/architecture/ipc-v1.md](docs/architecture/ipc-v1.md) (the
 shared-memory protocol rules), with
 [docs/architecture/ui-v1.md](docs/architecture/ui-v1.md) covering the
-editor. All three describe the shipping design; the canonical structure
-sizes and offsets live in `src/protocol/include/mpvst/protocol.h` and
-`src/protocol/include/mpvst/ui.h`.
+editor. `ipc-v1.md` and `ui-v1.md` describe the shipping design;
+`phase-0.md` is historical - the Windows-only, no-editor design accepted
+before Linux shipped and before the LVGL editor existed - kept for its
+still-valid process/thread/state reasoning, not as a description of
+what ships today. The canonical structure sizes and offsets live in
+`src/protocol/include/mpvst/protocol.h` and `src/protocol/include/mpvst/ui.h`.
+
+## Prerequisites
+
+- A C++17 toolchain: MSVC on Windows, GCC or Clang on Linux.
+- CMake 3.25+ and Ninja (`cmake -S . -B .build-linux -G Ninja` is the
+  documented invocation below).
+- On Linux, X11 development headers (`src/plugin/CMakeLists.txt` runs
+  `find_package(X11 REQUIRED)` for the editor's native window) - e.g.
+  `libx11-dev` on Debian/Ubuntu.
+- Python 3.x for `tools/`, `scripts/`, and the `ctest`-registered Python
+  suites; `numpy` and `pydevices-audioif` (from TestPyPI - see
+  [`tools/README.md`](tools/README.md)) for the instrument/effect tests
+  and preview renders, and `flake8` for the `mpvst_lint` ctest.
+  `scripts/bootstrap.sh` creates a repo-local `.venv` with these.
+- The Steinberg VST3 SDK, fetched by `scripts/fetch-vst3-sdk.sh` into the
+  gitignored `.deps/vst3sdk` (see [License](#license) for its terms).
+- The sibling `cmods` and `audioif` checkouts the MicroPython engine build
+  depends on, fetched by `scripts/fetch-sibling-repos.sh`.
+- On WSL, building the Windows engine/plugin needs a reachable Windows
+  host: `scripts/build-micropython-engine.sh --port windows` and
+  `scripts/install-plugin-windows.sh` both shell out to `powershell.exe`,
+  and `scripts/bootstrap.sh` skips the Windows engine port automatically
+  when `/mnt/c/Users` or `powershell.exe` is not available.
 
 ## Getting started
 
@@ -67,8 +93,13 @@ each step individually.
 ## Building and testing
 
 The MicroPython sidecar is built separately from the plug-in, and only
-needs rebuilding when `usermods/vstaudio` changes. It lands in the ignored
-`.deps/engine/`, and the plug-in build stages it into the bundle:
+needs rebuilding when `usermods/vstaudio`, `usermods/vstui`, or the
+sibling audioif checkout's C sources change. It lands in the ignored
+`.deps/engine/`, and the plug-in build stages it into the bundle. CMake
+never detects a stale engine on its own - it only re-stages the file at
+`MPVST_MICROPYTHON_ENGINE` if that path's mtime changes, so after any of
+those three changes you must rerun the build script yourself before
+reconfiguring/rebuilding the plug-in:
 
 ```bash
 ./scripts/build-micropython-engine.sh --port windows
@@ -244,6 +275,12 @@ instance, `MPVST_SCRIPT_PATH` selects a developer script, and
 
 ## Releases
 
+Nothing is published yet: `VERSION` currently holds `0.0.1` as a
+placeholder, and every archive `package-linux.sh`/`package-windows.sh`
+produce is built and distributed locally, by hand. A real release channel
+is expected to arrive with the planned post-program rename/refactor, not
+before.
+
 `VERSION` at the repository root is the single source of truth - CMake and
 both packaging scripts read it, so a binary and the archive around it
 cannot disagree about which version they are.
@@ -258,6 +295,11 @@ Each produces a versioned archive plus a SHA-256 sidecar under the ignored
 See [docs/windows-workflow.md](docs/windows-workflow.md) and
 [docs/linux-workflow.md](docs/linux-workflow.md) for installation and the
 desktop-script security model.
+
+This repository deliberately has no hosted CI. The 14-test `ctest` suite
+(lint included) is the gate, and it is run locally - by a developer before
+pushing, or by `scripts/bootstrap.sh` as its final verification step.
+Hosted CI is planned to arrive with the post-program refactor, not before.
 
 ## Testing against a real DAW
 

@@ -38,6 +38,19 @@ if ! "$repo_dir/reaper/install-reaper-portable.sh"; then
         "reaper.sh need it, the core build/test does not."
 fi
 
+log "creating .venv (pydevices-audioif from TestPyPI, numpy, flake8)"
+if [[ ! -d "$repo_dir/.venv" ]]; then
+    python3 -m venv "$repo_dir/.venv" || die "python3 -m venv failed"
+fi
+"$repo_dir/.venv/bin/pip" install -q \
+    -i https://test.pypi.org/simple/ \
+    --extra-index-url https://pypi.org/simple/ \
+    pydevices-audioif numpy flake8 \
+    || die "installing pydevices-audioif/numpy/flake8 into .venv failed"
+log ".venv ready - this is what gates the mpvst_lint, mpvst_instruments_library" \
+    "and mpvst_effects_library ctests, and what tools/render_preview.py and" \
+    "tools/test-*.py prefer over a sibling audioif checkout."
+
 log "configuring and building"
 cmake -S "$repo_dir" -B "$repo_dir/.build-linux" -G Ninja || die "cmake configure failed"
 cmake --build "$repo_dir/.build-linux" || die "cmake build failed"

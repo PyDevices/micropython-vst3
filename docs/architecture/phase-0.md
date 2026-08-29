@@ -1,6 +1,10 @@
 # Phase 0 architecture contract
 
-Status: accepted for implementation on 2026-08-25.
+Status: accepted for implementation on 2026-08-25. Historical: this is the
+Windows-only era design, from before Linux shipped and before the LVGL
+editor existed (see "Deferred UI" below, superseded by `ui-v1.md`). Kept
+for the reasoning behind the process/thread/state rules, which still hold;
+not a description of what ships today.
 
 ## System boundary
 

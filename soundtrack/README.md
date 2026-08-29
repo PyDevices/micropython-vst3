@@ -86,6 +86,22 @@ inserts at all**: the Juno's bucket-brigade chorus, the Solina's ensemble and
 the Minimoog's overdrive are part of the instruments, exactly as they were
 part of the hardware.
 
+## Fixtures
+
+Two directories are test fixtures, not pieces of music, and exist to
+exercise something specific rather than to be listened to for their own
+sake:
+
+**PatchTest** - one Minimoog, one program change, nothing else. Bars 1-8
+and 9-16 play byte-identical material, so any measured difference between
+them can only have come from the patch change at bar 9 - proof that a MIDI
+Program Change reaches an instrument script and re-applies its patch.
+
+**ShimmerLab** - four ways to make the Perihelion "Air Shimmer" sound
+musical, stacked on four tracks over the same sixteen bars so switching
+between them is a solo button rather than a seek - an A/B listening rig,
+not a finished cue.
+
 ## Listening
 
 ```bash
@@ -100,7 +116,9 @@ part of the hardware.
 ../reaper.sh --render --piece neonmeridian # render/verify it
 ```
 
-Play mode regenerates the project under `C:\Users\bradb\Music\<Title>\`,
+Play mode regenerates the project under `$WIN_MUSIC\<Title>\` (the Windows
+Music folder for the account `../reaper.sh` runs under, e.g.
+`C:\Users\<you>\Music`; set `WIN_MUSIC` to override it),
 opens REAPER with a self-deleting autoplay startup script, and leaves
 REAPER open. Render mode bounces the piece offline through the installed
 plug-in, checks every engine and envelope, writes `build/<Title>.wav`
