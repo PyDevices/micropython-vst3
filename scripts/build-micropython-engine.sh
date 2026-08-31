@@ -15,11 +15,23 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# The engine is a deliberately narrow scripting core: compositions and racks
+# are code, and scan_plugins.py runs at DAW scan time, so the shipped
+# interpreter must not reach the network (sockets/SSL) or arbitrary native
+# code (FFI). On windows those arrive as cmods overlay patches 0001/0003 —
+# skipped here; on unix they are port defaults — forced off on the make
+# command line. Overlay source of truth: micropython-pydevices
+# profiles/vst3-engine.series. Rebuilding with them enabled is possible but
+# is then the builder's own informed choice, not the shipped default.
+engine_overlay_skip=""
+engine_make_extra=""
 case "$port" in
     # mkrules.mk appends .exe itself for mingw targets, so PROG must be the
     # bare name; the installed artifact still carries the extension.
-    windows) prog_name=micropython-vst-engine; engine_name=micropython-vst-engine.exe; variant=dev ;;
-    unix)    prog_name=micropython-vst-engine; engine_name=micropython-vst-engine; variant=standard ;;
+    windows) prog_name=micropython-vst-engine; engine_name=micropython-vst-engine.exe; variant=dev
+             engine_overlay_skip="0001 0003" ;;
+    unix)    prog_name=micropython-vst-engine; engine_name=micropython-vst-engine; variant=standard
+             engine_make_extra="MICROPY_PY_SOCKET=0 MICROPY_PY_SSL=0 MICROPY_PY_FFI=0" ;;
     *) echo "error: unsupported port '$port'" >&2; exit 2 ;;
 esac
 
@@ -43,9 +55,10 @@ fi
 
 mkdir -p "$output_dir"
 
-# cmods applies its Windows networking/SSL/FFI overlays transactionally and
-# reverses them on exit. Add only this repository's modules to its ignored
-# discovery root for the duration of the build.
+# cmods applies its mailbox overlays transactionally and reverses them on
+# exit; the engine build skips the networking/FFI ones (see above). Add only
+# this repository's modules to its ignored discovery root for the duration
+# of the build.
 links=()
 for module in vstaudio vstui; do
     link="$cmods_dir/$module"
@@ -68,6 +81,8 @@ trap cleanup EXIT
 
 BUILD=build-vst-engine \
 PROG="$prog_name" \
+MP_OVERLAY_SKIP="$engine_overlay_skip" \
+MP_MAKE_EXTRA="$engine_make_extra" \
     "$cmods_dir/build_mp.sh" --port "$port" --variant "$variant"
 
 install -m 755 \
