@@ -147,7 +147,17 @@ fi
 test -e "$reaper_exe" || { echo "error: REAPER not found at $reaper_exe" >&2; exit 1; }
 test -x "$reaper_exe" || chmod +x "$reaper_exe"
 
-rm -rf "$work_unix"
+# Never rm -rf this directory: REAPER records whatever project it opens as
+# "last project" (reaper.ini lastproject=/projecttab*=/[Recent]) more or
+# less immediately, independent of a clean exit, and reopens it on the
+# next launch that doesn't name a project of its own (a human double-
+# clicking the REAPER icon, say). Deleting the file out from under that
+# reference - which an earlier rm -rf here did - throws a stacked
+# "There was an error opening the project" modal on every subsequent bare
+# launch: a self-inflicted cousin of the modal-last-project trap this
+# whole repo works around with -ignoreerrors. Only ever create or
+# overwrite files in this directory; never remove the directory itself or
+# the specific files REAPER might have opened last.
 mkdir -p "$work_unix"
 work_native=$(to_native "$work_unix")
 
