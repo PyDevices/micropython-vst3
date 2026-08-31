@@ -475,13 +475,13 @@ def riser_notes():
 
 # --- Effect rack --------------------------------------------------------------
 
-# fx_space.py sits beside this file rather than being inlined as a string
-# the way Velvet Circuit's racks are: it doubles as the repository's
-# worked example of a standalone effect script - a tone filter into a
-# tape delay into a hall, built from public lib/effects classes - and it
-# stays readable, runnable and diffable as its own file. Reading it here
-# is what keeps it honest: it has to actually load in the engine, because
-# the piece will not render otherwise.
+# The rack scripts sit beside this file rather than being inlined as
+# strings the way Velvet Circuit's racks are. They used to carry the whole
+# graphs; audioeffects now ships those as ShimmerHall and AirSpace
+# (ported from these files), so each shrank to a loader that delegates to
+# the library class. Reading one here is what keeps it honest: it has to
+# actually load in the engine, because the piece will not render
+# otherwise.
 def _read_effect(name):
     import os
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
