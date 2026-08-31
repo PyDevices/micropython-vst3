@@ -42,3 +42,11 @@ rest of the repo.
   the things only a real DAW host can exercise: FX chain add/remove,
   parameter automation, project save/reload, macro resync. See that
   script's header for platform-specific setup.
+- **`midi-hw-test/`** - plays a deterministic MIDI note sequence out a
+  real hardware MIDI output device in realtime, for a board-side listener
+  to verify reception (`midi-hw-test/run-midi-hw-test.sh --list-devices`,
+  then `--device N`). No VST instrument in the path at all: this is about
+  the physical MIDI port, not the plug-in. Everything but the entry
+  point's platform layer (`run-midi-hw-test.sh`) is plain Python/Lua with
+  no OS-specific calls - see that script's header for the device-scan
+  trap it exists to work around.
