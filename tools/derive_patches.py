@@ -49,6 +49,13 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "tools"))
+# The generated shims in soundtrack/*/instruments/ are three lines that
+# delegate to the library through `mpvst_adapter`, which lives in this repo's
+# lib/. Without it on the path the first shim this tool reaches raises
+# ModuleNotFoundError and the audit stops partway - which is why a full pass
+# had never completed. harness.py sets up the same entry (harness.py:32), and
+# the two tools load the same scripts, so they need the same path.
+sys.path.insert(0, str(REPO / "lib"))
 
 from piece import AUDIOIF_LIB  # noqa: E402
 
