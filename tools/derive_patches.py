@@ -33,7 +33,9 @@ measured is the sound its own code leaves behind.
 An instrument that already declares a patch 0 keeps it. Not every patch 0
 is derived - minimoog's is one of three designed patches, and create()
 applies it so the instrument starts there - so overwriting one has to be
-asked for. `--check` reports the difference either way, marked `~`.
+asked for. The report marks a disagreement `~`, sized in the parameter's
+own units. A default that sits midway between two settings is a tie, not
+a disagreement: the committed setting is kept, so rederiving is stable.
 
 Usage:
     derive_patches.py                    report, write nothing
@@ -44,6 +46,7 @@ Usage:
 
 import ast
 import importlib.util
+import math
 import sys
 from pathlib import Path
 
@@ -77,6 +80,15 @@ SAMPLE_RATE = 48000
 #: a macro that misses by a lot: a default outside the range it can reach,
 #: or several parameters it cannot satisfy at once.
 TOLERANCE = 0.01
+
+#: How much further from its default the committed setting may leave a
+#: parameter than the derived one, as a fraction of the default, and still
+#: be a tie rather than a disagreement. A default sitting midway between
+#: two steps of a logarithmic macro is nearer the lower step by
+#: (ln step)^2 / 4 of its value - 0.003% for tr808's SD Tone over two
+#: octaves, 0.07% over three decades - so 0.1% covers every tie the grid
+#: can produce while staying well under what one step itself moves.
+TIE = 0.001
 
 #: Where the instruments that own patches live. The shims in
 #: lib/instruments declare none of their own - they load these.
@@ -156,14 +168,69 @@ def error_against(state, defaults, keys):
     return total
 
 
+class Macro:
+    """One macro: what it moves, and where each of its settings leaves it.
+
+    The scan in derive() visits all 128 settings anyway. Keeping what it
+    saw is what lets a disagreement between the committed and the derived
+    setting be sized in the parameter's own units, and a tie be told from
+    one. An unbound macro moves nothing and has an empty table.
+    """
+
+    def __init__(self, label, keys, targets):
+        self.label = label
+        self.keys = keys
+        self.targets = targets
+        self.table = []                            # setting -> {key: value}
+
+    def error(self, setting):
+        return error_against(self.table[setting], self.targets, self.keys)
+
+    def distance(self, setting):
+        """Relative distance from the defaults - the error, unsquared."""
+        return math.sqrt(self.error(setting))
+
+    def worst(self, setting):
+        """The parameter this setting leaves furthest from its default."""
+        state = self.table[setting]
+        return max(self.keys, key=lambda k: abs(state[k] - self.targets[k])
+                   / (abs(self.targets[k]) or 1.0))
+
+    def tie(self, committed, derived):
+        """Whether the committed setting answers as well as the derived one.
+
+        True when the two bracket the default - one above it, one below,
+        for every parameter that differs between them - and the committed
+        one is further off by no more than TIE. A default that lands
+        between two steps of the grid is served equally by either; which
+        of them the scan picks is down to rounding, not to the sound.
+        """
+        if not 0 <= committed < len(self.table):
+            return False
+        here, there = self.table[committed], self.table[derived]
+        bracket = all((here[k] - self.targets[k])
+                      * (there[k] - self.targets[k]) <= 0
+                      for k in self.keys if here[k] != there[k])
+        return (bracket
+                and self.distance(committed) - self.distance(derived) <= TIE)
+
+
 def derive(path):
-    """(values, notes) for one instrument, or (None, reason)."""
+    """(values, notes, macros) for one instrument, or (None, reason, None).
+
+    `macros` holds a Macro per value - what drift() needs to say by how
+    much a committed value disagrees, rather than only that it does.
+    """
     module = load(path)
     labels = getattr(module, "MACRO_LABELS", None)
     if not labels:
-        return None, "no MACRO_LABELS"
+        return None, "no MACRO_LABELS", None
     instrument = build(module)
     defaults = scalars(instrument)
+    # A committed value that ties the scan's pick is kept, so the committed
+    # patch is read before anything is derived.
+    _, patches = existing_patches(path)
+    committed = list(patches[0][1]) if patches and 0 in patches else []
 
     # Some of what we can see moves on its own - an LFO's current value, a
     # phase accumulator. Reading twice without touching anything identifies
@@ -174,7 +241,7 @@ def derive(path):
         after = scalars(instrument)
         volatile |= {k for k in before if before.get(k) != after.get(k)}
 
-    values, notes = [], []
+    values, notes, macros = [], [], []
     for index in range(min(16, len(labels))):
         instrument.set_macro(index, 0)
         low = scalars(instrument)
@@ -182,6 +249,8 @@ def derive(path):
         high = scalars(instrument)
         moved = [k for k in defaults
                  if k not in volatile and k in low and low[k] != high[k]]
+        macro = Macro(labels[index], moved, {k: defaults[k] for k in moved})
+        macros.append(macro)
         if not moved:
             values.append(64)
             notes.append("%d:%s:unbound" % (index, labels[index]))
@@ -191,13 +260,21 @@ def derive(path):
         best, best_error = 0, None
         for setting in range(128):
             instrument.set_macro(index, setting)
-            error = error_against(scalars(instrument), defaults, moved)
+            state = scalars(instrument)
+            macro.table.append({k: state.get(k, defaults[k]) for k in moved})
+            error = error_against(state, defaults, moved)
             # Ties go to the higher setting, which is round-half-up: a
             # default sitting exactly between two steps of a linear macro
             # is equally far from both, and 64 is the answer everyone
             # expects for the middle of 0-127.
             if best_error is None or error <= best_error:
                 best, best_error = setting, error
+        # A default that sits midway between two steps is a tie, and a tie
+        # goes to the value already committed: the scan's pick is no better
+        # for the sound, and rederiving must not move a patch for nothing -
+        # which is what --force did to three drum kits before this rule.
+        if index < len(committed) and macro.tie(committed[index], best):
+            best, best_error = committed[index], macro.error(committed[index])
         instrument.set_macro(index, best)
         values.append(best)
 
@@ -206,19 +283,14 @@ def derive(path):
             # the macro can reach at all, which is a different bug from a
             # macro that can get close but not exactly there.
             kind = "unreachable" if best in (0, 127) else "approx"
-            state = scalars(instrument)
-            worst = max(moved, key=lambda k: abs(state.get(k, defaults[k])
-                                                 - defaults[k])
-                        / (abs(defaults[k]) or 1.0))
-            target = defaults[worst]
+            worst = macro.worst(best)
+            got, target = macro.table[best][worst], defaults[worst]
             notes.append(
                 "%d:%s:%s %s=%.6g wanted %.6g (%.0f%% off%s)"
-                % (index, labels[index], kind, worst,
-                   state.get(worst, target), target,
-                   100.0 * abs(state.get(worst, target) - target)
-                   / (abs(target) or 1.0),
+                % (index, labels[index], kind, worst, got, target,
+                   100.0 * abs(got - target) / (abs(target) or 1.0),
                    ", %d params" % len(moved) if len(moved) > 1 else ""))
-    return values, notes
+    return values, notes, macros
 
 
 def render(patches, values):
@@ -292,12 +364,15 @@ def write_into(path, values, force=False):
     return None
 
 
-def drift(path, values):
+def drift(path, values, macros):
     """Where the committed patch 0 disagrees with what was just derived.
 
     Reported, never acted on. A disagreement means one of two things: the
     patch was designed rather than derived, or a default moved and the
-    patch never followed. Only a human can say which.
+    patch never followed. Only a human can say which, and only from a line
+    that says by how much in the parameter's own units - a tie between two
+    steps reads no differently from a patch 20 steps off otherwise. Ties
+    never get this far: derive() keeps the committed value on one.
     """
     _, patches = existing_patches(path)
     if not patches or 0 not in patches:
@@ -306,9 +381,22 @@ def drift(path, values):
     if len(committed) != len(values):
         return ["patch 0 has %d values, the instrument has %d macros"
                 % (len(committed), len(values))]
-    moved = ["macro %d: %d, derived %d" % (index, was, now)
-             for index, (was, now) in enumerate(zip(committed, values))
-             if was != now]
+    moved = []
+    for index, (was, now, macro) in enumerate(zip(committed, values, macros)):
+        if was == now:
+            continue
+        head = "macro %d (%s): %d -> %d" % (index, macro.label, was, now)
+        if not macro.keys or not 0 <= was < len(macro.table):
+            moved.append(head)                     # unbound, or off the grid
+            continue
+        worst = macro.worst(was)
+        worse = 100.0 * (macro.distance(was) - macro.distance(now))
+        moved.append(
+            "%s, %s=%.6g vs %.6g, wanted %.6g (committed is %s%% worse%s)"
+            % (head, worst, macro.table[was][worst], macro.table[now][worst],
+               macro.targets[worst],
+               ("%.0f" if worse >= 10 else "%.2g") % worse,
+               ", %d params" % len(macro.keys) if len(macro.keys) > 1 else ""))
     return moved[:4] + (["... and %d more" % (len(moved) - 4)]
                         if len(moved) > 4 else [])
 
@@ -328,7 +416,7 @@ def main():
 
     issues = done = skipped = 0
     for path in paths:
-        values, notes = derive(path)
+        values, notes, macros = derive(path)
         try:
             label = path.relative_to(REPO)
         except ValueError:
@@ -349,7 +437,7 @@ def main():
         for note in notes:
             print("        ! %s" % note)
             issues += 1
-        for note in drift(path, values):
+        for note in drift(path, values, macros):
             print("        ~ %s" % note)
     print("\n%d files, %d written, %d skipped, %d macros needing attention"
           % (len(paths), done, skipped, issues))
