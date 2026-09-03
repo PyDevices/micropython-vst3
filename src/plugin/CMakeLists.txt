@@ -60,18 +60,36 @@ else()
 endif()
 set(MPVST_MICROPYTHON_ENGINE "${MPVST_ENGINE_DEFAULT}"
     CACHE FILEPATH "Optional prebuilt MicroPython VST engine for this platform")
-# The instruments and the effects library live in audioif, as ordinary
-# pure-Python packages. They are staged beside this repository's own lib/
-# so `import audioinstruments` resolves in the sidecar, which puts the
-# bootstrap's directory on sys.path and nothing else. Same layout rule as
-# the engine build, which also expects audioif as a workspace sibling.
-set(MPVST_AUDIOIF_LIB "${CMAKE_SOURCE_DIR}/../audioif/lib"
-    CACHE PATH "audioif's pure-Python packages (audioinstruments, audioeffects)")
-if(NOT IS_DIRECTORY "${MPVST_AUDIOIF_LIB}")
+# The instruments and the effects library live in audiocomponents, as
+# ordinary pure-Python packages (audioif keeps the DSP nodes they are built
+# on, and the C usermod the engine build links). They are staged beside
+# this repository's own lib/ so `import audioinstruments` resolves in the
+# sidecar, which puts the bootstrap's directory on sys.path and nothing
+# else. Same layout rule as the engine build, which expects audioif as a
+# workspace sibling: audiocomponents sits beside it.
+set(MPVST_COMPONENTS_LIB_DEFAULT "${CMAKE_SOURCE_DIR}/../audiocomponents/lib")
+set(MPVST_COMPONENTS_LIB "${MPVST_COMPONENTS_LIB_DEFAULT}"
+    CACHE PATH "audiocomponents' pure-Python packages (audioinstruments, audioeffects)")
+# MPVST_AUDIOIF_LIB was this variable's name while the packages lived in
+# audioif. Honoured for one release when it is set and the new name is
+# not, so an existing cache or build script keeps working - loudly. The
+# cache remembers the old name too, so a build directory configured
+# before the move keeps staging from audioif until it is told otherwise:
+# `-U MPVST_AUDIOIF_LIB` drops the stale entry.
+if(MPVST_AUDIOIF_LIB AND MPVST_COMPONENTS_LIB STREQUAL MPVST_COMPONENTS_LIB_DEFAULT)
+    message(WARNING
+        "MPVST_AUDIOIF_LIB is deprecated and goes away after this release: "
+        "the instruments and effects moved from audioif to audiocomponents. "
+        "Using it as MPVST_COMPONENTS_LIB (${MPVST_AUDIOIF_LIB}). Set "
+        "MPVST_COMPONENTS_LIB instead, or reconfigure with "
+        "-U MPVST_AUDIOIF_LIB to drop a cached value.")
+    set(MPVST_COMPONENTS_LIB "${MPVST_AUDIOIF_LIB}")
+endif()
+if(NOT IS_DIRECTORY "${MPVST_COMPONENTS_LIB}")
     message(FATAL_ERROR
-        "audioif's lib/ is not at ${MPVST_AUDIOIF_LIB}.\n"
+        "audiocomponents' lib/ is not at ${MPVST_COMPONENTS_LIB}.\n"
         "Every instrument script loads audioinstruments from there. Run "
-        "scripts/fetch-sibling-repos.sh, or point MPVST_AUDIOIF_LIB at a "
+        "scripts/fetch-sibling-repos.sh, or point MPVST_COMPONENTS_LIB at a "
         "checkout.")
 endif()
 
@@ -87,9 +105,14 @@ if(EXISTS "${MPVST_MICROPYTHON_ENGINE}")
             -DMPVST_LIB_SRC=${CMAKE_SOURCE_DIR}/lib
             -DMPVST_LIB_DST=$<TARGET_FILE_DIR:${MPVST_PLUGIN_TARGET}>
             -P "${CMAKE_CURRENT_SOURCE_DIR}/stage_lib.cmake"
+        # MPVST_LIB_RETIRED names the path this source had before the move,
+        # so a build directory that staged from audioif drops what only
+        # that stage put in the bundle (audiorender/, which nothing in the
+        # sidecar imports) instead of shipping it forever.
         COMMAND ${CMAKE_COMMAND}
-            -DMPVST_LIB_SRC=${MPVST_AUDIOIF_LIB}
+            -DMPVST_LIB_SRC=${MPVST_COMPONENTS_LIB}
             -DMPVST_LIB_DST=$<TARGET_FILE_DIR:${MPVST_PLUGIN_TARGET}>
+            -DMPVST_LIB_RETIRED=${CMAKE_SOURCE_DIR}/../audioif/lib
             -P "${CMAKE_CURRENT_SOURCE_DIR}/stage_lib.cmake"
         # Same command the install instructions give a user, run here so a
         # fresh build has a moduleinfo.json describing the library rather than
@@ -107,7 +130,7 @@ if(EXISTS "${MPVST_MICROPYTHON_ENGINE}")
             "${CMAKE_SOURCE_DIR}/lib/mpvst_adapter.py"
         COMMENT "Bundling the headless MicroPython engine and script library")
 else()
-    # Unlike MPVST_AUDIOIF_LIB above, a missing engine is not fatal: the
+    # Unlike MPVST_COMPONENTS_LIB above, a missing engine is not fatal: the
     # plug-in target still builds and links without it. But tests/CMakeLists.txt
     # gates its entire engine-dependent suite (mpvst_engine_modules,
     # mpvst_reload_tests, every mpvst_smoke_host test, mpvst_effects_library,
