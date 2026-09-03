@@ -60,13 +60,14 @@ sys.path.insert(0, str(REPO / "tools"))
 # the two tools load the same scripts, so they need the same path.
 sys.path.insert(0, str(REPO / "lib"))
 
-from piece import AUDIOIF_LIB  # noqa: E402
+from piece import COMPONENTS_LIB  # noqa: E402
 
-# The packages, and the CPython twins of the native modules they import
-# (synthio, audiocore, ...) beside them. Same sibling-checkout rule as
-# harness.py, which is where every other tool gets its audioif from.
-sys.path.insert(0, str(AUDIOIF_LIB))
-sys.path.insert(0, str(AUDIOIF_LIB.parent))
+# The packages, from the same checkout whose files this tool measures and
+# writes into - ahead of any installed copy, or the audit would read one
+# tree and run another. The CPython twins of the native modules they
+# import (synthio, audiocore, ...) are audioif's, and come from wherever
+# pydevices-audioif is installed, the same as harness.py.
+sys.path.insert(0, str(COMPONENTS_LIB))
 
 from audioinstruments._support import Instrument, static_transport  # noqa: E402
 
@@ -92,7 +93,7 @@ TIE = 0.001
 
 #: Where the instruments that own patches live. The shims in
 #: lib/instruments declare none of their own - they load these.
-DIRS = [AUDIOIF_LIB / "audioinstruments",
+DIRS = [COMPONENTS_LIB / "audioinstruments",
         REPO / "soundtrack" / "Automata" / "instruments",
         REPO / "soundtrack" / "Perihelion" / "instruments"]
 
@@ -420,7 +421,7 @@ def main():
         try:
             label = path.relative_to(REPO)
         except ValueError:
-            label = "audioif/lib/%s" % path.relative_to(AUDIOIF_LIB)
+            label = path.relative_to(COMPONENTS_LIB.parents[1])
         if values is None:
             print("%-52s SKIP %s" % (label, notes))
             skipped += 1

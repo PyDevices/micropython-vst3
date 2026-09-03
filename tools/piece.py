@@ -42,9 +42,19 @@ SOUNDTRACK_DIR = REPO_DIR / "soundtrack"
 
 #: Where audioinstruments lives. Same workspace-sibling rule the engine
 #: build and the plug-in's staging step use; the environment variable is
-#: the escape hatch for a checkout somewhere else.
-AUDIOIF_LIB = Path(os.environ.get("MPVST_AUDIOIF_LIB",
-                                  str(REPO_DIR.parent / "audioif" / "lib")))
+#: the escape hatch for a checkout somewhere else. MPVST_AUDIOIF_LIB is
+#: the name this had while the packages lived in audioif, honoured for
+#: one release when the new one is unset - the same alias, and the same
+#: warning, as the plug-in's CMake.
+_COMPONENTS_LIB_ALIAS = os.environ.get("MPVST_AUDIOIF_LIB")
+if "MPVST_COMPONENTS_LIB" not in os.environ and _COMPONENTS_LIB_ALIAS:
+    sys.stderr.write(
+        "piece.py: MPVST_AUDIOIF_LIB is deprecated (the packages moved to "
+        "audiocomponents); using it as MPVST_COMPONENTS_LIB\n")
+COMPONENTS_LIB = Path(
+    os.environ.get("MPVST_COMPONENTS_LIB")
+    or _COMPONENTS_LIB_ALIAS
+    or str(REPO_DIR.parent / "audiocomponents" / "lib"))
 
 #: How a generated loader names the instrument module it runs. Anything
 #: holding a script path and needing the instrument behind it reads the call
@@ -65,7 +75,7 @@ def module_of(script_path):
     with open(str(script_path)) as handle:
         # Generated shims keep marker comments and a short explanatory
         # docstring before the adapter call. Read the whole small header so
-        # metadata such as PATCHES is resolved from the audioif module rather
+        # metadata such as PATCHES is resolved from the library module rather
         # than mistaking a generated loader for a private patch script.
         for _ in range(32):
             line = handle.readline()
@@ -90,11 +100,11 @@ def instrument_source(script_path):
     name = module_of(script_path)
     if name is None:
         return Path(script_path)
-    source = AUDIOIF_LIB.joinpath(*name.split(".")).with_suffix(".py")
+    source = COMPONENTS_LIB.joinpath(*name.split(".")).with_suffix(".py")
     if not source.is_file():
         raise SystemExit(
             "%s loads %s, which is not at %s.\n"
-            "Set MPVST_AUDIOIF_LIB, or run scripts/fetch-sibling-repos.sh."
+            "Set MPVST_COMPONENTS_LIB, or run scripts/fetch-sibling-repos.sh."
             % (Path(script_path).name, name, source))
     return source
 
@@ -144,10 +154,10 @@ def _literal_metadata(path):
 
 
 def shared_instruments():
-    """Materialize loaders for audioif's shared instruments when requested.
+    """Materialize loaders for the shared instrument library when requested.
 
-    The plug-in stages audioif's packages directly and discovers them from
-    moduleinfo; it does not need a checked-in lib/instruments mirror.
+    The plug-in stages audiocomponents' packages directly and discovers them
+    from moduleinfo; it does not need a checked-in lib/instruments mirror.
     Project generation and the preview renderer still need a script file to
     embed or exec, so create the same tiny loader in a temporary directory.
     The loader carries the static declarations that a host can read without
@@ -156,11 +166,12 @@ def shared_instruments():
     global _SHARED_INSTRUMENTS
     if _SHARED_INSTRUMENTS is not None:
         return _SHARED_INSTRUMENTS
-    package_dir = AUDIOIF_LIB / "audioinstruments"
+    package_dir = COMPONENTS_LIB / "audioinstruments"
     if not package_dir.is_dir():
         raise SystemExit(
             "shared instrument directory is missing: %s\n"
-            "Set MPVST_AUDIOIF_LIB to audioif's lib/ directory." % package_dir)
+            "Set MPVST_COMPONENTS_LIB to audiocomponents' lib/ directory."
+            % package_dir)
     output = Path(tempfile.mkdtemp(prefix="mpvst-instruments-"))
     for source in sorted(package_dir.glob("*.py")):
         if source.name.startswith("_") or source.name == "__init__.py":
