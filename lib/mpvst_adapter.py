@@ -1,7 +1,7 @@
 """Play an `audioinstruments` module inside the sidecar.
 
-The instrument library lives in audioif now, where it knows nothing about
-this plug-in: an instrument is constructed through
+The instrument library lives in audiocomponents now, where it knows nothing
+about this plug-in: an instrument is constructed through
 `audioinstruments.create(name, sample_rate, ...)`, returning an object with
 `note_on`/`note_off`/`set_macro`/`program_change` and an `output` to pull PCM
 from. This module is the one place that knows both halves. It binds that

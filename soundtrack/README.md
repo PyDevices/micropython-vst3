@@ -6,7 +6,7 @@ running synthio and the audioif effects inside its own sidecar process.
 
 Each piece is a subdirectory holding its own `composition.py`. Historical
 pieces also own private `instruments/`; newer compositions can opt into the
-shared `../lib/instruments/` collection - loaders for audioif's
+shared `../lib/instruments/` collection - loaders for audiocomponents'
 `audioinstruments` package - and put `audioeffects` processors after any
 instrument. Nothing else here is infrastructure, and the
 directory might be renamed, restructured, or replaced independently of the

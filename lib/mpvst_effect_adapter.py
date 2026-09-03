@@ -1,11 +1,11 @@
 """Run an `audioeffects` component inside the sidecar.
 
 The instrument twin of this is `mpvst_adapter`, and the split is the same:
-the effect library lives in audioif and knows nothing about this plug-in, so
-this module is the one place that knows both halves. An effect factory takes
-the host input and sample rate and returns an object exposing an `output` to
-pull from, which is exactly what `vstaudio.input()` and `vstaudio.output()`
-provide.
+the effect library lives in audiocomponents and knows nothing about this
+plug-in, so this module is the one place that knows both halves. An effect
+factory takes the host input and sample rate and returns an object exposing
+an `output` to pull from, which is exactly what `vstaudio.input()` and
+`vstaudio.output()` provide.
 
     import mpvst_effect_adapter
     mpvst_effect_adapter.run("TapeDelay")

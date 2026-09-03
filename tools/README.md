@@ -19,8 +19,9 @@ one imports or knows about REAPER:
 - **`render_preview.py [--piece NAME] [out.wav] [--stems DIR]`**
   - offline render through `harness.py` (needs the `audioif` wheel's venv:
   this repo's own `.venv` if set up - `pip install -i https://test.pypi.org/simple/
-  --extra-index-url https://pypi.org/simple/ pydevices-audioif` (TestPyPI
-  only carries this package; the extra index resolves its ordinary
+  --extra-index-url https://pypi.org/simple/ pydevices-audioif
+  pydevices-audioinstruments pydevices-audioeffects` (TestPyPI is the only
+  index carrying these; the extra index resolves their ordinary
   dependencies), plus `numpy` - else a sibling `audioif` checkout's, e.g.
   `../../audioif/.venv/bin/python`); reports peaks, RMS per section, and
   simultaneous-track counts.

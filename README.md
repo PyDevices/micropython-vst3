@@ -62,15 +62,18 @@ what ships today. The canonical structure sizes and offsets live in
   `find_package(X11 REQUIRED)` for the editor's native window) - e.g.
   `libx11-dev` on Debian/Ubuntu.
 - Python 3.x for `tools/`, `scripts/`, and the `ctest`-registered Python
-  suites; `numpy` and `pydevices-audioif` (from TestPyPI - see
+  suites; `numpy`, `pydevices-audioif`, `pydevices-audioinstruments` and
+  `pydevices-audioeffects` (all from TestPyPI - see
   [`tools/README.md`](tools/README.md)) for the instrument/effect tests
   and preview renders, and `flake8` for the `mpvst_lint` ctest.
   `scripts/bootstrap.sh` creates a repo-local `.venv` with these.
 - The Steinberg VST3 SDK, fetched by `scripts/fetch-vst3-sdk.sh` into the
   gitignored `.deps/vst3sdk` (see [License](#license) for its terms).
 - The sibling `audioif` checkout and the org's optional build-aggregator
-  workspace the MicroPython engine build depends on, both fetched by
-  `scripts/fetch-sibling-repos.sh`.
+  workspace the MicroPython engine build depends on, and the sibling
+  `audiocomponents` checkout whose `audioinstruments` and `audioeffects`
+  packages the plug-in build stages into the bundle - all three fetched
+  by `scripts/fetch-sibling-repos.sh`.
 - On WSL, building the Windows engine/plugin needs a reachable Windows
   host: `scripts/build-micropython-engine.sh --port windows` and
   `scripts/install-plugin-windows.sh` both shell out to `powershell.exe`,
@@ -81,8 +84,10 @@ what ships today. The canonical structure sizes and offsets live in
 
 A fresh clone has none of the external dependencies this repo needs - the
 VST3 SDK, the sibling `audioif` and build-aggregator repos the engine build
-depends on, or REAPER for the DAW-driven tooling. `.deps/` and those sibling
-checkouts are all gitignored. One command sets all of it up:
+depends on, the sibling `audiocomponents` repo the plug-in build stages its
+instruments and effects from, or REAPER for the DAW-driven tooling. `.deps/`
+and those sibling checkouts are all gitignored. One command sets all of it
+up:
 
 ```bash
 ./scripts/bootstrap.sh
@@ -125,7 +130,11 @@ DAW scans:
 
 The Linux CMake cache remembers the engine path. After switching engines,
 reconfigure with
-`cmake -S . -B .build-linux -U MPVST_MICROPYTHON_ENGINE`.
+`cmake -S . -B .build-linux -U MPVST_MICROPYTHON_ENGINE`. It remembers
+`MPVST_AUDIOIF_LIB` the same way - the name the components path had while
+the packages lived in audioif, still honoured for one release with a
+warning - so a build directory configured before the move keeps staging
+from audioif until you reconfigure with `-U MPVST_AUDIOIF_LIB`.
 
 Steinberg hosting tools are off by default so a plug-in-only build does
 not pull in editor-host dependencies. Enable them in a dedicated validator
@@ -172,11 +181,12 @@ block by measuring the instrument rather than guessing.
 
 ### Where the instruments live
 
-The fifty-three instruments and the effects library are audioif's
-`audioinstruments` and `audioeffects` packages - host-neutral Python that
-any application can import, not just this plug-in. They are staged beside
-the engine from a sibling audioif checkout (`MPVST_AUDIOIF_LIB` if it is
-somewhere else).
+The fifty-three instruments and the effects library are audiocomponents'
+`audioinstruments` and `audioeffects` packages - host-neutral Python built
+on audioif's audio nodes, that any application can import, not just this
+plug-in. They are staged beside the engine from a sibling audiocomponents
+checkout (`MPVST_COMPONENTS_LIB` if it is somewhere else; `MPVST_AUDIOIF_LIB`,
+the name from when they lived in audioif, is still honoured for one release).
 
 There is no file per instrument. The unit the plug-in deals in is still a
 script - the controller parses macro labels out of the embedded source,
@@ -335,8 +345,9 @@ SHA-256 - the platforms agree exactly, not within a tolerance.
 
 ## Workspace isolation
 
-The sibling `audioif` repository is consumed read-only - no build or
-formatting command here writes into it. The engine builder likewise leaves
+The sibling `audioif` and `audiocomponents` repositories are consumed
+read-only - no build or formatting command here writes into either. The
+engine builder likewise leaves
 the sibling MicroPython checkout unchanged: it uses the build workspace's
 existing transactional overlay, and removes the temporary `vstaudio` module
 link on exit, including after a failed build.
