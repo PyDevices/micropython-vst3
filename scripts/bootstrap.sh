@@ -13,7 +13,7 @@ repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 log() { printf 'bootstrap: %s\n' "$*"; }
 die() { log "ERROR: $*"; exit 1; }
 
-log "fetching sibling repos (cmods, audioif)"
+log "fetching sibling repos (cmods, audioif, audiocomponents)"
 "$repo_dir/scripts/fetch-sibling-repos.sh" || die "fetch-sibling-repos.sh failed"
 
 log "fetching VST3 SDK"
@@ -38,18 +38,26 @@ if ! "$repo_dir/reaper/install-reaper-portable.sh"; then
         "reaper.sh need it, the core build/test does not."
 fi
 
-log "creating .venv (pydevices-audioif from TestPyPI, numpy, flake8)"
+log "creating .venv (pydevices-audioif, pydevices-audioinstruments," \
+    "pydevices-audioeffects from TestPyPI; numpy, flake8)"
 if [[ ! -d "$repo_dir/.venv" ]]; then
     python3 -m venv "$repo_dir/.venv" || die "python3 -m venv failed"
 fi
+# The three PyDevices distributions live on TestPyPI; the extra index
+# resolves their ordinary dependencies. The two component distributions
+# keep their names across the audioif -> audiocomponents split
+# (audiocomponents#2): after it they are published from audiocomponents,
+# still as pydevices-audioinstruments and pydevices-audioeffects, so this
+# line does not change with the flip.
 "$repo_dir/.venv/bin/pip" install -q \
     -i https://test.pypi.org/simple/ \
     --extra-index-url https://pypi.org/simple/ \
-    pydevices-audioif numpy flake8 \
-    || die "installing pydevices-audioif/numpy/flake8 into .venv failed"
+    pydevices-audioif pydevices-audioinstruments pydevices-audioeffects \
+    numpy flake8 \
+    || die "installing the PyDevices audio packages/numpy/flake8 into .venv failed"
 log ".venv ready - this is what gates the mpvst_lint, mpvst_instruments_library" \
-    "and mpvst_effects_library ctests, and what tools/render_preview.py and" \
-    "tools/test-*.py prefer over a sibling audioif checkout."
+    "and mpvst_effects_library ctests, and where tools/render_preview.py and" \
+    "tools/test-*.py import audioinstruments and audioeffects from."
 
 log "configuring and building"
 cmake -S "$repo_dir" -B "$repo_dir/.build-linux" -G Ninja || die "cmake configure failed"
