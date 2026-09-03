@@ -44,8 +44,10 @@ and the root [`../reaper.sh`](../reaper.sh) entry point.
   without the compiled engine or a VST3 host, in milliseconds instead of
   the seconds a full plug-in load takes. `harness.py` provides
   `InstrumentRun` and `EffectRun`; `vstaudio.py` is the shim module
-  scripts see as `import vstaudio`. A sibling `audioif` checkout, when
-  present, is preferred over any installed wheel.
+  scripts see as `import vstaudio`. `audioif` itself comes from the
+  installed `pydevices-audioif` package (`harness.py` no longer puts a
+  sibling checkout on `sys.path`, which used to win silently over the
+  wheel); the components come from `MPVST_COMPONENTS_LIB`.
 - **`test-instruments-lib.py [name ...]`** - runs every instrument
   script against `harness.py` - the 53 library instruments, whose loader
   scripts it synthesizes exactly as the plug-in does, and the
