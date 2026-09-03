@@ -7,8 +7,9 @@ for that). Every script here is idempotent: safe to rerun.
 - **`bootstrap.sh`** - one-shot setup for a fresh clone: runs every
   script below in order, then configures, builds, and runs the test
   suite as a final verification. Start here.
-- **`fetch-sibling-repos.sh`** - clones/updates the sibling `cmods` and
-  `audioif` repos the engine build depends on.
+- **`fetch-sibling-repos.sh`** - clones/updates the two sibling repos the
+  engine build depends on: `audioif` and the org's MicroPython
+  [build-aggregator workspace](https://github.com/PyDevices/cmods).
 - **`fetch-vst3-sdk.sh`** - downloads the pinned VST3 SDK into `.deps/vst3sdk`.
 - **`build-micropython-engine.sh [--port windows|unix]`** - builds the
   MicroPython sidecar engine (defaults to the Windows engine, the

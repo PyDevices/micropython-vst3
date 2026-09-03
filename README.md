@@ -68,8 +68,9 @@ what ships today. The canonical structure sizes and offsets live in
   `scripts/bootstrap.sh` creates a repo-local `.venv` with these.
 - The Steinberg VST3 SDK, fetched by `scripts/fetch-vst3-sdk.sh` into the
   gitignored `.deps/vst3sdk` (see [License](#license) for its terms).
-- The sibling `cmods` and `audioif` checkouts the MicroPython engine build
-  depends on, fetched by `scripts/fetch-sibling-repos.sh`.
+- The sibling `audioif` checkout and the org's optional build-aggregator
+  workspace the MicroPython engine build depends on, both fetched by
+  `scripts/fetch-sibling-repos.sh`.
 - On WSL, building the Windows engine/plugin needs a reachable Windows
   host: `scripts/build-micropython-engine.sh --port windows` and
   `scripts/install-plugin-windows.sh` both shell out to `powershell.exe`,
@@ -79,8 +80,8 @@ what ships today. The canonical structure sizes and offsets live in
 ## Getting started
 
 A fresh clone has none of the external dependencies this repo needs - the
-VST3 SDK, the sibling `cmods`/`audioif` repos the engine build depends
-on, or REAPER for the DAW-driven tooling. `.deps/` and those sibling
+VST3 SDK, the sibling `audioif` and build-aggregator repos the engine build
+depends on, or REAPER for the DAW-driven tooling. `.deps/` and those sibling
 checkouts are all gitignored. One command sets all of it up:
 
 ```bash
@@ -336,9 +337,9 @@ SHA-256 - the platforms agree exactly, not within a tolerance.
 
 The sibling `audioif` repository is consumed read-only - no build or
 formatting command here writes into it. The engine builder likewise leaves
-the sibling MicroPython checkout unchanged: it uses the existing `cmods`
-transactional overlay, and removes the temporary `vstaudio` module link on
-exit, including after a failed build.
+the sibling MicroPython checkout unchanged: it uses the build workspace's
+existing transactional overlay, and removes the temporary `vstaudio` module
+link on exit, including after a failed build.
 
 ## Security: what the shipped engine cannot do
 
@@ -346,7 +347,7 @@ Compositions, instruments, and racks are Python code, and some of it —
 `scan_plugins.py` reading module declarations — runs at plugin-scan time,
 before you consciously play anything. Because people share pieces, the
 shipped sidecar engine is a deliberately narrow interpreter: **no sockets,
-no SSL, and no FFI** (the windows build skips the cmods networking and FFI
+no SSL, and no FFI** (the windows build skips the networking and FFI
 overlays; the Linux build compiles them out — see
 `scripts/build-micropython-engine.sh` and the `vst3-engine` profile in
 `micropython-pydevices`). A hostile script therefore has no exfiltration
