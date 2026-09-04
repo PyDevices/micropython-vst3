@@ -493,8 +493,7 @@ TRACKS = [
     {
         "name": "LinnDrum", "script": "linndrum.py", "gain_db": -7.0,
         "pan": 0.0, "notes": drum_notes(),
-        "macros": {0: 0.75, 1: 0.45, 2: 0.55, 3: 0.5, 4: 0.6, 6: 0.5,
-                   14: 0.35, 15: 0.5},
+        "macros": {},
         "vol": [(bar(13), 0.7), (bar(21), 1.0), (bar(45), 0.8),
                 (bar(49), 1.0), (bar(53), 1.08), (bar(73), 1.0)],
         "macro_env": {},

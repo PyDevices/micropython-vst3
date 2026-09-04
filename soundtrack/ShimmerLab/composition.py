@@ -139,18 +139,18 @@ FX_SHIMMER_WIDE = {
 TRACKS = [
     {
         # Exactly Perihelion's settings, only louder and on its own.
-        "name": "A Air Swell", "script": "shimmer.py", "gain_db": -9.3,
+        "name": "A Air Swell", "script": "cs80.py", "gain_db": -9.3,
         "pan": 0.1, "notes": variant_notes(),
-        "macros": {0: 0.55, 1: 0.7},
+        "macros": {},
         "vol": [(bar(1), 1.0)],
         "macro_env": {},
         "effects": [FX_SPACE],
     },
     {
         # Same noise engine, band tracking the note, focused enough to sing.
-        "name": "B Tuned Air", "script": "tuned_air.py", "gain_db": -8.8,
+        "name": "B Tuned Air", "script": "fs1r.py", "gain_db": -8.8,
         "pan": -0.1, "notes": variant_notes(),
-        "macros": {0: 0.5, 1: 0.7, 2: 0.72, 3: 0.6},
+        "macros": {},
         "vol": [(bar(1), 1.0)],
         "macro_env": {},
         "effects": [FX_SPACE_OPEN],
@@ -164,8 +164,7 @@ TRACKS = [
         # octave down, which measured as the loudest thing in the variant -
         # 87 Hz under a chord whose lowest note is 147. A shimmer is the air
         # above a mix, not another thing competing with the bass in it.
-        "macros": {0: 0.95, 1: 0.3, 2: 0.85, 3: 0.6, 4: 0.55, 5: 0.7,
-                   6: 0.5, 7: 0.35, 8: 0.25, 9: 0.65, 10: 0.0, 11: 0.5},
+        "macros": {},
         "vol": [(bar(1), 1.0)],
         "macro_env": {},
         "effects": [FX_SHIMMER],
@@ -175,8 +174,7 @@ TRACKS = [
         "pan": -0.05, "notes": variant_notes(velocity=0.6),
         # Volume, violin, viola, cello, chorus depth, attack, release,
         # crescendo, tune.
-        "macros": {0: 0.68, 1: 0.7, 2: 0.5, 3: 0.35, 4: 0.75, 5: 0.6,
-                   6: 0.7, 7: 0.4, 8: 0.5},
+        "macros": {},
         "vol": [(bar(1), 1.0)],
         "macro_env": {},
         "effects": [FX_SHIMMER_WIDE],
