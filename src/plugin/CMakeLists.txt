@@ -1,5 +1,15 @@
 set(MPVST_PLUGIN_TARGET MicroPythonVST3)
 
+# The Windows bundle folder's Explorer icon. Left unset, the SDK defaults this
+# to cmake/templates/VST_Logo_Steinberg.ico (SMTG_AddVST3Library.cmake) and
+# copies it into the bundle root as PlugIn.ico with a desktop.ini beside it, so
+# a plug-in that never asked for one ships 254 KB of Steinberg's mark. Ours is
+# the same .ico the sidecar executable wears, so one file covers both Windows
+# surfaces. Point it at a path that does not exist to suppress the step
+# entirely - the SDK only adds the icon `if(EXISTS ...)`.
+set(SMTG_PACKAGE_ICON_PATH "${CMAKE_SOURCE_DIR}/installer/art/mpvst.ico"
+    CACHE FILEPATH "Icon the .vst3 bundle folder wears in Windows Explorer")
+
 add_library(mpvst_sidecar_transport STATIC
     source/sidecar_transport.cpp
     source/sidecar_transport.h

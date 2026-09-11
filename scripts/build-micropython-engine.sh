@@ -25,11 +25,17 @@ done
 # is then the builder's own informed choice, not the shipped default.
 engine_overlay_skip=""
 engine_make_extra=""
+# The windows executable wears our icon rather than MicroPython's. One .ico
+# serves both Windows surfaces: this, and the bundle folder icon the VST3 SDK
+# would otherwise fill with Steinberg's logo (see src/plugin/CMakeLists.txt).
+# Placeholder art - installer/art/README.md says what it is and how to replace it.
+engine_icon=""
 case "$port" in
     # mkrules.mk appends .exe itself for mingw targets, so PROG must be the
     # bare name; the installed artifact still carries the extension.
     windows) prog_name=micropython-vst-engine; engine_name=micropython-vst-engine.exe; variant=dev
-             engine_overlay_skip="0001 0003" ;;
+             engine_overlay_skip="0001 0003"
+             engine_icon="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/installer/art/mpvst.ico" ;;
     unix)    prog_name=micropython-vst-engine; engine_name=micropython-vst-engine; variant=standard
              engine_make_extra="MICROPY_PY_SOCKET=0 MICROPY_PY_SSL=0 MICROPY_PY_FFI=0" ;;
     *) echo "error: unsupported port '$port'" >&2; exit 2 ;;
@@ -79,11 +85,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
+build_args=(--port "$port" --variant "$variant")
+# Only the windows port has anywhere to put an icon; build_mp.sh refuses the
+# flag on the others rather than ignoring it, so it is passed only here.
+[[ -n "$engine_icon" ]] && build_args+=(--icon "$engine_icon")
+
 BUILD=build-vst-engine \
 PROG="$prog_name" \
 MP_OVERLAY_SKIP="$engine_overlay_skip" \
 MP_MAKE_EXTRA="$engine_make_extra" \
-    "$cmods_dir/build_mp.sh" --port "$port" --variant "$variant"
+    "$cmods_dir/build_mp.sh" "${build_args[@]}"
 
 install -m 755 \
     "$mp_dir/ports/$port/build-vst-engine/$engine_name" \
