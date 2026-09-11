@@ -283,9 +283,18 @@ bool SidecarTransport::launchEngine()
         // allocates without bound should fail inside its own sidecar with a
         // MemoryError the host reports as a script error, never by growing
         // until it disturbs the DAW.
-        const auto heapBytes = environmentValue("MPVST_HEAP_BYTES");
-        if (!heapBytes.empty())
-            arguments = {"-X", "heapsize=" + heapBytes};
+        //
+        // The default is 8 MiB rather than the interpreter's own ~2 MiB,
+        // which is not enough to run the library we ship against: importing
+        // audioeffects costs 256 KiB and Convolution Reverb's default
+        // impulse is a single 1.5 MiB allocation, so the plug-in loaded and
+        // then played silence. A cap is still a cap - this one is sized so
+        // that the components' own defaults fit inside it with room for a
+        // rack of them, and a runaway script still dies in its sidecar.
+        auto heapBytes = environmentValue("MPVST_HEAP_BYTES");
+        if (heapBytes.empty())
+            heapBytes = "8388608";
+        arguments = {"-X", "heapsize=" + heapBytes};
         arguments.push_back((directory / "micropython_vst_bootstrap.py").string());
         arguments.push_back(mappingName_);
         arguments.push_back(std::to_string(mappingBytes_));

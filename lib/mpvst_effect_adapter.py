@@ -33,6 +33,17 @@ effect = None
 module_name = None
 class_name = None
 
+# The node the engine is currently pulling from, so `rebind()` can tell a
+# rebuilt graph from an unchanged one without asking the engine.
+bound_output = None
+
+
+def bind(node):
+    """Hand `node` to the engine and remember that we did."""
+    global bound_output
+    bound_output = node
+    vstaudio.output(node)
+
 
 def _midi_byte(value):
     """Convert a normalized VST scalar to the provider's MIDI data byte."""
@@ -48,6 +59,22 @@ def attach(factory, **kwargs):
     labels = getattr(effect, "MACRO_LABELS", ())
     patches = getattr(effect, "PATCHES", {})
     if labels or patches:
+        # A component may REBUILD its graph when a setting changes, and then
+        # `effect.output` is a different object from the one the engine was
+        # handed - the old node is still reachable from our reference but
+        # nothing feeds it any more, so the plug-in goes silent for good.
+        # Phaser and Vibrato both do this, and the host pushes every macro
+        # at 0.5 the moment a script loads, so it happened before a note was
+        # ever played. Rebinding costs one identity test per event and is
+        # safe mid-stream: `vstaudio.output()` swaps the root pointer and
+        # resets the pull cursor without resetting the graph.
+        def rebind():
+            global bound_output
+            current = effect.output
+            if current is not bound_output:
+                bound_output = current
+                vstaudio.output(current)
+
         def dispatch(event_type, channel, note_id, data0, value0, value1,
                      sample_position):
             # Effects take no notes. A parameter change is the only event
@@ -73,10 +100,11 @@ def attach(factory, **kwargs):
                 effect.poly_pressure(data0, _midi_byte(value0), channel,
                                      note_id,
                                      sample_position)
+            rebind()
 
         vstaudio.on_event(dispatch)
 
-    vstaudio.output(effect.output)
+    bind(effect.output)
     return effect
 
 

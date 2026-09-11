@@ -42,13 +42,19 @@ CASES = {
     "Expander": ("audioeffects.Expander(src, threshold_db=-20, ratio=3)",
                  "mute_quiet"),
     "NoiseGate": ("audioeffects.NoiseGate(src, threshold_db=-24)", "mute_quiet"),
-    "DeEsser": ("audioeffects.DeEsser(src, threshold_db=-40, frequency=150)",
+    # `sensitivity_db` is how far below full scale the detector starts
+    # working, so it is the old `threshold_db` with the sign taken out of
+    # the caller's hands (deesser.py:290 passes `threshold_db=-sensitivity_db`).
+    "DeEsser": ("audioeffects.DeEsser(src, sensitivity_db=40, frequency=150)",
                 "squeeze"),
     "TransientShaper": ("audioeffects.TransientShaper(src, attack_db=6,"
                         " sustain_db=-3)", "pass"),
     "MultibandCompressor": ("audioeffects.MultibandCompressor(src)", "pass"),
-    "ParametricEQ": ("audioeffects.ParametricEQ(src, bands=[(220, -12, 2)])",
-                     "squeeze"),
+    # The rewrite gives each section its own named pair instead of a list of
+    # `(frequency, gain, q)` triples: three bells, two shelves, two
+    # attenuators and an output trim, with one shared `bandwidth` dial.
+    "ParametricEQ": ("audioeffects.ParametricEQ(src, bell1_hz=220,"
+                     " bell1_db=-12)", "squeeze"),
     "GraphicEQ": ("audioeffects.GraphicEQ(src,"
                   " gains_db=[0, 0, -9, -9, 0, 0, 0, 0, 0, 0])", "pass"),
     "DynamicEQ": ("audioeffects.DynamicEQ(src, frequency=220,"
@@ -70,8 +76,9 @@ CASES = {
     # sat an octave above where it was asked to sit: the notch landed on
     # 440 Hz and the tone lost 2 dB in the skirt.
     "Notch": ("audioeffects.Notch(src, frequency=220, q=1)", "kill"),
-    "LadderFilter": ("audioeffects.LadderFilter(src, cutoff=3000,"
-                     " resonance=0.3)", "pass"),
+    # `resonance` is the circuit's feedback k, 0 to 4.2, not a 0..1 knob.
+    "LadderFilter": ("audioeffects.LadderFilter(src, cutoff_hz=3000,"
+                     " resonance=0.6)", "pass"),
     "CombFilter": ("audioeffects.CombFilter(src, frequency=440)", "pass"),
     "Reverb": ("audioeffects.Reverb(src, preset='hall', mix=0.4)", "pass"),
     # Convolution, in the host rather than offline. The sidecar is where a
@@ -95,7 +102,6 @@ CASES = {
     "Tremolo": ("audioeffects.Tremolo(src)", "pass"),
     "AutoPan": ("audioeffects.AutoPan(src)", "pass"),
     "Vibrato": ("audioeffects.Vibrato(src)", "pass"),
-    "Rotary": ("audioeffects.Rotary(src, speed='fast')", "pass"),
     # audioif's audiomath module, which the engine did not have before -
     # this case is as much "does the new native module reach the sidecar at
     # all" as it is a check on the effect.

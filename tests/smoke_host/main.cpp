@@ -384,11 +384,20 @@ bool processLifecycle(const PluginFactory& factory, const ClassInfo& classInfo,
     }
     std::cout << "HOOK latency.fixed_pipeline OK: 512 samples\n";
     std::cout << "HOOK engine.status_parameter OK: ready=1 error=0\n";
-    // The note-on at offset 64 must emerge at 512 + 64 after the fixed
+    // The note-on at offset 64 must emerge at 512 + 64 + 64 after the fixed
     // pipeline, so audible 220 Hz output also proves the event reached the
     // Python synthio graph.
+    //
+    // The third 64 is synthio's zero-crossing loudness gate, taken from
+    // CircuitPython 10.3.0 in audioif 4ec5718: the level a voice actually
+    // renders at is state, it starts at zero on a fresh voice, and it is
+    // forced to the pending value at the next block boundary. A pressed
+    // note is therefore silent for exactly one block before it sounds. The
+    // window stays four samples wide because the onset is still sample
+    // deterministic - a note-on landing on the wrong sample still fails
+    // here, which is what this hook is for.
     if (zeroCrossings < 5 || zeroCrossings > 9 ||
-        firstAudibleSample < 576 || firstAudibleSample > 580)
+        firstAudibleSample < 640 || firstAudibleSample > 644)
     {
         std::cerr << "HOOK engine.micropython_synthio FAIL: "
                   << "zero_crossings=" << zeroCrossings
@@ -2015,9 +2024,16 @@ bool namedPluginPlays(const PluginFactory& factory, const std::string& wanted,
     AudioBusBuffers output {};
     output.numChannels = 2;
     output.channelBuffers32 = channels;
+    // The input bus gets its own buffers rather than aliasing the output.
+    // Sharing them would mean a plug-in that writes nothing at all reads as
+    // "played", because the excitation we wrote would still be sitting in
+    // the buffer we then listen to.
+    std::array<float, 256> inLeft {};
+    std::array<float, 256> inRight {};
+    Sample32* inChannels[] = {inLeft.data(), inRight.data()};
     AudioBusBuffers input {};
     input.numChannels = 2;
-    input.channelBuffers32 = channels;
+    input.channelBuffers32 = inChannels;
     ProcessData data {};
     data.processMode = kRealtime;
     data.symbolicSampleSize = kSample32;
@@ -2036,16 +2052,25 @@ bool namedPluginPlays(const PluginFactory& factory, const std::string& wanted,
     for (int block = 0; block < 200 && !heard; ++block)
     {
         events.clear();
+        if (effect && block >= 20)
+        {
+            // An effect has nothing to make on its own: feed it something,
+            // and keep feeding it. A single block was not enough material
+            // for an effect whose circuit has to settle before it passes
+            // anything - a ring modulator's squelch gate never opens for a
+            // 5 ms burst, and a vibrato's delay line is still filling - so
+            // the sweep reported working effects as silent. A DAW hands a
+            // plug-in a continuous stream; so does this.
+            const auto phase = static_cast<float>(block - 20) *
+                               static_cast<float>(left.size());
+            for (std::size_t frame = 0; frame < inLeft.size(); ++frame)
+                inLeft[frame] = inRight[frame] =
+                    0.4F * std::sin((phase + static_cast<float>(frame)) *
+                                    0.05F);
+        }
         if (block == 20)
         {
-            if (effect)
-            {
-                // An effect has nothing to make on its own: feed it something.
-                for (std::size_t frame = 0; frame < left.size(); ++frame)
-                    left[frame] = right[frame] =
-                        0.4F * std::sin(static_cast<float>(frame) * 0.05F);
-            }
-            else
+            if (!effect)
             {
                 // Middle C and the General MIDI bass drum. A drum machine
                 // maps neither the whole keyboard nor middle C - TR-707 and
