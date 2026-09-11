@@ -37,7 +37,10 @@ cp "$repo_dir/LICENSE" "$stage_dir/$name/"
 mkdir -p "$dist_dir"
 rm -f -- "$archive"
 (cd "$stage_dir" && cmake -E tar cf "$archive" --format=zip "$name")
-sha256sum "$archive" > "$archive.sha256"
+# Written with the bare filename, not the build machine's path: a
+# sidecar that names /home/someone/... cannot be verified by anyone
+# who downloads it, because sha256sum -c looks for that exact path.
+(cd "$(dirname "$archive")" && sha256sum "$(basename "$archive")") > "$archive.sha256"
 echo "Created $archive"
 
 # The installer is built from the same staging tree the archive was just
@@ -53,7 +56,7 @@ if [[ -x "$repo_dir/.deps/nsis/usr/bin/makensis" || -n "${MAKENSIS:-}" ]]; then
         -DMPVST_OUTFILE="$installer" \
         "$repo_dir/installer/windows.nsi" >/dev/null \
         || { echo "error: makensis failed" >&2; exit 1; }
-    sha256sum "$installer" > "$installer.sha256"
+    (cd "$(dirname "$installer")" && sha256sum "$(basename "$installer")") > "$installer.sha256"
     echo "Created $installer"
 else
     echo "NSIS not fetched (scripts/fetch-nsis.sh); skipping the installer"

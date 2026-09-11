@@ -44,6 +44,9 @@ chmod 755 "$stage_dir/$name/MPVST.vst3/Contents/x86_64-linux/MPVST.so"
 mkdir -p "$dist_dir"
 rm -f -- "$archive"
 tar -czf "$archive" -C "$stage_dir" "$name"
-sha256sum "$archive" > "$archive.sha256"
+# Written with the bare filename, not the build machine's path: a
+# sidecar that names /home/someone/... cannot be verified by anyone
+# who downloads it, because sha256sum -c looks for that exact path.
+(cd "$(dirname "$archive")" && sha256sum "$(basename "$archive")") > "$archive.sha256"
 
 echo "Created $archive"
