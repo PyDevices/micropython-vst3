@@ -18,7 +18,7 @@ build=1
 source "$repo_dir/scripts/windows-paths.sh"
 mpvst_load_windows_paths || exit 1
 
-win_build=${MPVST_WIN_BUILD:-$WIN_TEMP/micropython-vst3-build}
+win_build=${MPVST_WIN_BUILD:-$WIN_TEMP/mpvst-build}
 vst3_dir=${MPVST_VST3_DIR:-$WIN_LOCALAPPDATA/Programs/Common/VST3}
 bundle_src="$win_build/VST3/Release/MPVST.vst3"
 cmake_exe="$repo_dir/.deps/cmake-4.4.2-windows-x86_64/bin/cmake.exe"

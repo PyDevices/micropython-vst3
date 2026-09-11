@@ -262,7 +262,7 @@ bool SidecarTransport::launchEngine()
             if (materializedScriptPath_.empty())
             {
                 std::ostringstream name;
-                name << "micropython-vst3-" << std::hex << instanceNonce_ << ".py";
+                name << "mpvst-" << std::hex << instanceNonce_ << ".py";
                 const auto path = std::filesystem::temp_directory_path() / name.str();
                 std::ofstream output(path, std::ios::binary | std::ios::trunc);
                 if (!output ||

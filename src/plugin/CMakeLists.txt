@@ -175,6 +175,9 @@ endif()
 smtg_target_configure_version_file(${MPVST_PLUGIN_TARGET})
 target_include_directories(${MPVST_PLUGIN_TARGET} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 smtg_target_set_bundle(${MPVST_PLUGIN_TARGET}
+    # FROZEN, like CID_NAMESPACE in lib/mpvst_scan_plugins.py: a bundle
+    # identifier is an identity a host may have recorded, not a path.
+    # The repository became PyDevices/mpvst on 2026-09-11; this stayed.
     BUNDLE_IDENTIFIER "org.pydevices.micropython-vst3"
     COMPANY_NAME "PyDevices"
 )

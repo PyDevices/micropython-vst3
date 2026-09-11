@@ -100,6 +100,12 @@ MACROS_COMMENT = "// mpvst-macros:"
 # Renaming a file therefore makes a different plug-in and orphans projects
 # that used the old one. That is the documented rule, and it is the price of
 # not having to hand out identifiers.
+# FROZEN. Every class ID is derived from this string, so changing it
+# changes all of them and a saved project stops finding the plug-in it
+# had on a track. It contains the old repository name because that is
+# what the namespace was minted as; it is an identity, not a reference,
+# and a stale-looking identity is a correct one. The repository became
+# PyDevices/mpvst on 2026-09-11 and this deliberately did not move.
 CID_NAMESPACE = "PyDevices/micropython-vst3/plugin/1"
 
 # The classes compiled into the binary. The scan cannot discover them - they
