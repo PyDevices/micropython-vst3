@@ -297,8 +297,12 @@ instance, `MPVST_SCRIPT_PATH` selects a developer script, and
   the `install.sh` inside it. It copies the bundle to `~/.vst3`; `--dir`
   puts it somewhere else and `--uninstall` removes it.
 
-Then rescan plug-ins in your host. The bundle registers 98 named plug-ins -
-instruments and effects - plus the two script hosts.
+Then rescan plug-ins in your host - and make it a real rescan, not a
+restart. A host caches what it found last time against the bundle's
+contents, and REAPER was observed holding entries from an earlier build
+after an install (Preferences -> Plug-ins -> VST -> Re-scan clears it).
+The bundle registers 98 named plug-ins - 53 instruments and 45 effects -
+plus the two script hosts, for 100 classes in all.
 
 **Building a release.** `VERSION` at the repository root is the single
 source of truth - CMake and both packaging scripts read it, and editing it
