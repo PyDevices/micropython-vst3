@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """Draw the provisional MPVST icon.
 
-This is a placeholder and is meant to look like one: flat, one colour, the
-letters knocked out of a rounded tile so the shape still reads at 16 px.
+This is a placeholder and is meant to look like one: a flat rounded tile with
+the letters on it, stacked so they still read at 16 px.
+
+The letters are PAINTED, not knocked out. A knockout looks tidy but shows
+whatever is behind the icon through the holes, and a classic Windows .ico has
+no light/dark variants - one file is shown on the taskbar, in Explorer, in
+file dialogs and on whatever background each of those happens to use. Painting
+the letters makes the icon look the same everywhere.
 It exists so the icon *mechanism* can be finished and exercised before
 anyone commits to a mark. Replacing it is one file - rerun this with
 different letters or colour, or drop a real .ico in its place; nothing
@@ -19,7 +25,9 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-TILE = (0x2E, 0x5C, 0x8A, 0xFF)          # one flat colour, nothing else
+TILE = (0x2E, 0x5C, 0x8A, 0xFF)          # the tile
+INK = (0xF2, 0xF5, 0xF8, 0xFF)           # the letters, opaque so the
+                                          # background can never show through
 LINES = ("MP", "VST")                     # the letters, stacked so they read small
 SIZES = (256, 128, 64, 48, 32, 16)
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
@@ -38,10 +46,7 @@ def render():
         (MARGIN, MARGIN, CANVAS - MARGIN - 1, CANVAS - MARGIN - 1),
         radius=RADIUS, fill=TILE)
 
-    # The letters are a hole in the tile, not ink on top of it, so the icon
-    # stays one colour and reads on a light or a dark background.
-    mask = Image.new("L", (CANVAS, CANVAS), 0)
-    pen = ImageDraw.Draw(mask)
+    pen = draw
     inner = CANVAS - 2 * MARGIN - CANVAS // 8
     for index, text in enumerate(LINES):
         size = inner // 2
@@ -55,10 +60,8 @@ def render():
         box_top = MARGIN + CANVAS // 16 + index * height
         pen.text((CANVAS // 2 - (right - left) / 2 - left,
                   box_top + (height - (bottom - top)) / 2 - top),
-                 text, font=font, fill=255)
+                 text, font=font, fill=INK)
 
-    tile.putalpha(Image.composite(Image.new("L", (CANVAS, CANVAS), 0),
-                                  tile.getchannel("A"), mask))
     return tile
 
 
