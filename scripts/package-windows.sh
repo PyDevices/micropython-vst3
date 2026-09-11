@@ -33,9 +33,29 @@ mkdir -p "$stage_dir/$name"
 cp -a "$bundle" "$stage_dir/$name/"
 cp "$repo_dir/README.md" "$stage_dir/$name/"
 cp "$repo_dir/docs/windows-workflow.md" "$stage_dir/$name/"
+cp "$repo_dir/LICENSE" "$stage_dir/$name/"
 
 mkdir -p "$dist_dir"
 rm -f -- "$archive"
 (cd "$stage_dir" && cmake -E tar cf "$archive" --format=zip "$name")
 sha256sum "$archive" > "$archive.sha256"
 echo "Created $archive"
+
+# The installer is built from the same staging tree the archive was just
+# made from, so the two cannot ship different bytes. It is skipped rather
+# than fatal when NSIS is absent: the archive is a complete delivery on its
+# own for anyone who would rather copy the bundle in by hand.
+installer="$dist_dir/$name-windows-x86_64-setup.exe"
+if [[ -x "$repo_dir/.deps/nsis/usr/bin/makensis" || -n "${MAKENSIS:-}" ]]; then
+    rm -f -- "$installer"
+    "$repo_dir/scripts/nsis-env.sh" \
+        -DMPVST_VERSION="$version" \
+        -DMPVST_STAGE="$stage_dir/$name" \
+        -DMPVST_OUTFILE="$installer" \
+        "$repo_dir/installer/windows.nsi" >/dev/null \
+        || { echo "error: makensis failed" >&2; exit 1; }
+    sha256sum "$installer" > "$installer.sha256"
+    echo "Created $installer"
+else
+    echo "NSIS not fetched (scripts/fetch-nsis.sh); skipping the installer"
+fi

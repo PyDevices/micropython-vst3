@@ -286,26 +286,40 @@ instance, `MPVST_SCRIPT_PATH` selects a developer script, and
 
 ## Releases
 
-Nothing is published yet: `VERSION` currently holds `0.0.1` as a
-placeholder, and every archive `package-linux.sh`/`package-windows.sh`
-produce is built and distributed locally, by hand. A real release channel
-is expected to arrive with the planned post-program rename/refactor, not
-before.
+**Installing a release.** Nothing has to be built to use the plug-in.
 
-`VERSION` at the repository root is the single source of truth - CMake and
-both packaging scripts read it, so a binary and the archive around it
+- **Windows:** run `MicroPythonVST3-<version>-windows-x86_64-setup.exe`.
+  It installs for the current user, so there is no UAC prompt, and it
+  appears in Add/Remove Programs with a working uninstaller. Close your DAW
+  first: a host that has the plug-in loaded holds its files open.
+- **Linux:** unpack `MicroPythonVST3-<version>-linux-x86_64.tar.gz` and run
+  the `install.sh` inside it. It copies the bundle to `~/.vst3`; `--dir`
+  puts it somewhere else and `--uninstall` removes it.
+
+Then rescan plug-ins in your host. The bundle registers 98 named plug-ins -
+instruments and effects - plus the two script hosts.
+
+**Building a release.** `VERSION` at the repository root is the single
+source of truth - CMake and both packaging scripts read it, and editing it
+re-runs CMake's configure step, so a binary and the archive around it
 cannot disagree about which version they are.
 
 ```bash
+./scripts/fetch-nsis.sh          # once, for the Windows installer
 ./scripts/package-linux.sh
 ./scripts/package-windows.sh
 ```
 
 Each produces a versioned archive plus a SHA-256 sidecar under the ignored
-`dist/`, after verifying the bundle carries its engine and bootstrap.
+`dist/`, after verifying the bundle carries its engine and bootstrap;
+`package-windows.sh` also builds the installer, from the same staging tree
+the archive is made from, so the two cannot ship different bytes. The
+installer is built by NSIS, which cross-builds a Windows installer from
+Linux - `fetch-nsis.sh` unpacks it into `.deps/` rather than installing it
+on the machine, so it needs no root and removing `.deps` removes it.
 See [docs/windows-workflow.md](docs/windows-workflow.md) and
-[docs/linux-workflow.md](docs/linux-workflow.md) for installation and the
-desktop-script security model.
+[docs/linux-workflow.md](docs/linux-workflow.md) for the development
+install paths and the desktop-script security model.
 
 This repository deliberately has no hosted CI. The 14-test `ctest` suite
 (lint included) is the gate, and it is run locally - by a developer before
@@ -389,8 +403,8 @@ saying so.
 - The 2,080 hidden MIDI parameters are standards-compliant and
   validator-clean but unprofiled for scan and project-load overhead in
   real DAWs.
-- Installer packaging, code signing, and uninstall flows beyond copying
-  and removing the bundle have not been built.
+- The installers are not code signed, so Windows SmartScreen warns on
+  first run and macOS is not a target at all.
 - The Linux REAPER used for testing runs under WSLg with no audio device.
   Real-time playback on Linux hardware has not been exercised.
 - REAPER is the only DAW tested.

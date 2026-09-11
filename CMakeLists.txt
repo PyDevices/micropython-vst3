@@ -4,6 +4,11 @@ cmake_minimum_required(VERSION 3.25)
 # version: CMake, scripts/package-linux.sh and scripts/package-windows.sh
 # all read it, so a release cannot ship a binary and an archive that
 # disagree about which version they are.
+# Editing VERSION must re-run configure, or `cmake --build` on an existing
+# tree keeps stamping the old number into a release build. Found cutting
+# 0.1.0: the Linux tree was reconfigured by hand and the Windows one was not.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" MPVST_VERSION)
 string(STRIP "${MPVST_VERSION}" MPVST_VERSION)
 if(NOT MPVST_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")

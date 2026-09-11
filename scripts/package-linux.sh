@@ -32,6 +32,11 @@ mkdir -p "$stage_dir/$name"
 cp -a "$bundle" "$stage_dir/$name/"
 cp "$repo_dir/README.md" "$stage_dir/$name/"
 cp "$repo_dir/docs/linux-workflow.md" "$stage_dir/$name/"
+cp "$repo_dir/LICENSE" "$stage_dir/$name/"
+# Named install.sh in the archive: what someone looks for after unpacking is
+# not a file named for the platform they already chose.
+cp "$repo_dir/installer/install-linux.sh" "$stage_dir/$name/install.sh"
+chmod 755 "$stage_dir/$name/install.sh"
 
 # The engine and the shared object must stay executable through the archive.
 chmod 755 "$stage_dir/$name/MicroPythonVST3.vst3/Contents/x86_64-linux/micropython-vst-engine"
