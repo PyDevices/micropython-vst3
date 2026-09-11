@@ -37,6 +37,7 @@ without an editor attached.
 | `tools/` | developer tooling - `piece.py` and `render_preview.py` for compositions, the `harness.py` CPython sidecar stand-in, and the library test sweeps |
 | `tests/` | the ctest suite and `smoke_host/`, a minimal VST3 host that loads the bundle with no DAW |
 | `scripts/` | build, packaging and setup automation |
+| `installer/` | what a user runs rather than builds: `windows.nsi` (the NSIS installer, cross-built from Linux) and `install-linux.sh`, which ships inside the tarball as `install.sh` |
 | `reaper/` + `reaper.sh` | everything that drives REAPER. Deletable as a unit; nothing outside it depends on it |
 | `soundtrack/` | example pieces, each with its own `composition.py` |
 
