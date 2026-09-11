@@ -11,10 +11,10 @@
 // name - that has to arrive byte for byte. Converting it twice to make a
 // message look tidy is a way to lose it.
 
-namespace PyDevices::MicroPythonVST3 {
+namespace PyDevices::MPVST {
 
 constexpr const char* kUiMappingMessageId = "MPVSTUiMapping";
 constexpr const char* kUiMappingNameAttribute = "name";
 constexpr const char* kUiMappingGenerationAttribute = "generation";
 
-} // namespace PyDevices::MicroPythonVST3
+} // namespace PyDevices::MPVST

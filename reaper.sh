@@ -58,12 +58,12 @@ elif [[ -f "$(dirname "$reaper_exe")/reaper.ini" ]]; then
 else
     reaper_resource=$WIN_APPDATA/REAPER
 fi
-bundle=${MPVST_VST3_DIR:-$WIN_LOCALAPPDATA/Programs/Common/VST3}/MicroPythonVST3.vst3
+bundle=${MPVST_VST3_DIR:-$WIN_LOCALAPPDATA/Programs/Common/VST3}/MPVST.vst3
 heap_bytes=${MPVST_HEAP_BYTES:-33554432}
 
 test -e "$reaper_exe" || { echo "error: REAPER not found at $reaper_exe" >&2; exit 1; }
 test -x "$reaper_exe" || chmod +x "$reaper_exe"
-test -d "$bundle" || { echo "error: MicroPythonVST3.vst3 not installed at $bundle" >&2; exit 1; }
+test -d "$bundle" || { echo "error: MPVST.vst3 not installed at $bundle" >&2; exit 1; }
 
 read -r title render_seconds n_tracks n_instances n_envs <<< "$(python3 - <<PYEOF
 import sys
@@ -82,7 +82,7 @@ stop_reaper() {
     # Force-killing REAPER orphans its sidecar engine processes, so stop
     # those explicitly as well.
     powershell.exe -NoProfile -Command \
-        "Get-Process reaper,micropython-vst-engine -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue" \
+        "Get-Process reaper,mpvst-engine -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue" \
         >/dev/null 2>&1 || true
 }
 

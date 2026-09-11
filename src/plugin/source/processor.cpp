@@ -11,7 +11,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace PyDevices::MicroPythonVST3 {
+namespace PyDevices::MPVST {
 
 using namespace Steinberg;
 using namespace Steinberg::Vst;
@@ -745,4 +745,4 @@ tresult PLUGIN_API Processor::getState (IBStream* state)
     return kResultOk;
 }
 
-} // namespace PyDevices::MicroPythonVST3
+} // namespace PyDevices::MPVST

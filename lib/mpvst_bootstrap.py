@@ -1,6 +1,6 @@
 import sys
 
-import mpvst_script
+import mpvst_script_namespace
 import vstaudio
 
 
@@ -32,9 +32,9 @@ def main():
     editor = None
     if ui_mapping:
         try:
-            import vst_editor
+            import mpvst_editor
 
-            editor = vst_editor.start(ui_mapping, script_path)
+            editor = mpvst_editor.start(ui_mapping, script_path)
         except Exception as exc:
             # An editor that will not even start must not stop the instance
             # from playing. The failure is reported the same way a script
@@ -50,7 +50,7 @@ def main():
                 source = script_file.read()
             exec(compile(source, script_path, "exec"), namespace, namespace)
             # What the script declared about itself, for the panel to read.
-            mpvst_script.namespace = namespace
+            mpvst_script_namespace.namespace = namespace
         except Exception as exc:
             vstaudio.error("{}: {}".format(type(exc).__name__, exc))
             return False

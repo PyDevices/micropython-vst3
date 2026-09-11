@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install (or remove) the MicroPython VST3 plug-in for the current user.
+# Install (or remove) the MPVST plug-in for the current user.
 #
 #   ./install.sh              install into ~/.vst3
 #   ./install.sh --dir DIR    install into DIR instead
@@ -11,7 +11,7 @@
 # run with the rights to write there.
 set -euo pipefail
 
-bundle_name="MicroPythonVST3.vst3"
+bundle_name="MPVST.vst3"
 source_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 target_dir="$HOME/.vst3"
 uninstall=0
@@ -46,8 +46,8 @@ fi
 # A host that has the plug-in loaded holds these open, and so does any
 # sidecar engine it left behind; replacing a bundle underneath a running DAW
 # is how you get a half-written one.
-if pgrep -x micropython-vst-engine >/dev/null 2>&1; then
-    echo "error: a micropython-vst-engine sidecar is still running. Close" \
+if pgrep -x mpvst-engine >/dev/null 2>&1; then
+    echo "error: a mpvst-engine sidecar is still running. Close" \
          "your DAW (and kill any orphaned engine) before installing." >&2
     exit 1
 fi
@@ -57,13 +57,21 @@ mkdir -p "$target_dir"
 # worse than one that is simply absent, because a host will load it.
 rm -rf -- "$installed"
 cp -a "$source_dir/$bundle_name" "$installed"
-chmod 755 "$installed/Contents/x86_64-linux/micropython-vst-engine" \
-          "$installed/Contents/x86_64-linux/MicroPythonVST3.so"
+chmod 755 "$installed/Contents/x86_64-linux/mpvst-engine" \
+          "$installed/Contents/x86_64-linux/MPVST.so"
+
+# Finished should mean finished: moduleinfo.json is what the host reads to
+# enumerate the plug-ins. It ships generated, and a failure here leaves that
+# valid file in place - so it is reported, not fatal. Same command the README
+# gives for rescanning after adding a script of your own.
+if ! (cd "$installed/Contents/x86_64-linux" && ./mpvst-engine mpvst_scan_plugins.py >/dev/null); then
+    echo "warning: the plug-in scan failed; the list that shipped in the" \
+         "bundle is unchanged." >&2
+fi
 
 echo "installed $installed"
 echo
-echo "Start your host and rescan plug-ins. MicroPython VST3 registers 98"
-echo "named plug-ins - instruments and effects - plus the two script hosts."
+echo "Start your host and rescan plug-ins."
 # The hint has to name the directory when it is not the default, or someone
 # who installed elsewhere is told to run a command that removes nothing.
 if [[ "$target_dir" == "$HOME/.vst3" ]]; then

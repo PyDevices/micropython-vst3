@@ -11,7 +11,7 @@
 #include <chrono>
 #include <thread>
 
-namespace PyDevices::MicroPythonVST3 {
+namespace PyDevices::MPVST {
 
 class SidecarTransport final
 {
@@ -178,4 +178,4 @@ private:
     std::thread supervisor_;
 };
 
-} // namespace PyDevices::MicroPythonVST3
+} // namespace PyDevices::MPVST

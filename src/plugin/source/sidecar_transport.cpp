@@ -21,7 +21,7 @@
 #include <dlfcn.h>
 #endif
 
-namespace PyDevices::MicroPythonVST3 {
+namespace PyDevices::MPVST {
 
 namespace {
 
@@ -84,7 +84,7 @@ std::string SidecarTransport::initialScriptSource(bool effectMode)
 {
     const auto engine = enginePath();
     if (std::filesystem::path(engine).stem().string() !=
-        "micropython-vst-engine")
+        "mpvst-engine")
         return {};
     const auto overridePath = environmentValue("MPVST_SCRIPT_PATH");
     const auto path = overridePath.empty()
@@ -103,7 +103,7 @@ std::string SidecarTransport::developerScriptPath()
 {
     const auto engine = enginePath();
     if (std::filesystem::path(engine).stem().string() !=
-        "micropython-vst-engine")
+        "mpvst-engine")
         return {};
     const auto overridePath = environmentValue("MPVST_SCRIPT_PATH");
     if (overridePath.empty())
@@ -156,14 +156,14 @@ std::string SidecarTransport::enginePath()
         return {};
     path.resize(length);
     const auto directory = std::filesystem::path(path).parent_path();
-    return (directory / "micropython-vst-engine.exe").string();
+    return (directory / "mpvst-engine.exe").string();
 #else
     Dl_info information {};
     if (dladdr(reinterpret_cast<const void*>(&SidecarTransport::enginePath),
                &information) == 0 || information.dli_fname == nullptr)
         return {};
     const auto directory = std::filesystem::path(information.dli_fname).parent_path();
-    return (directory / "micropython-vst-engine").string();
+    return (directory / "mpvst-engine").string();
 #endif
 }
 
@@ -238,7 +238,7 @@ bool SidecarTransport::launchEngine()
 {
     const auto engine = enginePath();
     std::vector<std::string> arguments;
-    if (std::filesystem::path(engine).stem().string() == "micropython-vst-engine")
+    if (std::filesystem::path(engine).stem().string() == "mpvst-engine")
     {
         const auto directory = std::filesystem::path(engine).parent_path();
         const auto scriptOverride = environmentValue("MPVST_SCRIPT_PATH");
@@ -295,7 +295,7 @@ bool SidecarTransport::launchEngine()
         if (heapBytes.empty())
             heapBytes = "8388608";
         arguments = {"-X", "heapsize=" + heapBytes};
-        arguments.push_back((directory / "micropython_vst_bootstrap.py").string());
+        arguments.push_back((directory / "mpvst_bootstrap.py").string());
         arguments.push_back(mappingName_);
         arguments.push_back(std::to_string(mappingBytes_));
         arguments.push_back(selectedScript);
@@ -811,4 +811,4 @@ bool SidecarTransport::process(float* left, float* right, std::uint32_t frames,
     return wroteNonSilent;
 }
 
-} // namespace PyDevices::MicroPythonVST3
+} // namespace PyDevices::MPVST

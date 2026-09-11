@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace PyDevices::MicroPythonVST3 {
+namespace PyDevices::MPVST {
 
 class Editor;
 
@@ -51,4 +51,4 @@ public:
     REFCOUNT_METHODS (Steinberg::Vst::EditControllerEx1)
 };
 
-} // namespace PyDevices::MicroPythonVST3
+} // namespace PyDevices::MPVST

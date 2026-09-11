@@ -12,13 +12,13 @@
 # fails on a missing class, a renamed one, or a vendor string that drifted.
 
 execute_process(
-    COMMAND "${MPVST_ENGINE}" scan_plugins.py --write
+    COMMAND "${MPVST_ENGINE}" mpvst_scan_plugins.py
     WORKING_DIRECTORY "${MPVST_BUNDLE_BIN}"
     RESULT_VARIABLE scan_status
     OUTPUT_VARIABLE scan_output
     ERROR_VARIABLE scan_output)
 if(NOT scan_status EQUAL 0)
-    message(FATAL_ERROR "scan_plugins.py failed (${scan_status}):\n${scan_output}")
+    message(FATAL_ERROR "mpvst_scan_plugins.py failed (${scan_status}):\n${scan_output}")
 endif()
 message(STATUS "${scan_output}")
 

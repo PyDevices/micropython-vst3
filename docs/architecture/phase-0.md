@@ -10,8 +10,8 @@ not a description of what ships today.
 
 The product consists of two independently built Windows binaries:
 
-1. `MicroPythonVST3.vst3`, an MSVC-built VST3 instrument loaded into the DAW.
-2. `micropython-vst-engine.exe`, a headless MicroPython process owned by one
+1. `MPVST.vst3`, an MSVC-built VST3 instrument loaded into the DAW.
+2. `mpvst-engine.exe`, a headless MicroPython process owned by one
    processor instance.
 
 They exchange only the versioned POD data described in `ipc-v1.md`. No C++

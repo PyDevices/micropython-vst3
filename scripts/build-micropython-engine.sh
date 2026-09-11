@@ -16,7 +16,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # The engine is a deliberately narrow scripting core: compositions and racks
-# are code, and scan_plugins.py runs at DAW scan time, so the shipped
+# are code, and mpvst_scan_plugins.py runs at DAW scan time, so the shipped
 # interpreter must not reach the network (sockets/SSL) or arbitrary native
 # code (FFI). On windows those arrive as cmods overlay patches 0001/0003 —
 # skipped here; on unix they are port defaults — forced off on the make
@@ -33,10 +33,10 @@ engine_icon=""
 case "$port" in
     # mkrules.mk appends .exe itself for mingw targets, so PROG must be the
     # bare name; the installed artifact still carries the extension.
-    windows) prog_name=micropython-vst-engine; engine_name=micropython-vst-engine.exe; variant=dev
+    windows) prog_name=mpvst-engine; engine_name=mpvst-engine.exe; variant=dev
              engine_overlay_skip="0001 0003"
              engine_icon="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/installer/art/mpvst.ico" ;;
-    unix)    prog_name=micropython-vst-engine; engine_name=micropython-vst-engine; variant=standard
+    unix)    prog_name=mpvst-engine; engine_name=mpvst-engine; variant=standard
              engine_make_extra="MICROPY_PY_SOCKET=0 MICROPY_PY_SSL=0 MICROPY_PY_FFI=0" ;;
     *) echo "error: unsupported port '$port'" >&2; exit 2 ;;
 esac

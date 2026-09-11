@@ -22,13 +22,13 @@ windows_pcm_win="$windows_build_win\\reference-windows.pcm"
 
 echo "Rendering the Linux reference..."
 "$linux_build/tests/smoke_host/mpvst_smoke_host" \
-    "$linux_build/VST3/Release/MicroPythonVST3.vst3" \
+    "$linux_build/VST3/Release/MPVST.vst3" \
     --render-reference "$linux_pcm" >/dev/null
 
 echo "Rendering the Windows reference..."
 smoke_exe="$windows_build_unix/tests/smoke_host/Release/mpvst_smoke_host.exe"
 test -x "$smoke_exe" || chmod +x "$smoke_exe"
-"$smoke_exe" "$windows_build_win\\VST3\\Release\\MicroPythonVST3.vst3" \
+"$smoke_exe" "$windows_build_win\\VST3\\Release\\MPVST.vst3" \
     --render-reference "$windows_pcm_win" >/dev/null
 
 linux_hash=$(sha256sum "$linux_pcm" | cut -d' ' -f1)

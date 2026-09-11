@@ -1,4 +1,4 @@
-"""Automata - a five-movement electronic suite for the MicroPython VST3.
+"""Automata - a five-movement electronic suite for the MPVST.
 
 Twenty-four tracks, twenty-four sidecar instances, no third-party sounds.
 Where Perihelion was a film cue, Automata is a machine coming to life:

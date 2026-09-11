@@ -23,7 +23,7 @@ reasoning where it happened rather than only here:
   be worse than no button. This is the one place the editable set below is
   deliberately wider than it says.
 - **The engine ticks the UI by pumping the timer provider, never by calling
-  `App.poll()`.** They look interchangeable and are not; `lib/vst_editor.py`
+  `App.poll()`.** They look interchangeable and are not; `lib/mpvst_editor.py`
   records why, because the difference silently swallows every click.
 
 ## Decisions
@@ -107,7 +107,7 @@ reasoning where it happened rather than only here:
   C++ view reads the host platform's own wheel events directly and packs
   them into `mpvst_ui_input`'s pair of signed delta fields, one per axis
   (this document's region layout, above), which `vstui.poll()` surfaces
-  through `vst_board_config.py`. On Windows that event (`WM_MOUSEWHEEL`)
+  through `mpvst_board_config.py`. On Windows that event (`WM_MOUSEWHEEL`)
   already reports an unambiguous signed multiple of `WHEEL_DELTA` — the
   legacy-vs-precise duality this section spent so long on is purely an
   SDL concept and cannot occur there. Confirmed against a real PyDevices
@@ -192,7 +192,7 @@ torn frame the sequence exists to make detectable rather than to cause. One
 call that brackets the copy has no such window. `publish` stays for a caller
 that composes its own pixels and knows when it has finished.
 
-`lib/vst_board_config.py` wraps that into the standard board contract: a
+`lib/mpvst_board_config.py` wraps that into the standard board contract: a
 `display_drv` whose `blit_rect` copies into the shared framebuffer and
 publishes, plus `touch_read` (pointer) and `encoder_read` (wheel deltas)
 both fed from `vstui.poll()`. Above that line the stack is stock
@@ -216,12 +216,12 @@ Nothing does that on the desktop either — `display_driver.main()` calls
 display_driver's pump as the only reader.
 
 The panel itself imports neither `vstui` nor `vstaudio`; it sees a board
-config and an adapter object (mirroring the `mpvst_adapter` seam) for
+config and an adapter object (mirroring the `mpvst_instrument_adapter` seam) for
 macro values, labels, patches, and status. That keeps the panel runnable
 under `lvgl-python` on the desktop with a mock adapter — which is both the
 development loop and the portability requirement satisfied for free.
 
-`vst_board_config`'s `display_drv` must not set `share_framebuffer`. That
+`mpvst_board_config`'s `display_drv` must not set `share_framebuffer`. That
 flag (`displaydev.__init__.DisplayDriver`, canonical `display_driver.py`)
 tells the LVGL bridge to hand LVGL a direct, standing pointer into the
 backend's own buffer (`DISPLAY_RENDER_MODE.DIRECT`, zero-copy, no
@@ -362,7 +362,7 @@ One implementation, written once, generic forever:
   existing cmods workspace discovery; the new ctest pins it. The only
   engine-rebuild event this design introduces is the `vstui` usermod
   itself, under the usual rebuild ritual.
-- The bundle stages `vst_board_config.py` and the panel package beside the
+- The bundle stages `mpvst_board_config.py` and the panel package beside the
   bootstrap, like every other `lib/` file.
 - The panel package keeps its host-neutral shape (panel + adapter split) so
   it can graduate to a sibling repo as a portable PyDevices example later

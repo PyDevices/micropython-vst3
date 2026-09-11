@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-namespace PyDevices::MicroPythonVST3 {
+namespace PyDevices::MPVST {
 
 class Processor final : public Steinberg::Vst::AudioEffect
 {
@@ -116,4 +116,4 @@ static_assert (std::atomic<float>::is_always_lock_free,
 static_assert (std::atomic<Steinberg::uint32>::is_always_lock_free,
                "VST bypass state requires a lock-free integer atomic");
 
-} // namespace PyDevices::MicroPythonVST3
+} // namespace PyDevices::MPVST

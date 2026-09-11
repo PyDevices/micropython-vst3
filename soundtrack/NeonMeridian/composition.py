@@ -1,4 +1,4 @@
-"""Neon Meridian - 80s synthwave for the MicroPython VST3.
+"""Neon Meridian - 80s synthwave for the MPVST.
 
 Nine shared hardware emulations, no effect inserts. The instruments carry
 their own character the way the hardware did: the Juno-106's bucket-brigade

@@ -1,13 +1,13 @@
-# MicroPython VST3
+# MPVST
 
 Programmable VST3 instruments and audio effects backed by dedicated
 MicroPython engine processes. One bundle ships a whole library: every
 `audioinstruments` module and every `audioeffects` class appears in the
 DAW's browser under its own name and category - **TR-808** under
 Instrument|Drum, **Tape Delay** under Fx|Delay - alongside two generic
-**MicroPython Script Host** classes that run any script you point them at.
+**MPVST Script Host** classes that run any script you point them at.
 
-The list is not compiled in. `scan_plugins.py`, run by the engine itself,
+The list is not compiled in. `mpvst_scan_plugins.py`, run by the engine itself,
 reads what each library module declares about itself and writes the
 `moduleinfo.json` the plug-in loads at startup - the same file a host reads
 to enumerate classes without loading the binary. Adding an instrument is
@@ -33,7 +33,7 @@ without an editor attached.
 |---|---|
 | `src/` | the C++ that builds the plug-in: `plugin/` (VST3 classes), `protocol/` (the shared-memory wire format), `runtime/` (shared memory and child processes) |
 | `usermods/` | the MicroPython C modules the engine binds to: `vstaudio/` (the audio API scripts use) and `vstui/` (the editor's framebuffer, input and edit rings) |
-| `lib/` | everything staged into the bundle beside the engine: the bootstrap, the adapters, `scan_plugins.py`, the default instrument, and the editor's Python half (`vst_editor.py`, `vst_board_config.py`, `vst_panel/`) |
+| `lib/` | everything staged into the bundle beside the engine: the bootstrap, the adapters, `mpvst_scan_plugins.py`, the default instrument, and the editor's Python half (`mpvst_editor.py`, `mpvst_board_config.py`, `mpvst_panel/`) |
 | `tools/` | developer tooling - `piece.py` and `render_preview.py` for compositions, the `harness.py` CPython sidecar stand-in, and the library test sweeps |
 | `tests/` | the ctest suite and `smoke_host/`, a minimal VST3 host that loads the bundle with no DAW |
 | `scripts/` | build, packaging and setup automation |
@@ -218,7 +218,7 @@ unaffected - all sixteen macro slots and the patch parameter are permanent,
 because they are what a host automates - but an undeclared optional surface
 does not receive a fabricated control.
 
-`lib/mpvst_adapter.py` is the seam between the two. `vstaudio` speaks the
+`lib/mpvst_instrument_adapter.py` is the seam between the two. `vstaudio` speaks the
 normalised floats the VST3 parameter API uses; the instrument API speaks
 MIDI 0-127, because that is what a keyboard, a sequencer and a saved
 patch speak. The conversion happens there and nowhere else, as a multiply
@@ -289,11 +289,13 @@ instance, `MPVST_SCRIPT_PATH` selects a developer script, and
 
 **Installing a release.** Nothing has to be built to use the plug-in.
 
-- **Windows:** run `MicroPythonVST3-<version>-windows-x86_64-setup.exe`.
-  It installs for the current user, so there is no UAC prompt, and it
-  appears in Add/Remove Programs with a working uninstaller. Close your DAW
-  first: a host that has the plug-in loaded holds its files open.
-- **Linux:** unpack `MicroPythonVST3-<version>-linux-x86_64.tar.gz` and run
+- **Windows:** run `MPVST-<version>-windows-x86_64-setup.exe`.
+  It installs for the current user, so there is no UAC prompt. That also
+  decides where the uninstaller shows up: Settings -> Apps -> Installed
+  apps, not the old Control Panel "Programs and Features" list, which is
+  machine-wide installs only. Close your DAW first: a host that has the
+  plug-in loaded holds its files open.
+- **Linux:** unpack `MPVST-<version>-linux-x86_64.tar.gz` and run
   the `install.sh` inside it. It copies the bundle to `~/.vst3`; `--dir`
   puts it somewhere else and `--uninstall` removes it.
 
@@ -301,8 +303,9 @@ Then rescan plug-ins in your host - and make it a real rescan, not a
 restart. A host caches what it found last time against the bundle's
 contents, and REAPER was observed holding entries from an earlier build
 after an install (Preferences -> Plug-ins -> VST -> Re-scan clears it).
-The bundle registers 98 named plug-ins - 53 instruments and 45 effects -
-plus the two script hosts, for 100 classes in all.
+The bundle registers a named plug-in per library instrument and effect,
+plus the two script hosts; `mpvst_scan_plugins.py --list` prints the
+current set.
 
 **Building a release.** `VERSION` at the repository root is the single
 source of truth - CMake and both packaging scripts read it, and editing it
@@ -322,8 +325,8 @@ the archive is made from, so the two cannot ship different bytes. The
 installer is built by NSIS, which cross-builds a Windows installer from
 Linux - `fetch-nsis.sh` unpacks it into `.deps/` rather than installing it
 on the machine, so it needs no root and removing `.deps` removes it.
-See [docs/windows-workflow.md](docs/windows-workflow.md) and
-[docs/linux-workflow.md](docs/linux-workflow.md) for the development
+See [docs/windows/README.md](docs/windows/README.md) and
+[docs/linux/README.md](docs/linux/README.md) for the development
 install paths and the desktop-script security model.
 
 This repository deliberately has no hosted CI. The 14-test `ctest` suite
@@ -374,7 +377,7 @@ link on exit, including after a failed build.
 ## Security: what the shipped engine cannot do
 
 Compositions, instruments, and racks are Python code, and some of it —
-`scan_plugins.py` reading module declarations — runs at plugin-scan time,
+`mpvst_scan_plugins.py` reading module declarations — runs at plugin-scan time,
 before you consciously play anything. Because people share pieces, the
 shipped sidecar engine is a deliberately narrow interpreter: **no sockets,
 no SSL, and no FFI** (the windows build skips the networking and FFI

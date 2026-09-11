@@ -9,7 +9,7 @@ reach the audio graph.
 
 Two sets of scripts, driven the same way. lib/instruments/*.py are
 generated loaders, so running them covers the whole sidecar path bar the
-engine: shim -> mpvst_adapter -> audioinstruments. That is deliberate.
+engine: shim -> mpvst_instrument_adapter -> audioinstruments. That is deliberate.
 audioif holds the instruments themselves to byte-exact parity goldens,
 which is a far stronger check than anything here; what is untested
 without this is the seam - the adapter, the staged import, the generated
@@ -49,7 +49,7 @@ SOUNDTRACK_DIR = REPO_DIR / "soundtrack"
 # The library instruments have no script files of their own any more: the
 # plug-in builds each one's two-line loader from the catalog when the class
 # is instantiated. This synthesises the same two lines so the sweep still
-# drives the real path - shim to mpvst_adapter to audioinstruments - rather
+# drives the real path - shim to mpvst_instrument_adapter to audioinstruments - rather
 # than reaching into the package and skipping the seam under test.
 _SYNTHESISED = None
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -171,8 +171,8 @@ def library_scripts():
                       if declared else "")
             (_SYNTHESISED / (name + ".py")).write_text(
                 "%s"
-                "import mpvst_adapter\n"
-                "mpvst_adapter.run(\"audioinstruments.%s\")\n"
+                "import mpvst_instrument_adapter\n"
+                "mpvst_instrument_adapter.run(\"audioinstruments.%s\")\n"
                 % (labels, name))
     return sorted(_SYNTHESISED.glob("*.py"))
 

@@ -44,7 +44,7 @@ namespace {
 
 using namespace Steinberg;
 using namespace Steinberg::Vst;
-using namespace PyDevices::MicroPythonVST3;
+using namespace PyDevices::MPVST;
 using VST3::Hosting::ClassInfo;
 using VST3::Hosting::Module;
 using VST3::Hosting::PluginFactory;
@@ -54,9 +54,9 @@ bool ok(tresult result) { return result == kResultOk || result == kResultTrue; }
 bool selectBundledEngine(const std::filesystem::path& bundle)
 {
 #if defined(_WIN32)
-    const auto wanted = "micropython-vst-engine.exe";
+    const auto wanted = "mpvst-engine.exe";
 #else
-    const auto wanted = "micropython-vst-engine";
+    const auto wanted = "mpvst-engine";
 #endif
     for (const auto& entry : std::filesystem::recursive_directory_iterator(bundle))
     {
@@ -978,7 +978,7 @@ bool effectScriptProbe(const PluginFactory& factory,
 }
 
 // Loads an arbitrary instrument script (e.g. one of lib/instruments/*.py)
-// into the real MicroPython Instrument class and sweeps every one of its 16
+// into the real MPVST Instrument class and sweeps every one of its 16
 // macros through 0.0/0.5/1.0 while pressing and releasing notes across a
 // wide pitch range. Reports whether the sidecar ever raised (kEngineError
 // going non-zero -- exactly how the ring_mod=/scale= API-misuse crashes
@@ -2136,7 +2136,7 @@ bool namedPluginPlays(const PluginFactory& factory, const std::string& wanted,
         // still load, still be silent, and still pass every other check.
         const std::string embedded(state.getData(),
                                    static_cast<std::size_t>(state.getSize()));
-        if (embedded.find("mpvst_adapter.run(") == std::string::npos &&
+        if (embedded.find("mpvst_instrument_adapter.run(") == std::string::npos &&
             embedded.find("mpvst_effect_adapter.run(") == std::string::npos)
         {
             std::cerr << "HOOK named.script FAIL: " << wanted
@@ -2432,7 +2432,7 @@ int main(int argc, char** argv)
         else if (effectMode)
         {
             ClassInfo effectInfo;
-            if (findAudioClassNamed(factory, "MicroPython Script Host (Fx)",
+            if (findAudioClassNamed(factory, "MPVST Script Host (Fx)",
                                     effectInfo) == nullptr)
             {
                 std::cerr << "HOOK effect.scan FAIL\n";
@@ -2448,7 +2448,7 @@ int main(int argc, char** argv)
         else if (scriptProbe)
         {
             ClassInfo effectInfo;
-            if (findAudioClassNamed(factory, "MicroPython Script Host (Fx)",
+            if (findAudioClassNamed(factory, "MPVST Script Host (Fx)",
                                     effectInfo) == nullptr)
             {
                 std::cerr << "HOOK effect.scan FAIL\n";
@@ -2482,14 +2482,14 @@ int main(int argc, char** argv)
             {
                 if (info.category() != kVstAudioEffectClass)
                     continue;
-                if (info.name().rfind("MicroPython Script Host", 0) == 0)
+                if (info.name().rfind("MPVST Script Host", 0) == 0)
                     continue;
                 names.push_back(info.name());
             }
             if (names.empty())
             {
                 std::cerr << "HOOK named.sweep FAIL: the factory offers no "
-                             "named plug-ins - has scan_plugins.py been run?\n";
+                             "named plug-ins - has mpvst_scan_plugins.py been run?\n";
                 return 5;
             }
             gPluginsDeclaringMacros = pluginsDeclaringMacros(argv[1]);

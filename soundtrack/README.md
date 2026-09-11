@@ -1,6 +1,6 @@
 # Soundtrack
 
-Example audio performed entirely by the MicroPython VST3 instrument - no
+Example audio performed entirely by the MPVST instrument - no
 third-party plug-ins, no samples. Every sound is a MicroPython script
 running synthio and the audioif effects inside its own sidecar process.
 
@@ -59,7 +59,7 @@ seven scenes move from an F-minor 5/4 horn hook through a lyrical Ab-major 6/8
 middle, an E-Dorian 7/8 rooftop chase, a contrapuntal title reprise, and an
 ambiguous lounge-credits cadence. Eleven shared hardware emulations perform
 6,480 notes: LinnDrum, Minimoog, Rhodes, Clavinet, B3, Karplus guitar, VL1,
-OB-Xa, CS-80, Solina, and Mellotron. Every track has a real MicroPython Effect
+OB-Xa, CS-80, Solina, and Mellotron. Every track has a real MPVST Effect
 insert built only from the shared library—saturation, overdrive, chorus,
 phaser, tape/slap delays, spring/plate/hall reverbs, and subtle vibrato.
 

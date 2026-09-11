@@ -15,9 +15,9 @@ if(NOT MPVST_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
     message(FATAL_ERROR "VERSION must hold a bare X.Y.Z, got '${MPVST_VERSION}'")
 endif()
 
-project(MicroPythonVST3
+project(MPVST
     VERSION ${MPVST_VERSION}
-    DESCRIPTION "Programmable MicroPython VST3 instrument"
+    DESCRIPTION "Programmable MPVST instrument"
     LANGUAGES C CXX
 )
 

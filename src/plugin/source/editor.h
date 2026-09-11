@@ -27,7 +27,7 @@
 #include "pluginterfaces/gui/iplugview.h"
 #endif
 
-namespace PyDevices::MicroPythonVST3 {
+namespace PyDevices::MPVST {
 
 class Controller;
 
@@ -144,4 +144,4 @@ private:
 #endif
 };
 
-} // namespace PyDevices::MicroPythonVST3
+} // namespace PyDevices::MPVST

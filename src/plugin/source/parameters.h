@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace PyDevices::MicroPythonVST3 {
+namespace PyDevices::MPVST {
 
 constexpr Steinberg::Vst::ParamID kBypassParameter = 0;
 constexpr Steinberg::Vst::ParamID kReloadParameter = 1;
@@ -63,4 +63,4 @@ constexpr bool decodeMidiParameter (Steinberg::Vst::ParamID id,
     return true;
 }
 
-} // namespace PyDevices::MicroPythonVST3
+} // namespace PyDevices::MPVST

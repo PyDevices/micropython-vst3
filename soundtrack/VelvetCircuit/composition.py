@@ -1,7 +1,7 @@
 """Velvet Circuit - a retro-future jazz/prog main title.
 
 This is the first soundtrack piece built directly from the shared hardware
-library and the first with real MicroPython Effect inserts.  It deliberately
+library and the first with real MPVST Effect inserts.  It deliberately
 turns away from Perihelion's orchestral film language and Automata's EDM arc:
 an imaginary 1978 crime series discovered on a satellite in 2049.
 
@@ -12,7 +12,7 @@ counterpoint.  The last credits cadence resolves not to a plain tonic but to
 F minor/major ambiguity (F-C-Ab-A-D-G): the mystery remains open next week.
 
 All instruments resolve from ../../lib/instruments.  Effect scripts below are
-only racks: every processor they instantiate is imported from lib/effects.
+only racks: every processor they instantiate comes from audioeffects.
 """
 
 TITLE = "Velvet_Circuit"

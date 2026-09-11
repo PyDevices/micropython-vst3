@@ -2,7 +2,7 @@
 //
 // `vstaudio` binds the engine to the host's audio mapping; this binds it to
 // the sibling UI mapping ui.h describes. Everything above it is stock
-// PyDevices: lib/vst_board_config.py wraps these calls in a displaydev
+// PyDevices: lib/mpvst_board_config.py wraps these calls in a displaydev
 // DisplayDriver plus a host-event source, and display_driver.py wires LVGL to
 // that exactly as it does on hardware.
 //

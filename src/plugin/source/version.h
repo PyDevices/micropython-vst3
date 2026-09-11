@@ -3,8 +3,8 @@
 #include "pluginterfaces/base/fplatform.h"
 #include "projectversion.h"
 
-#define stringOriginalFilename "MicroPythonVST3.vst3"
-#define stringFileDescription "MicroPython programmable VST3 instrument and effect"
+#define stringOriginalFilename "MPVST.vst3"
+#define stringFileDescription "Programmable VST3 instrument and effect"
 #define stringCompanyWeb "https://pydevices.github.io/"
 #define stringCompanyEmail ""
 #define stringCompanyName "PyDevices"

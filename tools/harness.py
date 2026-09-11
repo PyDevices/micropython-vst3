@@ -1,4 +1,4 @@
-"""Offline runner for MicroPython VST3 instrument/effect scripts.
+"""Offline runner for MPVST instrument/effect scripts.
 
 Runs a script against the vstaudio shim on top of the audioif CPython
 wheel - the same DSP code (synthio, audiocore, ...) the real MicroPython

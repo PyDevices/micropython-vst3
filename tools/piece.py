@@ -26,7 +26,7 @@ TOTAL_BEATS, SONG_SECONDS, RENDER_SECONDS, SECTIONS (name, start_beat,
 end_beat), TRACKS, beats_to_seconds(), track_gain(), macro_value(),
 active_track_count(), and optionally ACTIVE_LIMIT (None for no limit)
 and CLIMAX_SECTION. A track may also carry an effects list; each entry embeds
-one MicroPython Effect script after the instrument and uses the same macros /
+one MPVST Effect script after the instrument and uses the same macros /
 macro_env shape as an instrument.
 """
 
@@ -60,7 +60,7 @@ COMPONENTS_LIB = Path(
 #: holding a script path and needing the instrument behind it reads the call
 #: rather than guessing from the filename - and reads the call rather than a
 #: comment, because mpvst markers live in moduleinfo.json and never in a .py.
-MODULE_CALL = 'mpvst_adapter.run("'
+MODULE_CALL = 'mpvst_instrument_adapter.run("'
 _SHARED_INSTRUMENTS = None
 
 
@@ -190,9 +190,9 @@ def shared_instruments():
                 lines.append("%s = %r" % (field, values[field]))
         lines.extend([
             "",
-            "import mpvst_adapter",
+            "import mpvst_instrument_adapter",
             "",
-            "mpvst_adapter.run(\"audioinstruments.%s\")" % source.stem,
+            "mpvst_instrument_adapter.run(\"audioinstruments.%s\")" % source.stem,
             "",
         ])
         (output / source.name).write_text("\n".join(lines))

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Generate a piece's REAPER project.
 
-Writes a complete .RPP where every track holds one MicroPython Instrument and
-zero or more MicroPython Effect inserts. Every script is embedded directly in
+Writes a complete .RPP where every track holds one MPVST Instrument and
+zero or more MPVST Effect inserts. Every script is embedded directly in
 synthesized VST3 state (the same byte layout REAPER itself saves), so the
 project opens with no environment variables and no build passes. MIDI, the
 tempo map, volume envelopes, effect racks, and macro automation envelopes all
@@ -27,11 +27,11 @@ PIECE, ARGV = piece_arg(sys.argv[1:])
 C, INSTRUMENTS = load_piece(PIECE)
 
 PPQ = 960
-INSTRUMENT_VST = ('<VST "VST3i: MicroPython Script Host" '
-                  'MicroPythonVST3.vst3 0 "" '
+INSTRUMENT_VST = ('<VST "VST3i: MPVST Script Host" '
+                  'MPVST.vst3 0 "" '
                   '896536053{60A40168727C4E7DAAF808B790961DAA} ""')
-EFFECT_VST = ('<VST "VST3: MicroPython Script Host (Fx)" '
-              'MicroPythonVST3.vst3 0 "" '
+EFFECT_VST = ('<VST "VST3: MPVST Script Host (Fx)" '
+              'MPVST.vst3 0 "" '
               '1503031402{910677E28594410985AD7A76CA68106C} ""')
 
 # Byte-exact header layouts captured from projects REAPER itself saved.  The
@@ -132,7 +132,7 @@ def envelope_block(kind, header_extra, points):
 
 
 def fx_block(vst_line, header_words, script_source, macros, macro_env):
-    """One embedded MicroPython Instrument or Effect instance."""
+    """One embedded MPVST Instrument or Effect instance."""
     lines = ["      BYPASS 0 0 0", "      " + vst_line]
     for chunk_line in vst_chunk_lines(script_source, macros, header_words):
         lines.append("        " + chunk_line)

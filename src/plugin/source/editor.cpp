@@ -13,7 +13,7 @@
 #include <X11/Xutil.h>
 #endif
 
-namespace PyDevices::MicroPythonVST3 {
+namespace PyDevices::MPVST {
 
 using namespace Steinberg;
 using namespace Steinberg::Vst;
@@ -460,7 +460,7 @@ void Editor::tick ()
 
 namespace {
 
-const wchar_t* const kWindowClass = L"PyDevicesMicroPythonVST3Editor";
+const wchar_t* const kWindowClass = L"PyDevicesMPVSTEditor";
 UINT_PTR const kFrameTimer = 1;
 
 // windowsx.h's GET_X_LPARAM by hand: the cast through short is the part that
@@ -1010,4 +1010,4 @@ tresult PLUGIN_API Editor::removed ()
 
 #endif
 
-} // namespace PyDevices::MicroPythonVST3
+} // namespace PyDevices::MPVST

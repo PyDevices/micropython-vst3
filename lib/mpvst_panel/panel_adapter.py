@@ -8,7 +8,7 @@ and the portability requirement.
 Values here are MIDI 0-127, the units an instrument, a keyboard, a sequencer
 and a saved patch all speak. The protocol speaks normalized 0.0-1.0, which is
 what the VST3 parameter API wants. The conversion happens at this seam, once,
-the same way `mpvst_adapter` does it for audio events - and it is a multiply,
+the same way `mpvst_instrument_adapter` does it for audio events - and it is a multiply,
 not a quantization, so a host automating a macro with more than seven bits of
 resolution keeps every bit of it on the way back in.
 """
@@ -234,8 +234,8 @@ def _declared(name):
     import sys
 
     try:
-        import mpvst_adapter
-        module = sys.modules.get(getattr(mpvst_adapter, "module_name", None))
+        import mpvst_instrument_adapter
+        module = sys.modules.get(getattr(mpvst_instrument_adapter, "module_name", None))
         if module is not None:
             return getattr(module, name, None)
     except ImportError:
@@ -252,9 +252,9 @@ def _declared(name):
         pass
 
     try:
-        import mpvst_script
-        if mpvst_script.namespace:
-            return mpvst_script.namespace.get(name)
+        import mpvst_script_namespace
+        if mpvst_script_namespace.namespace:
+            return mpvst_script_namespace.namespace.get(name)
     except ImportError:
         pass
     return None

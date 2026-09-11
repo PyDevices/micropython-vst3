@@ -17,7 +17,7 @@
 #include <dlfcn.h>
 #endif
 
-namespace PyDevices::MicroPythonVST3 {
+namespace PyDevices::MPVST {
 
 namespace {
 
@@ -267,8 +267,8 @@ std::string CatalogEntry::scriptSource () const
     }
     else
     {
-        source += "import mpvst_adapter\n";
-        source += "mpvst_adapter.run(\"" + package + "." + module + "\")\n";
+        source += "import mpvst_instrument_adapter\n";
+        source += "mpvst_instrument_adapter.run(\"" + package + "." + module + "\")\n";
     }
     return source;
 }
@@ -282,4 +282,4 @@ const std::vector<CatalogEntry>& catalogPlugins ()
     return entries;
 }
 
-} // namespace PyDevices::MicroPythonVST3
+} // namespace PyDevices::MPVST

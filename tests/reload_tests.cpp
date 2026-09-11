@@ -21,7 +21,7 @@
 
 namespace {
 
-using PyDevices::MicroPythonVST3::SidecarTransport;
+using PyDevices::MPVST::SidecarTransport;
 
 // A per-process suffix keeps concurrent test runs from sharing a script file.
 unsigned long currentProcessId()

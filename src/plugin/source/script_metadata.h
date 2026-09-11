@@ -12,7 +12,7 @@
 #include <string>
 #include <string_view>
 
-namespace PyDevices::MicroPythonVST3 {
+namespace PyDevices::MPVST {
 
 constexpr std::string_view kMacroLabelsName = "MACRO_LABELS";
 
@@ -112,4 +112,4 @@ inline bool parseMacroLabels(const std::string& source,
     return false;
 }
 
-} // namespace PyDevices::MicroPythonVST3
+} // namespace PyDevices::MPVST

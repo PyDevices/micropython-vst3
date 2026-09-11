@@ -117,15 +117,15 @@ class Editor:
 
         import appdev
 
-        import vst_board_config
+        import mpvst_board_config
 
         width, height = vstui.size()
-        vst_board_config.configure(width, height)
+        mpvst_board_config.configure(width, height)
         # Constructing the app before importing display_driver is what makes
         # this board the active one: display_driver adopts `App.current()` and
         # only falls back to importing a module literally named board_config
         # when there is no app at all.
-        self._app = appdev.App(vst_board_config)
+        self._app = appdev.App(mpvst_board_config)
 
         import display_driver
 
@@ -148,7 +148,7 @@ class Editor:
     def _build_panel(self):
         import lvgl as lv
 
-        from vst_panel import EngineAdapter, build
+        from mpvst_panel import EngineAdapter, build
 
         lv.screen_active().clean()
         group = lv.group_get_default()

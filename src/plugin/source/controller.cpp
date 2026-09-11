@@ -14,7 +14,7 @@
 #include <cstdio>
 #include <cstring>
 
-namespace PyDevices::MicroPythonVST3 {
+namespace PyDevices::MPVST {
 
 using namespace Steinberg;
 using namespace Steinberg::Vst;
@@ -263,4 +263,4 @@ tresult PLUGIN_API Controller::setComponentState (IBStream* state)
     return kResultOk;
 }
 
-} // namespace PyDevices::MicroPythonVST3
+} // namespace PyDevices::MPVST

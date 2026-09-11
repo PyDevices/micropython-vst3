@@ -58,9 +58,9 @@ endif()
 # has one built.
 if(TARGET mpvst-stage-micropython-engine)
     if(WIN32)
-        set(mpvst_engine_name micropython-vst-engine.exe)
+        set(mpvst_engine_name mpvst-engine.exe)
     else()
-        set(mpvst_engine_name micropython-vst-engine)
+        set(mpvst_engine_name mpvst-engine)
     endif()
     # LVGL and the PyDevices integration are a permanent part of the engine,
     # not an option, so a build that quietly drops one has to fail here rather
@@ -68,7 +68,7 @@ if(TARGET mpvst-stage-micropython-engine)
     # from this list: importing it builds a display, which needs a board -
     # mpvst_editor_smoke covers it, through the real one.
     add_test(NAME mpvst_engine_modules COMMAND
-        $<TARGET_FILE_DIR:MicroPythonVST3>/${mpvst_engine_name}
+        $<TARGET_FILE_DIR:MPVST>/${mpvst_engine_name}
         -c "import lvgl, vstaudio, vstui, displaydev, appdev, multimer, events")
 
     add_executable(mpvst_reload_tests reload_tests.cpp)
@@ -82,20 +82,20 @@ if(TARGET mpvst-stage-micropython-engine)
     endif()
     add_dependencies(mpvst_reload_tests mpvst-stage-micropython-engine)
     add_test(NAME mpvst_reload_tests COMMAND mpvst_reload_tests
-        $<TARGET_FILE_DIR:MicroPythonVST3>/${mpvst_engine_name})
+        $<TARGET_FILE_DIR:MPVST>/${mpvst_engine_name})
     add_test(NAME mpvst_embedded_state_smoke COMMAND mpvst_smoke_host
-        $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-embedded-state)
+        $<TARGET_FILE_DIR:MPVST>/../.. --expect-embedded-state)
     add_test(NAME mpvst_micropython_smoke COMMAND mpvst_smoke_host
-        $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-micropython)
+        $<TARGET_FILE_DIR:MPVST>/../.. --expect-micropython)
     add_test(NAME mpvst_effect_audio_smoke COMMAND mpvst_smoke_host
-        $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-effect-audio)
+        $<TARGET_FILE_DIR:MPVST>/../.. --expect-effect-audio)
     add_test(NAME mpvst_patch_select_smoke COMMAND mpvst_smoke_host
-        $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-patch-select)
+        $<TARGET_FILE_DIR:MPVST>/../.. --expect-patch-select)
     # The editor end to end: the controller learns the mapping, the engine
     # paints only while it is open, injected input reaches the panel, and the
     # gestures come back as parameter edits pointing the right way.
     add_test(NAME mpvst_editor_smoke COMMAND mpvst_smoke_host
-        $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-editor)
+        $<TARGET_FILE_DIR:MPVST>/../.. --expect-editor)
     set_tests_properties(mpvst_editor_smoke PROPERTIES TIMEOUT 300)
 
     # The one test that looks at the screen. It opens the real view in a real
@@ -108,7 +108,7 @@ if(TARGET mpvst-stage-micropython-engine)
     # there is none.
     if(WIN32)
         add_test(NAME mpvst_editor_window COMMAND mpvst_smoke_host
-            $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --capture-editor-window
+            $<TARGET_FILE_DIR:MPVST>/../.. --capture-editor-window
             ${CMAKE_CURRENT_BINARY_DIR}/editor-window.ppm)
         set_tests_properties(mpvst_editor_window PROPERTIES TIMEOUT 300
             SKIP_RETURN_CODE 77)
@@ -117,9 +117,9 @@ if(TARGET mpvst-stage-micropython-engine)
     # is built with the SDK, so this needs no tool of ours.
     if(TARGET moduleinfotool)
         add_test(NAME mpvst_moduleinfo_validate COMMAND ${CMAKE_COMMAND}
-            -DMPVST_ENGINE=$<TARGET_FILE_DIR:MicroPythonVST3>/${mpvst_engine_name}
-            -DMPVST_BUNDLE_BIN=$<TARGET_FILE_DIR:MicroPythonVST3>
-            -DMPVST_BUNDLE=$<TARGET_FILE_DIR:MicroPythonVST3>/../..
+            -DMPVST_ENGINE=$<TARGET_FILE_DIR:MPVST>/${mpvst_engine_name}
+            -DMPVST_BUNDLE_BIN=$<TARGET_FILE_DIR:MPVST>
+            -DMPVST_BUNDLE=$<TARGET_FILE_DIR:MPVST>/../..
             -DMPVST_TOOL=$<TARGET_FILE:moduleinfotool>
             -P ${CMAKE_CURRENT_SOURCE_DIR}/validate_moduleinfo.cmake)
     else()
@@ -132,7 +132,7 @@ if(TARGET mpvst-stage-micropython-engine)
         add_test(NAME mpvst_effects_library COMMAND ${MPVST_PYTHON}
             ${CMAKE_SOURCE_DIR}/tools/test-effects-lib.py
             $<TARGET_FILE:mpvst_smoke_host>
-            $<TARGET_FILE_DIR:MicroPythonVST3>/../..)
+            $<TARGET_FILE_DIR:MPVST>/../..)
         set_tests_properties(mpvst_effects_library PROPERTIES TIMEOUT 600)
 
         # Every plug-in the moduleinfo declares, instantiated through the
@@ -141,7 +141,7 @@ if(TARGET mpvst-stage-micropython-engine)
         # library module named in it. Silence anywhere along that chain fails
         # here.
         add_test(NAME mpvst_named_plugins COMMAND mpvst_smoke_host
-            $<TARGET_FILE_DIR:MicroPythonVST3>/../.. --expect-all-named)
+            $<TARGET_FILE_DIR:MPVST>/../.. --expect-all-named)
         set_tests_properties(mpvst_named_plugins PROPERTIES TIMEOUT 1800)
     endif()
 endif()

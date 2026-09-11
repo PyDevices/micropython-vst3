@@ -2,12 +2,16 @@
 
 Run it with the engine, from the folder it lives in:
 
-    micropython-vst-engine.exe scan_plugins.py --write
+    mpvst-engine.exe mpvst_scan_plugins.py
 
 That needs no Python installed and behaves the same on Windows and Linux,
 which is the whole reason it is written for the engine rather than for a
 system interpreter. Run it after installing, and again after adding or
 editing a script; the DAW picks up the result on its next rescan.
+
+Writing is what it does: the installer runs it with no arguments, and a
+scanner that only listed unless asked would leave a fresh install unscanned.
+`--list` prints the table instead, `--json` prints the file it would write.
 
 It writes one file, `../Resources/moduleinfo.json`: the list a host reads to
 enumerate classes without loading the binary, and the same list the plug-in
@@ -53,7 +57,7 @@ DEFAULT_VERSION = "0.0.1"
 # this file without anyone remembering to edit it. The values below are only
 # the fallback for when there is nothing to read.
 MODULE_DEFAULTS = {
-    "Name": "MicroPythonVST3",
+    "Name": "MPVST",
     "Version": "0.0.1",
     "Vendor": "PyDevices",
     "URL": "https://pydevices.github.io/",
@@ -114,13 +118,13 @@ CID_NAMESPACE = "PyDevices/micropython-vst3/plugin/1"
 # CIDs are src/plugin/source/cids.h and the names are factory.cpp.
 BUILTIN_CLASSES = (
     ("60A40168727C4E7DAAF808B790961DAA",
-     "MicroPython Script Host", ["Instrument", "Synth"]),
+     "MPVST Script Host", ["Instrument", "Synth"]),
     ("04B27009082444D48FE82CB5A7C810FD",
-     "MicroPython Script Host Controller", None),
+     "MPVST Script Host Controller", None),
     ("910677E28594410985AD7A76CA68106C",
-     "MicroPython Script Host (Fx)", ["Fx"]),
+     "MPVST Script Host (Fx)", ["Fx"]),
     ("16695D06FA2F4F9585FE0B7165515F68",
-     "MicroPython Script Host (Fx) Controller", None),
+     "MPVST Script Host (Fx) Controller", None),
 )
 
 FIELDS = ("NAME", "DISPLAY_NAME", "CATEGORIES", "VERSION", "VENDOR",
@@ -417,7 +421,10 @@ def main():
     if "--json" in sys.argv:
         module_info(sys.stdout.write, entries, module)
         return
-    if "--write" in sys.argv:
+
+    if "--list" not in sys.argv:
+        # Writing is the default, and --write is still accepted so older
+        # commands and docs keep working.
         with open(root + "/" + MODULE_INFO, "w") as handle:
             module_info(handle.write, entries, module)
         print("%d plug-ins: wrote %s (%d classes)"
@@ -437,8 +444,8 @@ def main():
     print("module: %s %s, %s <%s>"
           % (module["Name"], module["Version"], module["Vendor"],
              module["URL"]))
-    print("%d plug-ins declared. --write to save them, --json to see the "
-          "file that would be written." % len(entries))
+    print("%d plug-ins declared. Run without --list to write them, --json to "
+          "see the file that would be written." % len(entries))
 
 
 main()

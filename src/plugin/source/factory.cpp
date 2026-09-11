@@ -7,8 +7,8 @@
 #include "public.sdk/source/main/pluginfactory.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 
-#define stringPluginName "MicroPython Script Host"
-#define stringEffectName "MicroPython Script Host (Fx)"
+#define stringPluginName "MPVST Script Host"
+#define stringEffectName "MPVST Script Host (Fx)"
 
 using namespace Steinberg;
 using namespace Steinberg::Vst;
@@ -19,7 +19,7 @@ BEGIN_FACTORY_DEF (stringCompanyName, stringCompanyWeb, stringCompanyEmail)
 // project state gives them, which is the developer loop and what every
 // existing project uses; the named plug-ins below are the product.
 DEF_CLASS2 (
-    INLINE_UID_FROM_FUID (PyDevices::MicroPythonVST3::kProcessorUID),
+    INLINE_UID_FROM_FUID (PyDevices::MPVST::kProcessorUID),
     PClassInfo::kManyInstances,
     kVstAudioEffectClass,
     stringPluginName,
@@ -27,10 +27,10 @@ DEF_CLASS2 (
     Vst::PlugType::kInstrumentSynth,
     FULL_VERSION_STR,
     kVstVersionString,
-    PyDevices::MicroPythonVST3::Processor::createInstance)
+    PyDevices::MPVST::Processor::createInstance)
 
 DEF_CLASS2 (
-    INLINE_UID_FROM_FUID (PyDevices::MicroPythonVST3::kControllerUID),
+    INLINE_UID_FROM_FUID (PyDevices::MPVST::kControllerUID),
     PClassInfo::kManyInstances,
     kVstComponentControllerClass,
     stringPluginName " Controller",
@@ -38,10 +38,10 @@ DEF_CLASS2 (
     "",
     FULL_VERSION_STR,
     kVstVersionString,
-    PyDevices::MicroPythonVST3::Controller::createInstance)
+    PyDevices::MPVST::Controller::createInstance)
 
 DEF_CLASS2 (
-    INLINE_UID_FROM_FUID (PyDevices::MicroPythonVST3::kEffectProcessorUID),
+    INLINE_UID_FROM_FUID (PyDevices::MPVST::kEffectProcessorUID),
     PClassInfo::kManyInstances,
     kVstAudioEffectClass,
     stringEffectName,
@@ -49,10 +49,10 @@ DEF_CLASS2 (
     Vst::PlugType::kFx,
     FULL_VERSION_STR,
     kVstVersionString,
-    PyDevices::MicroPythonVST3::Processor::createEffectInstance)
+    PyDevices::MPVST::Processor::createEffectInstance)
 
 DEF_CLASS2 (
-    INLINE_UID_FROM_FUID (PyDevices::MicroPythonVST3::kEffectControllerUID),
+    INLINE_UID_FROM_FUID (PyDevices::MPVST::kEffectControllerUID),
     PClassInfo::kManyInstances,
     kVstComponentControllerClass,
     stringEffectName " Controller",
@@ -60,7 +60,7 @@ DEF_CLASS2 (
     "",
     FULL_VERSION_STR,
     kVstVersionString,
-    PyDevices::MicroPythonVST3::Controller::createInstance)
+    PyDevices::MPVST::Controller::createInstance)
 
 // Everything the moduleinfo beside this binary declares. Registered here, at
 // load, rather than compiled in - which is what lets an instrument be added
@@ -74,7 +74,7 @@ DEF_CLASS2 (
 // No controller class is registered here. Every one of these names a
 // controller compiled in above, so the classes this loop adds are exactly
 // the plug-ins the catalog lists and nothing else.
-for (const auto& entry : PyDevices::MicroPythonVST3::catalogPlugins ())
+for (const auto& entry : PyDevices::MPVST::catalogPlugins ())
 {
     TUID processorId;
     entry.processorId.toTUID (processorId);
@@ -83,8 +83,8 @@ for (const auto& entry : PyDevices::MicroPythonVST3::catalogPlugins ())
         entry.name.c_str (), 0, entry.subCategories.c_str (),
         entry.vendor.c_str (), entry.version.c_str (), kVstVersionString);
     gPluginFactory->registerClass (
-        &processorClass, PyDevices::MicroPythonVST3::Processor::createFromCatalog,
-        const_cast<PyDevices::MicroPythonVST3::CatalogEntry*> (&entry));
+        &processorClass, PyDevices::MPVST::Processor::createFromCatalog,
+        const_cast<PyDevices::MPVST::CatalogEntry*> (&entry));
 }
 
 END_FACTORY

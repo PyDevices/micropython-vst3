@@ -8,7 +8,7 @@ motor rhythm, Bach the contrapuntal development, and Puccini the long-breathed
 middle melody; none is quoted.
 
 Every instrument comes directly from lib/instruments.  Every insert below is
-only a small room-placement script around processors from lib/effects.
+only a small room-placement script around processors from audioeffects.
 """
 
 TITLE = "Aurelia_Overture"

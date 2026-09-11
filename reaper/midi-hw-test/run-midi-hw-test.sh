@@ -114,7 +114,7 @@ if [[ "$platform" == windows ]]; then
 
     stop_reaper() {
         powershell.exe -NoProfile -Command \
-            "Get-Process reaper,micropython-vst-engine -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue" \
+            "Get-Process reaper,mpvst-engine -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue" \
             >/dev/null 2>&1 || true
         for _ in $(seq 1 10); do
             reaper_running || return 0

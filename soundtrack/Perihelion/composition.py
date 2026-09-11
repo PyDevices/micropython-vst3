@@ -1,4 +1,4 @@
-"""Perihelion - a hybrid orchestral/synth score for the MicroPython VST3.
+"""Perihelion - a hybrid orchestral/synth score for the MPVST.
 
 Single source of truth for the piece: the tempo map, every note, the track
 gains and pans, the volume swells, and the macro automation that gives the

@@ -20,7 +20,7 @@ mpvst_load_windows_paths || exit 1
 
 win_build=${MPVST_WIN_BUILD:-$WIN_TEMP/micropython-vst3-build}
 vst3_dir=${MPVST_VST3_DIR:-$WIN_LOCALAPPDATA/Programs/Common/VST3}
-bundle_src="$win_build/VST3/Release/MicroPythonVST3.vst3"
+bundle_src="$win_build/VST3/Release/MPVST.vst3"
 cmake_exe="$repo_dir/.deps/cmake-4.4.2-windows-x86_64/bin/cmake.exe"
 
 [[ -f "$win_build/CMakeCache.txt" ]] || {
@@ -43,15 +43,15 @@ fi
 [[ -d "$bundle_src" ]] || { echo "error: no bundle at $bundle_src" >&2; exit 1; }
 
 # A DAW holds the .vst3 DLL open, so a running REAPER blocks the copy -
-# and each sidecar holds micropython-vst-engine.exe open, so orphaned
+# and each sidecar holds mpvst-engine.exe open, so orphaned
 # engines (left behind when a host is force-killed) block it too.
 powershell.exe -NoProfile -Command \
-    "Get-Process reaper,micropython-vst-engine -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue" \
+    "Get-Process reaper,mpvst-engine -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue" \
     >/dev/null 2>&1 || true
 sleep 1
 
 mkdir -p "$vst3_dir"
-rm -rf "$vst3_dir/MicroPythonVST3.vst3"
-cp -r "$bundle_src" "$vst3_dir/MicroPythonVST3.vst3"
+rm -rf "$vst3_dir/MPVST.vst3"
+cp -r "$bundle_src" "$vst3_dir/MPVST.vst3"
 
-echo "installed: $vst3_dir/MicroPythonVST3.vst3"
+echo "installed: $vst3_dir/MPVST.vst3"

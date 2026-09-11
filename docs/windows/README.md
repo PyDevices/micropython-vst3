@@ -1,0 +1,91 @@
+# MPVST on Windows
+
+MPVST is installed. The bundle is
+
+    %LOCALAPPDATA%\Programs\Common\VST3\MPVST.vst3
+
+unless you pointed the installer at a different VST3 folder. Everything the
+plug-in needs is inside that bundle, and every path below is relative to it -
+so `Contents\x86_64-win` means
+`%LOCALAPPDATA%\Programs\Common\VST3\MPVST.vst3\Contents\x86_64-win`.
+
+## Start playing
+
+Start the DAW and request a VST3 rescan. Then insert any of them - **TR-808**,
+**Minimoog**, **Tape Delay** - and open its editor, or use the host's generic
+parameter editor. **MPVST Script Host** runs whatever script
+`MPVST_SCRIPT_PATH` points at, which is the loop for developing one that is
+not in the library yet.
+
+The plug-in has an editor of its own: a patch selector, a Reload button, a
+Bypass switch, an engine-status light, and a slider per macro, labelled with
+whatever names the script declares. Click a control to focus it, then scroll
+or swipe - sideways adjusts the focused control, up and down moves between
+them. A drag or a burst of scrolling is recorded as one automation edit.
+
+The same parameters are all there in the host's generic editor: `Bypass`,
+`Reload Script`, `Patch`, and `Macro 01` through `Macro 16` (or the script's
+labels). `Engine Ready` and integer `Engine Error` are read-only status
+controls; error 1 means script load failed and error 2 means rendering failed.
+A script that leaves the panel unable to build shows "Editor unavailable" and
+keeps playing.
+
+## Rescan after adding a script of your own
+
+The list of plug-ins is not compiled in: it is
+`Contents\Resources\moduleinfo.json`, which is both what the host reads to
+enumerate them and what the plug-in reads to know which ones it offers. The
+installer generated it for you, so there is nothing to do until you add,
+remove or edit a script of your own. When you do, rerun the scanner from
+`Contents\x86_64-win`:
+
+    mpvst-engine.exe mpvst_scan_plugins.py
+
+then rescan VST3 plug-ins in the DAW. The scanner needs nothing installed -
+it is the engine itself, reading what each library module declares about
+itself. `--list` prints what it found instead of writing the file.
+
+## Develop a script
+
+Set `MPVST_SCRIPT_PATH` to an absolute `.py` file before starting the DAW. Each
+new plug-in instance reads that source. To reload an existing instance, toggle
+`Reload Script` off and then on. Syntax and runtime errors silence the graph but
+leave the sidecar alive so a corrected script can be reloaded.
+The host output uses a short fade-out, pipeline hold, and fade-in around reload
+to avoid a discontinuity at the graph boundary.
+
+A script declares its macros with a module-level tuple, the same name a
+library module or an effect class uses. This is the declaration, not a label
+for something that exists anyway: without it the script has no macros and the
+editor draws none. It does not alter automation IDs.
+
+```python
+MACRO_LABELS = ("Gain", "Tone", "Attack", "Release")
+```
+
+When the DAW saves a project, state v2 embeds the script source, macro values,
+and engine pipeline setting. The project therefore reopens after the original
+development file is moved or deleted. Embedded source is limited to 1 MiB.
+
+## Security model
+
+A script runs in its own process, with the file-system permissions of the DAW
+user. The shipped engine is built without sockets, TLS and FFI, so a script
+cannot open a network connection or call into arbitrary native code - but it
+can read and write your files. Only load projects and scripts you trust: this
+is process isolation for stability plus a narrowed interpreter, not a sandbox.
+
+## Installing from the .zip instead
+
+The `.zip` carries the same bundle with no installer. Close the DAW, copy
+`MPVST.vst3` into `%LOCALAPPDATA%\Programs\Common\VST3` (or
+`%COMMONPROGRAMFILES%\VST3` for all users), run the scanner command above
+once, then start the DAW and rescan.
+
+## Uninstall
+
+Close the DAW, then uninstall MPVST from Settings -> Apps -> Installed apps.
+It is a per-user install, which is why it needs no administrator prompt - and
+also why it does not appear in the old Control Panel "Programs and Features"
+list, which shows machine-wide installs only. Removing the bundle folder by
+hand works too. Project files remain untouched either way.

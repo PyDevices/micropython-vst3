@@ -1,4 +1,4 @@
-set(MPVST_PLUGIN_TARGET MicroPythonVST3)
+set(MPVST_PLUGIN_TARGET MPVST)
 
 # The Windows bundle folder's Explorer icon. Left unset, the SDK defaults this
 # to cmake/templates/VST_Logo_Steinberg.ico (SMTG_AddVST3Library.cmake) and
@@ -60,13 +60,13 @@ if(UNIX AND NOT APPLE)
 endif()
 
 if(WIN32)
-    set(MPVST_ENGINE_NAME micropython-vst-engine.exe)
+    set(MPVST_ENGINE_NAME mpvst-engine.exe)
     set(MPVST_ENGINE_DEFAULT
-        "${CMAKE_SOURCE_DIR}/.deps/engine/micropython-vst-engine.exe")
+        "${CMAKE_SOURCE_DIR}/.deps/engine/mpvst-engine.exe")
 else()
-    set(MPVST_ENGINE_NAME micropython-vst-engine)
+    set(MPVST_ENGINE_NAME mpvst-engine)
     set(MPVST_ENGINE_DEFAULT
-        "${CMAKE_SOURCE_DIR}/.deps/engine/micropython-vst-engine")
+        "${CMAKE_SOURCE_DIR}/.deps/engine/mpvst-engine")
 endif()
 set(MPVST_MICROPYTHON_ENGINE "${MPVST_ENGINE_DEFAULT}"
     CACHE FILEPATH "Optional prebuilt MicroPython VST engine for this platform")
@@ -130,14 +130,14 @@ if(EXISTS "${MPVST_MICROPYTHON_ENGINE}")
         # plug-in offers only its four compiled-in classes.
         COMMAND ${CMAKE_COMMAND} -E chdir
             $<TARGET_FILE_DIR:${MPVST_PLUGIN_TARGET}>
-            ./${MPVST_ENGINE_NAME} scan_plugins.py --write
+            ./${MPVST_ENGINE_NAME} mpvst_scan_plugins.py
         DEPENDS
             ${MPVST_PLUGIN_TARGET}
             "${MPVST_MICROPYTHON_ENGINE}"
-            "${CMAKE_SOURCE_DIR}/lib/micropython_vst_bootstrap.py"
+            "${CMAKE_SOURCE_DIR}/lib/mpvst_bootstrap.py"
             "${CMAKE_SOURCE_DIR}/lib/default_instrument.py"
             "${CMAKE_SOURCE_DIR}/lib/default_effect.py"
-            "${CMAKE_SOURCE_DIR}/lib/mpvst_adapter.py"
+            "${CMAKE_SOURCE_DIR}/lib/mpvst_instrument_adapter.py"
         COMMENT "Bundling the headless MicroPython engine and script library")
 else()
     # Unlike MPVST_COMPONENTS_LIB above, a missing engine is not fatal: the

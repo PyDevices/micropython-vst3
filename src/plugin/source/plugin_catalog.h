@@ -14,7 +14,7 @@
 // unknown key outright, so a comment is not a shortcut here; it is the only
 // place the file can carry anything of ours.
 //
-// The file is written by lib/scan_plugins.py, which the engine itself runs -
+// The file is written by lib/mpvst_scan_plugins.py, which the engine itself runs -
 // so adding an instrument is editing a script and re-scanning, never
 // rebuilding. That is the whole point: a user who writes their own instrument
 // gets it into their DAW without a compiler.
@@ -28,7 +28,7 @@
 #include <string>
 #include <vector>
 
-namespace PyDevices::MicroPythonVST3 {
+namespace PyDevices::MPVST {
 
 struct CatalogEntry
 {
@@ -61,4 +61,4 @@ struct CatalogEntry
 // is none, which is the un-scanned state and not a failure.
 const std::vector<CatalogEntry>& catalogPlugins ();
 
-} // namespace PyDevices::MicroPythonVST3
+} // namespace PyDevices::MPVST

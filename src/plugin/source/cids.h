@@ -2,7 +2,7 @@
 
 #include "pluginterfaces/base/funknown.h"
 
-namespace PyDevices::MicroPythonVST3 {
+namespace PyDevices::MPVST {
 
 static const Steinberg::FUID kProcessorUID (
     0x60A40168, 0x727C4E7D, 0xAAF808B7, 0x90961DAA);
@@ -16,5 +16,5 @@ static const Steinberg::FUID kEffectProcessorUID (
 static const Steinberg::FUID kEffectControllerUID (
     0x16695D06, 0xFA2F4F95, 0x85FE0B71, 0x65515F68);
 
-} // namespace PyDevices::MicroPythonVST3
+} // namespace PyDevices::MPVST
 
