@@ -1,6 +1,7 @@
 """Canon in D for sixteen voices - the same piece, two ways out.
 
     python source/canon_16.py                 write canon_16.rpp
+    python source/canon_16.py --wav           render canon_16.wav here
     python source/canon_16.py --yaml          write canon_16.yaml as well
 
 Pachelbel's Canon is one melody, played by three voices four bars apart, over
@@ -28,7 +29,6 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import from_yaml                                              # noqa: E402
-from mpvst_composer.backends.reaper import ReaperRenderer      # noqa: E402
 
 #: D A B F# G D G A, as scale degrees in D major. One chord every two beats,
 #: four bars round, and the source of every other cell in the piece.
@@ -221,8 +221,11 @@ def main():
                            width=100)
         print("wrote %s" % path)
     song = from_yaml.build(doc)
-    out = os.path.join(here, "canon_16.rpp")
-    song.render(out, ReaperRenderer)
+    if "--wav" in sys.argv:
+        out = os.path.join(here, "canon_16.wav")
+    else:
+        out = os.path.join(here, "canon_16.rpp")
+    song.render(out, from_yaml.renderer_for(out))
     print("wrote %s (%d voices)" % (out, len(VOICES)))
     return 0
 

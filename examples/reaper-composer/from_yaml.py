@@ -59,6 +59,7 @@ import sys
 import yaml
 
 from mpvst_composer import DrumPattern, MidiEvent, MidiPattern, Note, Project, Scale
+from mpvst_composer.backends.offline import OfflineRenderer
 from mpvst_composer.backends.reaper import ReaperRenderer
 
 def scale_of(name):
@@ -187,13 +188,23 @@ def build(document):
     return song
 
 
+def renderer_for(path):
+    """The backend that writes `path`, chosen by what you asked it to write.
+
+    A `.wav` is rendered here through the CPython audio packages; anything
+    else is a Reaper project. Asking for the audio is asking for the offline
+    path, so there is no flag to forget.
+    """
+    return OfflineRenderer if path.lower().endswith(".wav") else ReaperRenderer
+
+
 def main():
     if len(sys.argv) < 2:
-        raise SystemExit("usage: from_yaml.py <song.yaml> [out.rpp]")
+        raise SystemExit("usage: from_yaml.py <song.yaml> [out.rpp|out.wav]")
     source = sys.argv[1]
     song = load(source)
     out = sys.argv[2] if len(sys.argv) > 2 else source.rsplit(".", 1)[0] + ".rpp"
-    song.render(out, ReaperRenderer)
+    song.render(out, renderer_for(out))
     print("wrote %s" % out)
     return 0
 

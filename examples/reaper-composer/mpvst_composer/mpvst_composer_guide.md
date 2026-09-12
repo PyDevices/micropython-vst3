@@ -13,7 +13,8 @@ You need three things, and two of them you probably already have:
 1. **MPVST installed.** The composer reads `catalog.json` out of the installed
    bundle to learn every instrument, effect, patch and macro. Set
    `MPVST_BUNDLE` if you put the plug-in somewhere unusual.
-2. **Reaper**, to render what you write.
+2. **Reaper**, to render what you write - or, if you have no DAW, the CPython
+   audio packages, which render it here instead. See [Rendering](#-rendering).
 3. **This folder.** `mpvst_composer` needs nothing but the Python standard
    library - no pip install, no build, no checkout of the plug-in's source.
 
@@ -267,11 +268,37 @@ The framework is strictly decoupled from the DAW rendering logic. The `Project` 
 
 To turn it into a Reaper project, you pass the `ReaperRenderer` class into the `render()` function. If you want to support a new DAW (e.g., Logic Pro, ProTools, or Ableton), you simply create a new Backend class that implements the `BaseRenderer` interface!
 
+Two ship. `ReaperRenderer` writes a `.RPP` for a host to play; `OfflineRenderer`
+plays it here and writes the WAV.
+
 ---
 
 ## 🎧 Rendering
 
-Writing the project gives you an `.RPP`. To hear it, render it:
+There are two ways to hear a project, and they are for different moments.
+
+**While you are writing it**, render it here - no DAW, no plug-in, nothing
+installed:
+
+```bash
+python from_yaml.py my_song.yaml my_song.wav
+```
+
+The `.wav` picks `OfflineRenderer`, which plays the project through the same
+`audioinstruments` and `audioeffects` packages the sidecar imports. Sixteen
+voices over two and a half minutes take about two and a half minutes, against
+the several a scan-load-and-bounce costs. From Python it is the same seam:
+
+```python
+from mpvst_composer.backends.offline import OfflineRenderer
+
+song.render("my_song.wav", OfflineRenderer)
+```
+
+It needs `pydevices-audioif`, `pydevices-audioinstruments` and
+`pydevices-audioeffects` from pip.
+
+**Before you believe it**, bounce it through Reaper:
 
 ```bash
 python bounce.py my_song.rpp
@@ -280,6 +307,13 @@ python bounce.py my_song.rpp
 Run that from `examples/`. It drives Reaper headless and comes back with the
 WAV your project names, needing Reaper and a Python interpreter and nothing
 else.
+
+Both paths agree closely - sixteen-voice Canon comes out 150.00 s and
+-14.4 LUFS offline against 150.00 s and -14.1 LUFS bounced - but only the
+bounce exercises the class IDs, the state chunk, the item timing and the
+sends, because those are things the project file asserts and only a host can
+honour. The offline render also leaves pan automation and sidechain keys
+unmixed.
 
 When you want to know how it came out:
 
