@@ -454,4 +454,9 @@ def main():
           "see the file that would be written." % len(entries))
 
 
-main()
+# Guarded so the module can be imported for its plugins()/cid() helpers -
+# mpvst_catalog.py reuses them, and an import that scanned as a side effect
+# would rewrite moduleinfo.json from whatever directory the caller happened
+# to be in.
+if __name__ == "__main__":
+    main()

@@ -103,6 +103,10 @@ Section "Plug-in" SecPlugin
     SetOutPath "$INSTDIR\${BUNDLE}\Contents\x86_64-win"
     nsExec::ExecToLog '"$INSTDIR\${BUNDLE}\Contents\x86_64-win\mpvst-engine.exe" mpvst_scan_plugins.py'
     Pop $0
+    ; catalog.json for tools; nothing the plug-in loads needs it, so its
+    ; result is not even checked.
+    nsExec::ExecToLog '"$INSTDIR\${BUNDLE}\Contents\x86_64-win\mpvst-engine.exe" mpvst_catalog.py'
+    Pop $1
     ; Not fatal: a failed rescan leaves the moduleinfo.json that shipped in the
     ; bundle, which is valid. Said out loud rather than swallowed.
     StrCmp $0 "0" +2 0

@@ -68,6 +68,12 @@ if ! (cd "$installed/Contents/x86_64-linux" && ./mpvst-engine mpvst_scan_plugins
     echo "warning: the plug-in scan failed; the list that shipped in the" \
          "bundle is unchanged." >&2
 fi
+# catalog.json is for tools that generate projects. Nothing the plug-in loads
+# reads it, so a failure here is worth a line and nothing more.
+if ! (cd "$installed/Contents/x86_64-linux" && ./mpvst-engine mpvst_catalog.py >/dev/null); then
+    echo "warning: could not write catalog.json; tools that read it will" \
+         "fall back to whatever shipped in the bundle." >&2
+fi
 
 echo "installed $installed"
 echo

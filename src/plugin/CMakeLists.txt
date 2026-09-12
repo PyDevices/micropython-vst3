@@ -131,6 +131,12 @@ if(EXISTS "${MPVST_MICROPYTHON_ENGINE}")
         COMMAND ${CMAKE_COMMAND} -E chdir
             $<TARGET_FILE_DIR:${MPVST_PLUGIN_TARGET}>
             ./${MPVST_ENGINE_NAME} mpvst_scan_plugins.py
+        # And catalog.json beside it: the same classes with their patches and
+        # macro ranges, in plain JSON, for tools that generate projects.
+        # Nothing the plug-in loads depends on it.
+        COMMAND ${CMAKE_COMMAND} -E chdir
+            $<TARGET_FILE_DIR:${MPVST_PLUGIN_TARGET}>
+            ./${MPVST_ENGINE_NAME} mpvst_catalog.py
         DEPENDS
             ${MPVST_PLUGIN_TARGET}
             "${MPVST_MICROPYTHON_ENGINE}"

@@ -35,3 +35,38 @@ if(NOT validate_status EQUAL 0)
     message(FATAL_ERROR
         "moduleinfo.json disagrees with the factory:\n${validate_output}")
 endif()
+
+# catalog.json is ours rather than Steinberg's, so no tool validates it. What
+# can go wrong is drift: a class in one file and not the other, or the same
+# class carrying two different class IDs, which would send a generated project
+# at a plug-in that is not there.
+execute_process(
+    COMMAND "${MPVST_ENGINE}" mpvst_catalog.py
+    WORKING_DIRECTORY "${MPVST_BUNDLE_BIN}"
+    RESULT_VARIABLE catalog_status
+    OUTPUT_VARIABLE catalog_output
+    ERROR_VARIABLE catalog_output)
+if(NOT catalog_status EQUAL 0)
+    message(FATAL_ERROR "mpvst_catalog.py failed (${catalog_status}):\n${catalog_output}")
+endif()
+message(STATUS "${catalog_output}")
+
+file(READ "${MPVST_BUNDLE_BIN}/../Resources/catalog.json" catalog_text)
+file(READ "${MPVST_BUNDLE_BIN}/../Resources/moduleinfo.json" moduleinfo_text)
+string(JSON catalog_count LENGTH "${catalog_text}" classes)
+math(EXPR checked "0")
+foreach(index RANGE 1 ${catalog_count})
+    math(EXPR at "${index} - 1")
+    string(JSON entry GET "${catalog_text}" classes ${at})
+    string(JSON entry_cid GET "${entry}" cid)
+    string(JSON entry_name GET "${entry}" name)
+    string(FIND "${moduleinfo_text}" "\"CID\": \"${entry_cid}\"" found)
+    if(found EQUAL -1)
+        message(FATAL_ERROR
+            "catalog.json lists ${entry_name} with CID ${entry_cid}, which is "
+            "not in moduleinfo.json - a project generated from the catalog "
+            "would name a class the host cannot find.")
+    endif()
+    math(EXPR checked "${checked} + 1")
+endforeach()
+message(STATUS "catalog.json: ${checked} class IDs all present in moduleinfo.json")

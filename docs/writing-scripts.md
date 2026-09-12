@@ -127,10 +127,32 @@ gets `default_instrument.py` instead - which, since it is deliberately silent,
 now renders nothing rather than sounding like a plausible synth on every
 track. That is the intended alarm.
 
-The IDs live in `Contents/Resources/moduleinfo.json` inside the installed
-bundle: match on `Name` and take the `CID` beside it. Do not hardcode one from
-a document - including this one - because the file in the bundle is the only
-copy that cannot drift.
+Read them out of `Contents/Resources/catalog.json` in the installed bundle.
+It is plain JSON, one entry per class, and it carries everything a generator
+needs:
+
+```python
+import json
+catalog = json.load(open(bundle + "/Contents/Resources/catalog.json"))
+by_name = {c["name"]: c for c in catalog["classes"]}
+limiter = by_name["Limiter"]
+limiter["cid"]           # 0700D6A78BFA9A03BA678484750C4B21
+limiter["macro_labels"]  # ['Ceiling', 'Gain', 'Lookahead', ...]
+limiter["macro_ranges"]  # [[-24.0, 0.0], [0.0, 24.0], ...]  -> normalize with these
+limiter["patches"]       # [{'index': 2, 'name': 'Loud', 'macros': [125, 64, ...]}, ...]
+```
+
+`macro_ranges` is what turns a number you want into the 0.0-1.0 the chunk
+takes: 8 dB of Limiter Gain, whose range is 0-24, is `8 / 24`. A patch's
+`macros` are MIDI 0-127, so divide by 127 instead.
+
+Do not hardcode a class ID from a document, including this one. The file in
+the bundle is the only copy that cannot drift, and a test fails the build if
+it ever disagrees with what the plug-in offers.
+
+`moduleinfo.json` beside it is Steinberg's file, for hosts. It has the same
+IDs but no patches and no ranges, and its reader accepts no field we invent,
+which is why there are two files rather than one.
 
 ## Putting a script into a project file yourself
 
