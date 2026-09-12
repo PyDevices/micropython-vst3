@@ -117,6 +117,44 @@ notch and band-pass sections instead. The factory configures the sample rate
 for each component before construction; scripts do not need to manage a
 process-wide rate.
 
+## Putting a script into a project file yourself
+
+If you generate project files rather than saving them from a DAW - a composer
+script emitting `.RPP`, say - the script and its macro values travel in the
+plug-in's **state chunk**. Get the layout wrong and the plug-in rejects the
+chunk, which is worth knowing about before it costs you a day:
+
+> **A rejected chunk is silent.** `setState` returns an error, the host
+> discards it without a message, and the instance falls back to the two-line
+> script the catalog synthesizes from the class ID - `run("Limiter")`, no
+> arguments. It plays. It sounds plausible. Nothing anywhere says your script
+> did not run. If a value you set in a generated project seems to have no
+> effect, check the chunk before you suspect the DSP.
+
+The component state is little-endian, in this order:
+
+| Field | Type | Notes |
+|---|---|---|
+| version | `int32` | `2`. `1` is accepted for old projects |
+| bypass | `int32` | 0 or 1 |
+| macros | `float32` x 16 | normalized 0.0-1.0, one per macro |
+| pipeline blocks | `int32` | 4 is the shipping value |
+| script length | `int32` | bytes, not characters |
+| script | bytes | UTF-8, no terminator needed |
+
+REAPER wraps that in its own framing before it reaches us: a header of
+`uint32` words, then `<uint32 length-of-component-state><uint32 1>`, the
+component state, and eight zero bytes. `reaper/matrix/build_effect_project.py`
+does exactly this in about twenty lines - `component_state()` at line 24 and
+`chunk_lines()` at line 32 - and it is the reference to copy, because it is
+run by a test rather than kept in a document.
+
+**Put your values in the macros array, not in constructor arguments.** The
+sixteen floats are what the plug-in restores and replays, so they are the
+values that survive; a macro you leave alone keeps whatever the component
+chose for itself. A constructor argument is not visible to the host at all,
+so a project cannot round-trip one.
+
 ## Parameters and state
 
 20 visible parameters - bypass, `Reload Script`, read-only `Engine Ready`
