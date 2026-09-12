@@ -16,7 +16,7 @@ To write instruments or effects *for* MPVST - which needs none of this - see
 | `scripts/` | build, packaging and setup automation |
 | `installer/` | what a user runs rather than builds: `windows.nsi` (the NSIS installer, cross-built from Linux) and `install-linux.sh`, which ships inside the tarball as `install.sh` |
 | `reaper/` + `reaper.sh` | everything that drives REAPER. Deletable as a unit; nothing outside it depends on it |
-| `examples/` | two composers with their songs, and `bounce.py`; nothing in here imports anything above it |
+| `examples/` | two composers with their songs, and `bounce.py`; nothing in here imports anything above it (rendering: [rendering.md](rendering.md)) |
 
 The architecture is written down in
 [docs/architecture/phase-0.md](architecture/phase-0.md) (the system

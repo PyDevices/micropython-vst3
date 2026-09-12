@@ -285,6 +285,8 @@ plays it here and writes the WAV.
 ## 🎧 Rendering
 
 There are two ways to hear a project, and they are for different moments.
+(Four across the whole repo - the other two render the soundtrack's pieces.
+[`docs/rendering.md`](../../../docs/rendering.md) is the chooser.)
 
 **While you are writing it**, render it here - no DAW, no plug-in, nothing
 installed:

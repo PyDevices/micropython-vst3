@@ -8,37 +8,38 @@ a fresh clone (including REAPER), see [`../scripts/`](../scripts/README.md).
 
 ## Composing a piece
 
-`../soundtrack/` is example content, not infrastructure - it might be
-renamed, restructured, or replaced independently of this. Two scripts
-here can resolve and render a piece with no DAW involved at all - neither
-one imports or knows about REAPER:
+That moved. The soundtrack is example content, not infrastructure - it might
+be renamed, restructured, or replaced independently of this - so the tools
+that only serve it now live beside it in
+[`../examples/soundtrack/composer/`](../examples/soundtrack/README.md):
+`pieces.py` resolves a piece name to its `composition.py` and `instruments/`,
+and `preview.py [--piece NAME] [out.wav] [--stems DIR]` renders one offline.
 
-- **`piece.py`** - resolves a piece name (case-insensitive) to
-  its `composition.py` and `instruments/` under `../soundtrack/`. The one
-  place that hardcodes that location.
-- **`render_preview.py [--piece NAME] [out.wav] [--stems DIR]`**
-  - offline render through `harness.py` (needs the `audioif` wheel's venv:
-  this repo's own `.venv` if set up - `pip install -i https://test.pypi.org/simple/
-  --extra-index-url https://pypi.org/simple/ pydevices-audioif
-  pydevices-audioinstruments pydevices-audioeffects` (TestPyPI is the only
-  index carrying these; the extra index resolves their ordinary
-  dependencies), plus `numpy` - else a sibling `audioif` checkout's, e.g.
-  `../../audioif/.venv/bin/python`); reports peaks, RMS per section, and
-  simultaneous-track counts.
-  - The render loop, tempo math, mixing and report live in audioif's
-  `audiorender`. What is left here is the part that is about this plug-in:
-  instruments are exec'd against the vstaudio shim the way the sidecar
-  loads them, rather than imported as `audioinstruments` modules, so the
-  preview stays a check on the path the bounce takes and the macro values
-  it sends stay bit-identical to the ones a script receives in a host.
+Both need the `audioif` wheel's venv - this repo's own `.venv` if you have set
+one up:
 
-Turning a piece into a real REAPER project, and driving REAPER itself, is
-a separate, deletable concern - see [`../reaper/README.md`](../reaper/README.md)
-and the root [`../reaper.sh`](../reaper.sh) entry point.
+```bash
+pip install -i https://test.pypi.org/simple/ \
+  --extra-index-url https://pypi.org/simple/ \
+  pydevices-audioif pydevices-audioinstruments pydevices-audioeffects numpy
+```
+
+TestPyPI is the only index carrying those three; the extra index resolves
+their ordinary dependencies. `preview.py` also needs MPVST installed, because
+it loads instruments the way the sidecar does - through the bundle's
+`mpvst_instrument_adapter`. Point `MPVST_BUNDLE` at the install if it is
+somewhere unusual.
+
+Which render path to reach for, and what each one does and does not prove, is
+[`../docs/rendering.md`](../docs/rendering.md). Turning a piece into a real
+REAPER project, and driving REAPER itself, is a separate, deletable concern -
+see [`../reaper/README.md`](../reaper/README.md) and the root
+[`../reaper.sh`](../reaper.sh) entry point.
 
 ## Testing
 
-- **`harness.py`** and **`vstaudio.py`** - a CPython stand-in for the
+- **`../examples/soundtrack/composer/harness.py`** and **`vstaudio.py`**
+  beside it - a CPython stand-in for the
   sidecar, built on the `audioif` wheel (the same `synthio`/`audiocore`
   DSP the real engine runs). Lets any instrument or effect script run
   without the compiled engine or a VST3 host, in milliseconds instead of
@@ -90,7 +91,9 @@ the scripts here are compact on purpose.
 
 None of the `preview`-based tools prove a script sounds like the
 hardware it's named after, or like anything in particular - only that it
-doesn't crash and isn't silent. Hearing it is still on you.
+doesn't crash and isn't silent. Hearing it is still on you, and what else
+an offline render cannot tell you is in
+[`../docs/rendering.md`](../docs/rendering.md).
 
 ## Patches
 

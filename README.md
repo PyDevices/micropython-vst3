@@ -85,6 +85,9 @@ after you install.
 - [**Writing your own instruments and effects**](docs/writing-scripts.md) -
   what a script declares, how macros and patches reach it, what the
   library gives you to build on. Needs nothing built.
+- [**Hearing what you wrote**](docs/rendering.md) - the four ways to turn a
+  project into audio, which to reach for, and what an offline render cannot
+  tell you.
 - [**Working on MPVST itself**](docs/development.md) - repository layout,
   prerequisites, building the plug-in and the sidecar engine, the test
   suite, the DAW harnesses, cutting a release.
