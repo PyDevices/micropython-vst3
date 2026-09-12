@@ -52,26 +52,6 @@ own, and how to point an instance at a file you are editing. The installer
 puts the one for your platform beside the uninstaller, so it is also there
 after you install.
 
-## Security: what the shipped engine cannot do
-
-Compositions, instruments, and racks are Python code, and some of it —
-`mpvst_scan_plugins.py` reading module declarations — runs at plugin-scan time,
-before you consciously play anything. Because people share pieces, the
-shipped sidecar engine is a deliberately narrow interpreter: **no sockets,
-no SSL, and no FFI** (the windows build skips the networking and FFI
-overlays; the Linux build compiles them out — see
-`scripts/build-micropython-engine.sh` and the `vst3-engine` profile in
-`micropython-pydevices`). A hostile script therefore has no exfiltration
-channel and no route to arbitrary native code; its blast radius is the
-file I/O the engine legitimately needs for its own library.
-
-This is a safe default, not a sandbox. You can rebuild the engine with
-networking or FFI enabled and drop it into the bundle — at that point the
-capability was your informed choice as the builder, which is exactly the
-line this default draws: nothing a downloaded piece can switch on by
-itself. Do not redistribute bundles containing a widened engine without
-saying so.
-
 ## Known limitations
 
 - No host-visible diagnostic string. Both editors show only the ready and
@@ -103,6 +83,9 @@ saying so.
 - [**Working on MPVST itself**](docs/development.md) - repository layout,
   prerequisites, building the plug-in and the sidecar engine, the test
   suite, the DAW harnesses, cutting a release.
+- [**What the shipped engine cannot do**](docs/security.md) - no sockets,
+  no SSL, no FFI, and why a plug-in that runs other people's code ships
+  that way.
 - [**Architecture**](docs/architecture/ipc-v1.md) - the shared-memory
   protocol between plug-in and sidecar, with
   [the editor's half](docs/architecture/ui-v1.md) alongside it.
