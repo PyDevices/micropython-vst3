@@ -8,9 +8,14 @@ By writing your compositions in Python rather than static file formats, you unlo
 
 ## 🚀 Getting Started
 
-To use the framework, you need:
-1. The `mpvst_composer` Python package in your workspace.
-2. A generated `patches_dump.json` file in your working directory. (This file maps human-readable patch strings to their integer indices. You can generate it using the `dump_patches.py` utility).
+You need three things, and two of them you probably already have:
+
+1. **MPVST installed.** The composer reads `catalog.json` out of the installed
+   bundle to learn every instrument, effect, patch and macro. Set
+   `MPVST_BUNDLE` if you put the plug-in somewhere unusual.
+2. **Reaper**, to render what you write.
+3. **This folder.** `mpvst_composer` needs nothing but the Python standard
+   library - no pip install, no build, no checkout of the plug-in's source.
 
 **Basic Skeleton:**
 ```python
@@ -44,11 +49,17 @@ One of the most powerful features of `mpvst_composer` is its scale-degree abstra
 
 ## 🎹 Tracks & Instruments
 
-You can add standard instrument tracks to your project. The framework will automatically resolve the string `patch` name using your `patches_dump.json` manifest.
+Add an instrument track and name the patch you want. The framework resolves
+that name against `catalog.json` inside the installed plug-in, so the names
+are the ones the instrument itself declares.
 
 ```python
 bass_track = song.add_track("Synth Bass", instrument="minimoog", patch="Classic Lead")
 ```
+
+Patch names are per instrument - `minimoog` has *Classic Lead*, *Deep Bass*
+and *Screaming Lead*, while a drum machine may only have *Default*. If you
+name one that does not exist you get patch 0 and a warning.
 
 ---
 
@@ -70,15 +81,35 @@ verb_aux = song.add_aux_track("Big Verb", effect="Reverb", preset="hall")
 bass_track.add_send(verb_aux, send_level=0.5)
 ```
 
-**Sidechain Compression (Advanced Routing):**
-You can sidechain one track to another (e.g., ducking the bass when the kick hits) by routing the send to the auxiliary channels (channels 3/4, which is `dst_chan=2`).
-```python
-# Send kick drum to bass sidechain
-drums_track.add_send(bass_track, send_level=1.0, src_chan=0, dst_chan=2)
+**Sidechain Ducking:**
+To duck the bass when the kick hits, send the drums into the bass track's
+auxiliary channels (3/4, which is `dst_chan=2`) and insert something that
+listens to them. Note that **Compressor has no sidechain input** - the effects
+that take a key are `NoiseGate(duck=True)` and `Expander(key=...)`.
 
-# Insert a compressor on the bass track that listens to the sidechain input
-bass_track.add_insert("compressor", threshold=0.1, ratio=10.0, attack=0.001, release=0.1)
+```python
+# Send the kick into the bass track's channels 3/4
+drums.add_send(bass, 1.0, dst_chan=2, mode=1)
+
+# A gate on the bass, ducking on what it hears there
+bass.add_insert("NoiseGate", sidechain=True, duck=True, threshold_db=-30,
+                attack_ms=1.0, hold_ms=30, release_ms=110, range_db=-8)
+
+# And the volume dip that makes it audible
+song.apply_sidechain_duck(drums, bass, "kick", depth=0.38, attack_beats=0.02,
+                          hold_beats=0.07, release_beats=0.18)
 ```
+
+The third line is doing more work than it looks. A four-channel key into the
+plug-in is not reliable on its own, so `apply_sidechain_duck` also writes
+volume-envelope dips at every kick hit - that is what you actually hear.
+
+**A Mix Bus:**
+`add_mix_bus()` gives you a summing aux with a Limiter on it, and
+`route_to_mix_bus()` points everything at it. Put your drive on the limiter's
+`gain_db` rather than on a fader: Reaper's volume is applied *after* the
+insert, so a fader boost will push a ceilinged signal straight back through
+the ceiling. Leave the bus fader at `1.0` unless you want a trim below it.
 
 ---
 
@@ -238,120 +269,40 @@ To turn it into a Reaper project, you pass the `ReaperRenderer` class into the `
 
 ---
 
-## Discoveries from Afterimage (Signal Room)
+## 🎧 Rendering
 
-These notes come from bouncing the 8-bar test cue and the seven-track EP. They override older examples in this guide where the two disagree. The VST tree was not edited; every workaround lives in `mpvst_composer` or workspace scripts.
+Writing the project gives you an `.RPP`. To hear it, render it:
 
-### Test cue
-
-`source/00_test_cue.py` is the smallest project that should make sound: D minor, 118 BPM, 8 bars, TR-808 + Minimoog (Deep Bass) + Juno-106/Chorus + SH-101/Saturation, hall send, kick→bass duck, mix-bus limiter. Headless bounce:
-
-```
-C:\Users\bradb\REAPER\reaper.exe -nosplash -newinst -renderproject bounce\<stem>.rpp
+```bash
+python ../bounce.py my_song.rpp
 ```
 
-`-renderproject` honors the RPP render block and exits. `bounce_qc.py` writes the RPP, calls that command, then measures the WAV. Lua (`render_and_quit.lua`) is only a fallback.
+`bounce.py` drives Reaper headless and comes back with the WAV your project
+names. It needs Reaper and a Python interpreter, nothing else.
 
-### Inserts, patches, CIDs
+It does not check the result, on purpose. When you want to know how the render
+came out, that is a separate step:
 
-- Track inserts are extra `<VST>` blocks in the same `<FXCHAIN>` as the instrument (`BYPASS 0 0 0` before each).
-- Instruments: `inst = mpvst_instrument_adapter.run('audioinstruments.X'); inst.program_change(N)`. Never `run(..., patch_index=N)` — the adapter is `run(name)` only.
-- **Use each plug-in's own CID** from `moduleinfo.json` (and Reaper's numeric id from `reaper-vstplugins64.ini`). The Script Host CIDs (`896536053{60A40168…}` / `1503031402{910677E2…}`) load `default_instrument.py` and `default_effect.py`, so every track is the same sound. Display names are not enough — the TUID in braces selects the class.
-
-### Routing
-
-- `AUXRECV` is written on the **destination**. First field is the **source track index** (0-based; auxes first, then instruments):
-  `AUXRECV {src_idx} {mode} {level} 0 0 0 0 {dst_chan} {src_chan} -1:0 -1`
-  `dst_chan=0` → channels 1/2, `dst_chan=2` → channels 3/4.
-- Emit `VOLPAN` from `track.volume` / `track.pan`. Reaper volume is linear amplitude (`1.0` = 0 dB).
-- `Track.mainsend` / `AuxTrack.mainsend` (0/1). Sends are collected from every node.
-
-### Sidechain (the guide example above is wrong)
-
-MPVST **Compressor has no `key=`**. `NoiseGate(duck=True)` and `Expander(key=)` do. The renderer emits a custom payload for those: `audioeffects.create(..., key=host, duck=True, ...)`.
-
-A 4-channel key into MPVST is **not reliable**. `Project.apply_sidechain_duck()` also writes volume-envelope dips at kick hits — that is what makes ducking audible.
-
-```python
-drums.add_send(bass, 1.0, dst_chan=2, mode=1)
-bass.add_insert("NoiseGate", sidechain=True, duck=True, threshold_db=-30,
-                attack_ms=1.0, hold_ms=30, release_ms=110, range_db=-8)
-song.apply_sidechain_duck(drums, bass, "kick", depth=0.38, attack_beats=0.02,
-                          hold_beats=0.07, release_beats=0.18)
+```bash
+python ../../tools/audio_qc.py my_song.wav
 ```
 
-### Mix bus, limiter, and the VST chunk
+That reports integrated loudness, true peak and any silence - a digitally
+black file, a silent head, or holes in the middle usually mean a plug-in did
+not load rather than anything about your music. It needs `numpy`, `soundfile`,
+`pyloudnorm` and `scipy`.
 
-Use `Project.add_mix_bus()` + `route_to_mix_bus()`: a summing aux with a Limiter insert; instrument tracks and return auxes get `mainsend=0` and send into the bus. Put **drive on limiter `gain_db`**, not on a post-FX mix fader — Reaper `VOLPAN` is after the insert, so a fader boost will clip a ceilinged signal. Leave `mix.volume = 1.0` unless you need a trim *below* the ceiling.
+---
 
-`MASTERFXLIST` with the real Limiter CID is unproven either way. The bounce that "proved master FX is ignored" was using the Script Host CID (`default_effect.py`, a wire).
+## 🧯 Things that will bite you
 
-**Constructor kwargs only stick if they are also in the VST3 state chunk.** A rejected chunk is silent: the host drops it and the instance plays the catalog two-liner (`run("Limiter")`, no arguments). The old composer wrote `<uint32 length><script>`, which the plug-in read as `version=1150` and rejected. Layout (little-endian), copied from `reaper/matrix/build_effect_project.py`:
-
-| Field | Type | Notes |
-|---|---|---|
-| version | `int32` | `2` |
-| bypass | `int32` | 0 or 1 |
-| macros | `float32` × 16 | normalized 0–1; unused slots stay 0.5 |
-| pipeline blocks | `int32` | `4` |
-| script length | `int32` | bytes |
-| script | bytes | UTF-8, no terminator |
-
-REAPER wraps that in a header of `uint32` words (first word = per-class numeric id, not Script Host `0x35700DF5` / `0x5996706A`), then `len+flag` + component + 8 zero bytes, base64 with a 6-zero footer.
-
-**Put values in the macros array, not only in `run(...)` kwargs.** Limiter: Ceiling (−24…0 dB), Gain (0…24 dB) so `gain_db=8` → macro 1 = `8/24 = 0.3333`. Named patches and MIDI `program_change` still work; the 16 floats are what the plug-in restores and replays. `PARMENV` on macro index 0–15 is a real parameter change and also sticks (IDs 100–115 in the plug-in). Constructor-only options with no macro (Reverb `preset=`, Saturation `character=`) need a valid chunk so the embedded script actually runs.
-
-Do not post-fader a limited bus. If true peak still overshoots the ceiling by a few tenths, set `ceiling_db` a bit below −1 (the test cue uses −1.6).
-
-### Pattern length and drums
-
-- Pattern span is last-event, not “bars you meant.” `repeat` multiplies `length_measures`. A 4-chord cell at 4 beats each is 4 bars; `repeat=6` covers 24 bars. Gaps in that math become digital-black holes.
-- One-shot drums (808/909/Linn) decay below −80 dBFS between hits. If no pad/bass is holding, QC sees mid-file dropouts >400 ms. Put 8th-note hats under sparse outros, or keep a bed.
-- `resolve_drum_note` prefers per-instrument `NOTE_MAP`, then GM aliases (`kick`, `closed_hihat`, `cowbell`, toms, …).
-- `create_arp` fills `bars` (default 1). `beats_per_bar` is not hardcoded 4/4.
-
-### Headless bounce and QC
-
-RPP render block: `SAMPLERATE 48000 1 0` (second field enables the project-rate checkbox), `RENDER_FILE`, `RENDER_FMT 0 2 48000` (third field is the render rate — `0` falls back to 44.1 kHz), `RENDER_RANGE 1 0 0 0 {tail_ms}`, `RENDER_CFG ZXZhdxgAAQ==` (24-bit WAV). GUIDs wrapped in `{...}`. `MAINSEND`, `TRACKID`, `NCHAN` (4 when a sidechain dest), `FX 1`.
-
-`bounce_qc.py` contract: 24-bit / 48 kHz, integrated **−15.5..−13.0 LUFS** (target −14), true peak **≤ −1.0 dBTP**, lead silence <400 ms, trail slack for reverb, fail on digital-black or mid-file runs of silence >400 ms at −80 dBFS. True peak is 4× `resample_poly`. Packages: `soundfile`, `pyloudnorm`, `scipy`, `numpy`.
-
-```
-python bounce_qc.py 00_test_cue --timeout 240
-python bounce_qc.py --timeout 400
-```
-
-### dump_patches
-
-Walk `audioinstruments.ALL` and effect **classes** (`NAME` / `PATCHES` / `MACRO_LABELS`). Nested format:
-
-```json
-{
-  "instruments": {
-    "minimoog": {
-      "patches": {"1": ["Deep Bass", []]},
-      "macros": [],
-      "note_map": null
-    }
-  },
-  "effects": {
-    "Chorus": {"patches": {}, "macros": []}
-  }
-}
-```
-
-`resolve_instrument_patch` reads the nested `"patches"` object, with a fallback to legacy flat keys. Load `patches_dump.json` from CWD or the workspace root.
-
-### Afterimage bounce (measured)
-
-| Stem | LUFS | TP dBTP | Length |
-|---|---|---|---|
-| `00_test_cue` | −14.50 | −1.53 | 16.3 s |
-| `01_glass_corridor` | −14.15 | −1.54 | 5:03 |
-| `02_night_shift` | −14.91 | −1.04 | 3:16 |
-| `03_loading_dock` | −15.13 | −1.50 | 3:37 |
-| `04_second_hand` | −13.99 | −1.57 | 3:12 |
-| `05_service_elevator` | −13.99 | −1.52 | 4:17 |
-| `06_under_the_overpass` | −14.99 | −1.54 | 3:40 |
-| `07_hold_pattern` | −14.11 | −3.14 | 5:20 |
-
+- **Pattern span is the last event, not the bars you meant.** `repeat`
+  multiplies `length_measures`, so a four-chord cell at four beats each is
+  four bars and `repeat=6` covers twenty-four. Miscount and the gap renders as
+  silence.
+- **One-shot drums decay to nothing.** An 808 or a Linn under a sparse outro
+  will fall below -80 dBFS between hits, which reads as a dropout. Keep
+  something holding underneath, or accept the gaps.
+- **Name the patch, not the index.** `program_change(N)` is how a patch is
+  selected; there is no `patch_index=` argument on the adapter.
+- **Don't put a fader after a limiter.** See the mix bus note above.
