@@ -282,6 +282,37 @@ plays it here and writes the WAV.
 
 ---
 
+## 🔄 Python and YAML are the same song
+
+You can write a piece either way, and you can go from one to the other.
+
+`from_yaml.py` reads a document and builds a `Project`.
+[`to_yaml.py`](to_yaml.py) does the reverse, so a composition written against
+this API can be handed to someone who would rather read notes than functions:
+
+```python
+from mpvst_composer import to_yaml
+
+to_yaml.write(song, "song.yaml")
+```
+
+The two examples close the loop from opposite ends.
+[`source/canon_16.py`](../source/canon_16.py) builds a *document* with
+functions and hands it straight to `from_yaml.build`, so one file is both a
+Python example and the YAML it emits.
+[`source/converge.py`](../source/converge.py) builds a *`Project`* with the
+API, exports it, reads it back, renders both, and compares the two WAVs byte
+for byte - so the claim on this page is checked every time you run it.
+
+The round trip preserves what a project is, not how its Python was
+organised. Patterns get named, because a document refers to cells by name and
+a `Project` just holds objects; identical cells are found by comparing rows,
+so one figure played by six voices exports once. Placement offsets are baked
+into the rows they shifted. The notes land in the same places either way,
+which is what the byte comparison is for.
+
+---
+
 ## 🎧 Rendering
 
 There are two ways to hear a project, and they are for different moments.

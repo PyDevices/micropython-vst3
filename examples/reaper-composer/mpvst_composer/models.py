@@ -69,7 +69,13 @@ def _update_pattern_span(pattern, start_beat: float, length_beats: float):
     max_beat = start_beat + length_beats
     pattern.max_beat = max(getattr(pattern, "max_beat", 0.0), max_beat)
     bar = max(1, int(getattr(pattern, "beats_per_bar", 4)))
-    pattern.length_measures = max(pattern.length_measures, int(max_beat // bar) + 1)
+    # The epsilon is what keeps a cell that ends exactly on the barline from
+    # claiming the next bar as well. Sixteen beats of content in 4/4 is four
+    # measures, not five, and without this a `repeat` laid every loop one bar
+    # further out than the last - a silent bar between them. `content_end_measure`
+    # has always subtracted it; this did not.
+    pattern.length_measures = max(pattern.length_measures,
+                                  int((max_beat - 1e-9) // bar) + 1)
 
 
 class MidiPattern:

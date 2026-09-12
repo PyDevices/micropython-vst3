@@ -179,6 +179,16 @@ def patch_midi(entry: Mapping, preset) -> Tuple[int, List]:
             return list(data[1])
         return []
 
+    def _zero() -> List:
+        """Patch 0's values - what an unmatched name falls back to.
+
+        Falling back to the index alone and dropping the values is not the
+        same thing: every macro then resolves to 0.5, which is the middle of
+        each range rather than the sound the instrument's author shipped. It
+        is quiet, plausible and wrong, which is the worst way to be wrong.
+        """
+        return _vals(patches.get("0") or patches.get(0) or [])
+
     if preset is None or preset == "":
         data = patches.get("0") or patches.get(0)
         if data:
@@ -191,7 +201,7 @@ def patch_midi(entry: Mapping, preset) -> Tuple[int, List]:
         data = patches.get(idx)
         if data:
             return int(idx), _vals(data)
-        return int(idx), []
+        return 0, _zero()
     needle = str(preset).lower()
     for idx_str, data in patches.items():
         pname = data[0] if isinstance(data, list) and data else data
@@ -200,7 +210,7 @@ def patch_midi(entry: Mapping, preset) -> Tuple[int, List]:
                 return int(idx_str), _vals(data)
             except (TypeError, ValueError):
                 return 0, _vals(data)
-    return 0, []
+    return 0, _zero()
 
 
 def _overlay(macros, labels, ranges, kwargs):
