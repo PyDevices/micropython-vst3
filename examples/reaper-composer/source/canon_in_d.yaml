@@ -116,7 +116,7 @@ aux_tracks:
 tracks:
 
   - name: Ground
-    instrument: taurus
+    instrument: b3
     gain_db: 0.0
     play:
       - {bar: 1, pattern: ground, repeat: 8}
