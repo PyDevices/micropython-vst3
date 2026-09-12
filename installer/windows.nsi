@@ -105,7 +105,7 @@ Section "Plug-in" SecPlugin
     Pop $0
     ; catalog.json for tools; nothing the plug-in loads needs it, so its
     ; result is not even checked.
-    nsExec::ExecToLog '"$INSTDIR\${BUNDLE}\Contents\x86_64-win\mpvst-engine.exe" mpvst_catalog.py'
+    nsExec::ExecToLog '"$INSTDIR\${BUNDLE}\Contents\x86_64-win\mpvst-engine.exe" -X heapsize=64M mpvst_catalog.py'
     Pop $1
     ; Not fatal: a failed rescan leaves the moduleinfo.json that shipped in the
     ; bundle, which is valid. Said out loud rather than swallowed.

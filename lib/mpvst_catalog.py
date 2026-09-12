@@ -3,7 +3,13 @@
 Run it with the engine, from the folder it lives in, the same way as the
 scanner and right after it:
 
-    mpvst-engine.exe mpvst_catalog.py
+    mpvst-engine.exe -X heapsize=64M mpvst_catalog.py
+
+The heap flag is not optional. The engine defaults to about 2 MB free, and
+reading 98 modules' declarations runs out of it - on Windows, four of the
+drum machines failed to allocate even when each module is released before the
+next is read. This is a build-time tool with no audio deadline, so it is
+given room rather than made clever.
 
 `moduleinfo.json` next door is Steinberg's file and answers to Steinberg's
 reader, which accepts no field we invent - not inside a class, not even at the
@@ -25,6 +31,7 @@ still come from the scanner's text pass, so they cannot disagree with
 than taking the file down.
 """
 
+import gc
 import json
 import sys
 
@@ -32,6 +39,20 @@ import mpvst_scan_plugins as scan
 
 CATALOG = "../Resources/catalog.json"
 FORMAT = 1
+
+
+def forget(package, file_stem):
+    """Drop a module again once its declarations have been read.
+
+    98 modules imported into one interpreter is more than the engine's heap
+    holds - tr808 and tr909 failed to allocate at the tail of the first run
+    that tried it. Nothing here needs two modules live at once, so each is
+    released before the next is loaded and peak memory stays flat.
+    """
+    for key in (package + "." + file_stem, file_stem):
+        if key in sys.modules:
+            del sys.modules[key]
+    gc.collect()
 
 
 def imported(package, file_stem, class_name):
@@ -61,6 +82,16 @@ def patches(obj):
             else (str(entry), ())
         out.append({"index": index, "name": label, "macros": list(values)})
     return out
+
+
+def note_map(obj):
+    """`NOTE_MAP` as [[midi, label], ...] - which key plays which drum.
+
+    Percussion declares it and a generator needs it to write notes at all;
+    dropping it makes a drum machine unplayable from a generated project.
+    """
+    return [[int(note), str(label)]
+            for note, label in declared(obj, "NOTE_MAP", ())]
 
 
 def ranges(obj):
@@ -93,6 +124,10 @@ def entry_for(record):
     built["display_name"] = declared(obj, "DISPLAY_NAME", record["name"])
     built["macro_ranges"] = ranges(obj)
     built["patches"] = patches(obj)
+    mapped = note_map(obj)
+    if mapped:
+        built["note_map"] = mapped
+    forget(package, record["file"].rsplit(".", 1)[0])
     return built
 
 
@@ -110,11 +145,21 @@ def main():
     }
     with open(root + "/" + CATALOG, "w") as handle:
         json.dump(catalog, handle)
-    missing = sum(0 if item["imported"] else 1 for item in catalog["classes"])
-    print("%d classes: wrote %s%s"
-          % (len(catalog["classes"]), CATALOG,
-             "" if not missing else " (%d without patches)" % missing))
+    missing = [item["name"] for item in catalog["classes"]
+               if not item["imported"]]
+    print("%d classes: wrote %s" % (len(catalog["classes"]), CATALOG))
+    if missing:
+        # Not fatal - the file is still useful - but a class we ship that will
+        # not import is a real defect, so it leaves in the exit code for a
+        # caller that cares. The installers do not; the test does.
+        print("%d did not import: %s" % (len(missing), ", ".join(missing)))
+        # Exit 0 unless asked otherwise: the build and both installers run
+        # this, and a tools file that cannot be written is not a reason to
+        # fail an install. --strict is for the test, which should care.
+        if "--strict" in sys.argv:
+            return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -41,7 +41,7 @@ endif()
 # class carrying two different class IDs, which would send a generated project
 # at a plug-in that is not there.
 execute_process(
-    COMMAND "${MPVST_ENGINE}" mpvst_catalog.py
+    COMMAND "${MPVST_ENGINE}" -X heapsize=64M mpvst_catalog.py --strict
     WORKING_DIRECTORY "${MPVST_BUNDLE_BIN}"
     RESULT_VARIABLE catalog_status
     OUTPUT_VARIABLE catalog_output

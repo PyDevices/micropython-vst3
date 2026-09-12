@@ -136,10 +136,12 @@ if(EXISTS "${MPVST_MICROPYTHON_ENGINE}")
         # Nothing the plug-in loads depends on it.
         COMMAND ${CMAKE_COMMAND} -E chdir
             $<TARGET_FILE_DIR:${MPVST_PLUGIN_TARGET}>
-            ./${MPVST_ENGINE_NAME} mpvst_catalog.py
+            ./${MPVST_ENGINE_NAME} -X heapsize=64M mpvst_catalog.py
         DEPENDS
             ${MPVST_PLUGIN_TARGET}
             "${MPVST_MICROPYTHON_ENGINE}"
+            "${CMAKE_SOURCE_DIR}/lib/mpvst_catalog.py"
+            "${CMAKE_SOURCE_DIR}/lib/mpvst_scan_plugins.py"
             "${CMAKE_SOURCE_DIR}/lib/mpvst_bootstrap.py"
             "${CMAKE_SOURCE_DIR}/lib/default_instrument.py"
             "${CMAKE_SOURCE_DIR}/lib/default_effect.py"
