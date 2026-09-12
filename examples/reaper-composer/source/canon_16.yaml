@@ -374,6 +374,7 @@ tracks:
   sends:
   - {to: Chapel, level: 0.35}
   play:
+  - {bar: 1, pattern: ground}
   - {bar: 5, pattern: ground}
   - {bar: 9, pattern: ground}
   - {bar: 13, pattern: ground}
@@ -390,6 +391,7 @@ tracks:
   sends:
   - {to: Chapel, level: 0.35}
   play:
+  - {bar: 5, pattern: rf_quarter}
   - {bar: 9, pattern: rf_quarter}
   - {bar: 13, pattern: rf_quarter}
   - {bar: 17, pattern: rf_quarter}
@@ -404,12 +406,13 @@ tracks:
   sends:
   - {to: Chapel, level: 0.35}
   play:
-  - {bar: 9, pattern: half}
-  - {bar: 13, pattern: quarter}
-  - {bar: 17, pattern: eighth}
-  - {bar: 21, pattern: sixteenth}
-  - {bar: 25, pattern: eighth}
-  - {bar: 29, pattern: quarter}
+  - {bar: 5, pattern: half}
+  - {bar: 9, pattern: quarter}
+  - {bar: 13, pattern: eighth}
+  - {bar: 17, pattern: sixteenth}
+  - {bar: 21, pattern: eighth}
+  - {bar: 25, pattern: quarter}
+  - {bar: 29, pattern: half}
   - {bar: 33, pattern: half}
   - {bar: 37, pattern: half}
 - name: Violin II
@@ -419,12 +422,13 @@ tracks:
   sends:
   - {to: Chapel, level: 0.35}
   play:
-  - {bar: 13, pattern: half}
-  - {bar: 17, pattern: quarter}
-  - {bar: 21, pattern: eighth}
-  - {bar: 25, pattern: sixteenth}
-  - {bar: 29, pattern: eighth}
-  - {bar: 33, pattern: quarter}
+  - {bar: 9, pattern: half}
+  - {bar: 13, pattern: quarter}
+  - {bar: 17, pattern: eighth}
+  - {bar: 21, pattern: sixteenth}
+  - {bar: 25, pattern: eighth}
+  - {bar: 29, pattern: quarter}
+  - {bar: 33, pattern: half}
 - name: Violin III
   instrument: solina
   gain_db: -9.0
@@ -432,11 +436,11 @@ tracks:
   sends:
   - {to: Chapel, level: 0.35}
   play:
-  - {bar: 17, pattern: half}
-  - {bar: 21, pattern: quarter}
-  - {bar: 25, pattern: eighth}
-  - {bar: 29, pattern: sixteenth}
-  - {bar: 33, pattern: eighth}
+  - {bar: 13, pattern: half}
+  - {bar: 17, pattern: quarter}
+  - {bar: 21, pattern: eighth}
+  - {bar: 25, pattern: sixteenth}
+  - {bar: 29, pattern: eighth}
 - name: Pad
   instrument: jupiter8
   gain_db: -14.0
@@ -444,6 +448,7 @@ tracks:
   sends:
   - {to: Chapel, level: 0.35}
   play:
+  - {bar: 13, pattern: pad}
   - {bar: 17, pattern: pad}
   - {bar: 21, pattern: pad}
   - {bar: 25, pattern: pad}
@@ -456,12 +461,12 @@ tracks:
   sends:
   - {to: Chapel, level: 0.35}
   play:
+  - {bar: 9, pattern: chords_q}
   - {bar: 13, pattern: chords_q}
   - {bar: 17, pattern: chords_q}
   - {bar: 21, pattern: chords_q}
   - {bar: 25, pattern: chords_q}
   - {bar: 29, pattern: chords_q}
-  - {bar: 33, pattern: chords_q}
 - name: Pluck
   instrument: karplus
   gain_db: -11.0
@@ -469,6 +474,7 @@ tracks:
   sends:
   - {to: Chapel, level: 0.35}
   play:
+  - {bar: 13, pattern: arp_e}
   - {bar: 17, pattern: arp_e}
   - {bar: 21, pattern: arp_e}
   - {bar: 25, pattern: arp_e}
@@ -480,6 +486,7 @@ tracks:
   sends:
   - {to: Chapel, level: 0.35}
   play:
+  - {bar: 21, pattern: accents}
   - {bar: 25, pattern: accents}
   - {bar: 29, pattern: accents}
   - {bar: 33, pattern: accents}
@@ -490,6 +497,7 @@ tracks:
   sends:
   - {to: Chapel, level: 0.35}
   play:
+  - {bar: 17, pattern: chords_q}
   - {bar: 21, pattern: chords_q}
   - {bar: 25, pattern: chords_q}
   - {bar: 29, pattern: chords_q}
@@ -500,6 +508,7 @@ tracks:
   sends:
   - {to: Chapel, level: 0.35}
   play:
+  - {bar: 21, pattern: pad}
   - {bar: 25, pattern: pad}
   - {bar: 29, pattern: pad}
   - {bar: 33, pattern: pad}
@@ -510,6 +519,7 @@ tracks:
   sends:
   - {to: Chapel, level: 0.35}
   play:
+  - {bar: 17, pattern: rf_sixteenth}
   - {bar: 21, pattern: rf_sixteenth}
   - {bar: 25, pattern: rf_sixteenth}
   - {bar: 29, pattern: rf_sixteenth}
@@ -520,8 +530,8 @@ tracks:
   sends:
   - {to: Chapel, level: 0.35}
   play:
+  - {bar: 25, pattern: accents}
   - {bar: 29, pattern: accents}
-  - {bar: 33, pattern: accents}
 - name: Pad 2
   instrument: polysix
   gain_db: -15.0
@@ -529,9 +539,9 @@ tracks:
   sends:
   - {to: Chapel, level: 0.35}
   play:
+  - {bar: 25, pattern: pad}
   - {bar: 29, pattern: pad}
   - {bar: 33, pattern: pad}
-  - {bar: 37, pattern: pad}
 - name: Lead
   instrument: cs80
   gain_db: -11.0
@@ -539,6 +549,7 @@ tracks:
   sends:
   - {to: Chapel, level: 0.35}
   play:
+  - {bar: 21, pattern: half_high}
   - {bar: 25, pattern: half_high}
   - {bar: 29, pattern: half_high}
   - {bar: 33, pattern: half_high}
