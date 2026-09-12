@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import base64
 import struct
-from typing import Dict, List, Mapping, Optional, Tuple
+from typing import List, Mapping, Optional, Tuple
 
 # Byte-exact tails captured from projects REAPER itself saved for Script Host.
 # The first word is the per-class Reaper numeric id, not the Script Host id.

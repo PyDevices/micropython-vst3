@@ -19,12 +19,12 @@ component, the provider metadata is mandatory; a consumer such as this
 plug-in remains tolerant of missing optional fields.
 The bundled `lib/default_instrument.py` is the working reference - it
 tracks voices by VST note ID, maps velocity to amplitude, applies pressure
-and pitch bend, and uses an explicit 50 ms release. **It is also deliberately
-silent**: every event path is there, but it does not press a note unless
-`MPVST_DEFAULT_INSTRUMENT_AUDIBLE` is set. It is what a Script Host class
-loads when nothing else is chosen, so a project wired to a Script Host class
-ID instead of a named instrument's would otherwise render a plausible synth
-on every track and give nobody a reason to look. Silence is the alarm.
+and pitch bend, and uses an explicit 50 ms release. **It produces no audio**,
+so that a slot nobody chose is obvious: every event path is there, but it
+does not press a note unless `MPVST_DEFAULT_INSTRUMENT_AUDIBLE` is set. A
+Script Host class loads it when nothing else is named, and a project wired to
+a Script Host class ID rather than a named instrument's would otherwise
+render a plausible synth on every track.
 
 Events arrive through `vstaudio.on_event()` at absolute delayed sample
 positions - note on/off with velocity and tuning, poly and channel

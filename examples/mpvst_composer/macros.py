@@ -11,7 +11,7 @@ import ast
 import math
 import os
 import re
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 _SKIP_KW = {
     "sidechain", "duck", "key", "character", "stereo", "impulse",

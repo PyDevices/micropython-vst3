@@ -2,9 +2,10 @@
 
 Compositions, instruments, and racks are Python code, and some of it —
 `mpvst_scan_plugins.py` reading module declarations — runs at plugin-scan time,
-before you consciously play anything. Because people share pieces, the
-shipped sidecar engine is a deliberately narrow interpreter: **no sockets,
-no SSL, and no FFI**. A hostile script therefore has no exfiltration
+before you consciously play anything. Because people share pieces, the shipped
+sidecar engine is built without **sockets, SSL or FFI**, so that a piece you
+downloaded cannot reach the network whatever it contains. A hostile script
+has no exfiltration
 channel and no route to arbitrary native code; its blast radius is the
 file I/O the engine legitimately needs for its own library.
 

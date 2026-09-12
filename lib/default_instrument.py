@@ -1,20 +1,17 @@
-"""The empty slot: a complete instrument that deliberately makes no sound.
+"""The empty slot: an instrument that produces no audio, so that a slot
+nobody chose is obvious.
 
-Every event path below is real and is the working reference for writing a
-script - voices tracked by VST note ID, velocity to amplitude, poly and
-channel pressure, pitch bend, an explicit release. The one thing it does not
-do is press a note, unless MPVST_DEFAULT_INSTRUMENT_AUDIBLE is set.
+The two generic Script Host classes load this script when nothing else is
+named, which means a project wired to a Script Host class ID instead of a
+named instrument's gets it on every track. Silence makes that visible at a
+glance - to a dead-air check, a LUFS read, or a waveform. A plausible synth
+on all sixteen tracks does not.
 
-Why: this script is what the two generic Script Host classes load when
-nothing else is chosen, so a project wired to a Script Host CID instead of a
-named instrument's CID gets *this* on every track. When it played, that
-mistake sounded like a plausible synth on every track at once, and whoever
-rendered it had no way to notice. Silence is the alarm - a dead-air check, a
-LUFS read or a glance at a waveform all catch it immediately, and none of
-them catch "all sixteen tracks are the same polyphonic synth".
-
-If you actually want the empty slot to sound, set the variable. The test that
-proves MIDI reaches synthio does exactly that.
+Everything else here is real, and is the working reference for writing a
+script: voices tracked by VST note ID, velocity to amplitude, poly and
+channel pressure, pitch bend, an explicit release. The only missing step is
+pressing the note. Set MPVST_DEFAULT_INSTRUMENT_AUDIBLE to restore it - the
+test that proves MIDI reaches synthio does exactly that.
 """
 
 import os

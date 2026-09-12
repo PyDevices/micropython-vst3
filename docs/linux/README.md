@@ -15,8 +15,8 @@ Start the DAW and request a VST3 rescan. Then insert any of them - **TR-808**,
 **Minimoog**, **Tape Delay** - and open its editor, or use the host's generic
 parameter editor. **MPVST Script Host** runs whatever script
 `MPVST_SCRIPT_PATH` points at, which is the loop for developing one that is
-not in the library yet. With no script pointed at it, that slot is silent on
-purpose - an empty slot that made a sound would be indistinguishable from an
+not in the library yet. With no script pointed at it that slot produces no
+audio, so a slot you did not choose is obvious rather than sounding like an
 instrument you meant to load.
 
 ## Rescan after adding a script of your own

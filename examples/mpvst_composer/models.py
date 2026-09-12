@@ -475,7 +475,6 @@ class Project:
         hits = []
         for pat in source_track.patterns:
             bar = max(1, int(getattr(pat, "beats_per_bar", 4)))
-            span_beats = max(getattr(pat, "max_beat", bar), bar * max(1, getattr(pat, "length_measures", 1)))
             events = getattr(pat, "events", [])
             for r in range(max(1, pat.repeat)):
                 measure0 = pat.start_measure + r * max(1, pat.length_measures)

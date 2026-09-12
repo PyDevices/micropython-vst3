@@ -6,7 +6,6 @@ from typing import List, Optional
 from .base import BaseRenderer
 from ..macros import macros_for_effect, macros_for_instrument
 from ..models import (
-    AuxTrack,
     DrumPattern,
     Project,
     Track,
