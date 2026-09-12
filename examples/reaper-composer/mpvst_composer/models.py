@@ -173,11 +173,15 @@ class AuxTrack:
 
 
 class Track:
-    def __init__(self, name: str, instrument: str, patch: str = "Default"):
+    def __init__(self, name: str, instrument: str, patch: str = "Default",
+                 **options):
         self.name = name
         self.guid = "{" + str(uuid.uuid4()).upper() + "}"
         self.instrument = instrument
         self.patch = patch
+        #: Anything named after one of the instrument's macros, applied over
+        #: the patch. Same rule as an insert's keywords.
+        self.options = options
 
         self.patterns: List = []
         self.sends: List[Dict] = []
@@ -281,11 +285,13 @@ class Project:
             self.vst_registry[name] = record
             self.vst_registry[record[1]] = record
             bucket = "effects" if item["kind"] == "effect" else "instruments"
-            # index -> name, which is the shape _instrument_patches expects.
-            # Inverted, resolve_instrument_patch matches nothing and silently
-            # defaults every patch to 0 - which is how it read the first time.
+            # index -> [name, midi values]. Both halves are load-bearing:
+            # resolve_instrument_patch matches on the name, and patch_midi
+            # reads the values to seed the macro array. Keeping only the name
+            # left every instrument rendering at defaults instead of the patch
+            # it was designed with.
             self.patch_manifest[bucket][name] = {
-                "patches": {str(p["index"]): p["name"]
+                "patches": {str(p["index"]): [p["name"], list(p.get("macros", ()))]
                             for p in item.get("patches", ())},
                 "macros": item.get("macro_labels", []),
                 "ranges": item.get("macro_ranges", []),
@@ -375,8 +381,9 @@ class Project:
                 break
         return sig
 
-    def add_track(self, name: str, instrument: str, patch: str = "Default") -> Track:
-        t = Track(name, instrument, patch)
+    def add_track(self, name: str, instrument: str, patch: str = "Default",
+                  **options) -> Track:
+        t = Track(name, instrument, patch, **options)
         self.tracks.append(t)
         return t
 

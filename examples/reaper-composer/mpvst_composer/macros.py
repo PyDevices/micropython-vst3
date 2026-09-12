@@ -203,6 +203,22 @@ def patch_midi(entry: Mapping, preset) -> Tuple[int, List]:
     return 0, []
 
 
+def _overlay(macros, labels, ranges, kwargs):
+    """Set any macro a keyword names, by label rather than by position."""
+    by_key = {_norm_key(lab): i for i, lab in enumerate(labels)}
+    for key, value in kwargs.items():
+        if key in _SKIP_KW:
+            continue
+        idx = by_key.get(_norm_key(key))
+        if idx is None:
+            continue
+        span = ranges[idx] if idx < len(ranges) else None
+        pos = _kw_to_position(labels[idx] if idx < len(labels) else key,
+                              span, value)
+        if pos is not None:
+            macros[idx] = pos
+
+
 def _labels_and_ranges(effect: str, entry: Mapping) -> Tuple[List[str], Tuple]:
     labels = list(entry.get("macros") or [])
     tables = effect_tables().get(effect) or {}
@@ -255,17 +271,7 @@ def macros_for_effect(
     _idx, midi = patch_midi(entry, patch_key)
     macros = _midi_macros(midi)
     labels, ranges = _labels_and_ranges(effect, entry)
-    by_key = {_norm_key(lab): i for i, lab in enumerate(labels)}
-    for key, value in kwargs.items():
-        if key in _SKIP_KW:
-            continue
-        idx = by_key.get(_norm_key(key))
-        if idx is None:
-            continue
-        span = ranges[idx] if idx < len(ranges) else None
-        pos = _kw_to_position(labels[idx] if idx < len(labels) else key, span, value)
-        if pos is not None:
-            macros[idx] = pos
+    _overlay(macros, labels, ranges, kwargs)
     return macros
 
 
@@ -273,7 +279,17 @@ def macros_for_instrument(
     instrument: str,
     patch_name: str,
     manifest: Mapping,
+    kwargs: Optional[Mapping[str, Any]] = None,
 ) -> Dict[int, float]:
+    """Start from the patch, then overlay anything named after a macro.
+
+    The same treatment effects have had all along: `cutoff_hz=800` on a track
+    means what `cutoff_hz=800` on an insert means. Instruments went without it
+    only because nothing had asked yet.
+    """
     entry = _lookup_entry(manifest, "instruments", instrument)
     _idx, midi = patch_midi(entry, patch_name)
-    return _midi_macros(midi)
+    macros = _midi_macros(midi)
+    labels, ranges = _labels_and_ranges(instrument, entry)
+    _overlay(macros, labels, ranges, dict(kwargs or {}))
+    return macros

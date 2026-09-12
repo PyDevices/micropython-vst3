@@ -116,8 +116,8 @@ aux_tracks:
 tracks:
 
   - name: Ground
-    instrument: b3
-    gain_db: 0.0
+    instrument: mellotron
+    gain_db: 4.0
     play:
       - {bar: 1, pattern: ground, repeat: 8}
 
@@ -155,4 +155,4 @@ tracks:
 
 mix_bus:
   ceiling_db: -2.0
-  gain_db: 10.0
+  gain_db: 5.0

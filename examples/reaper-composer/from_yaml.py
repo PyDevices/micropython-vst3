@@ -36,6 +36,10 @@ THE FILE
           - {bar: 1, pattern: figure, repeat: 8}
           - {bar: 9, pattern: figure, repeat: 8, offset: 0.5}
 
+Any other key on a track is one of the instrument's own macros - `decay: 0.9`,
+`cutoff_hz: 800` - named the way the instrument names it and applied over the
+patch. Inserts and aux effects take the same treatment.
+
 `degree` is a step of the scale, so 1 is the tonic and 8 is the octave above -
 no MIDI numbers to look up, and a change of `key` moves the whole song. A
 drum pattern uses names (`kick`, `snare`, `closed_hihat`) and the instrument's
@@ -102,48 +106,63 @@ def build_pattern(rows, bar, repeat, offset, beats_per_bar):
 
 
 def load(path):
+    """Read a YAML file and build the project it describes."""
     with open(path, "r", encoding="utf-8") as handle:
-        document = yaml.safe_load(handle)
+        return build(yaml.safe_load(handle))
 
+
+def build(document):
+    """Build a project from an already-parsed document.
+
+    Split out from `load` so a composition written in Python can produce the
+    same dictionary and go either way with it - straight to a project, or out
+    to YAML for someone to read and edit. `source/canon_16.py` does both.
+    """
     song = Project(name=document.get("title", "Untitled"))
     song.set_key(note_of(document.get("key", "C")),
                  scale_of(document.get("scale", "major")))
     beats_per_bar = int(document.get("beats_per_bar", 4))
     song.add_tempo_marker(measure=1, bpm=float(document.get("tempo", 120)),
                           signature=(beats_per_bar, 4))
-    for marker in document.get("tempo_changes", []):
+    for marker in document.get("tempo_changes") or []:
         song.add_tempo_marker(measure=int(marker["bar"]),
                               bpm=float(marker["tempo"]))
 
-    patterns = document.get("patterns", {})
+    patterns = document.get("patterns") or {}
     auxes = {}
-    for spec in document.get("aux_tracks", []):
+    for spec in document.get("aux_tracks") or []:
         options = {k: v for k, v in spec.items()
                    if k not in ("name", "effect", "preset")}
         auxes[spec["name"]] = song.add_aux_track(
             spec["name"], effect=spec["effect"], preset=spec.get("preset"),
             **options)
 
+    #: Keys a track spec uses for itself. Anything else is taken as one of
+    #: the instrument's macros, named the way the instrument names it.
+    track_keys = {"name", "instrument", "patch", "gain_db", "pan",
+                  "inserts", "sends", "play"}
+
     tracks = []
-    for spec in document.get("tracks", []):
+    for spec in document.get("tracks") or []:
+        options = {k: v for k, v in spec.items() if k not in track_keys}
         track = song.add_track(spec["name"], instrument=spec["instrument"],
-                               patch=spec.get("patch", "Default"))
+                               patch=spec.get("patch", "Default"), **options)
         if "gain_db" in spec:
             track.volume = 10.0 ** (float(spec["gain_db"]) / 20.0)
         if "pan" in spec:
             track.pan = float(spec["pan"])
-        for insert in spec.get("inserts", []):
+        for insert in spec.get("inserts") or []:
             options = {k: v for k, v in insert.items()
                        if k not in ("effect", "preset")}
             track.add_insert(insert["effect"], preset=insert.get("preset"),
                              **options)
-        for send in spec.get("sends", []):
+        for send in spec.get("sends") or []:
             target = auxes.get(send["to"])
             if target is None:
                 raise SystemExit("%s sends to %r, which is not an aux track"
                                  % (spec["name"], send["to"]))
             track.add_send(target, float(send.get("level", 1.0)))
-        for placement in spec.get("play", []):
+        for placement in spec.get("play") or []:
             name = placement["pattern"]
             if name not in patterns:
                 raise SystemExit("%s plays %r, which is not in patterns"
@@ -154,7 +173,7 @@ def load(path):
                 float(placement.get("offset", 0.0)), beats_per_bar))
         tracks.append(track)
 
-    for effect in document.get("master_effects", []):
+    for effect in document.get("master_effects") or []:
         options = {k: v for k, v in effect.items()
                    if k not in ("effect", "preset")}
         song.add_master_effect(effect["effect"], preset=effect.get("preset"),

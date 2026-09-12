@@ -519,6 +519,7 @@ class ReaperRenderer(BaseRenderer):
                 parmenv = self._parmenv_lines(tr.automation, time_map, indent="        ")
                 inst_macros = macros_for_instrument(
                     tr.instrument, tr.patch, proj.patch_manifest,
+                    getattr(tr, "options", None),
                 )
                 inst_vst = self._encode_vst_chunk(
                     inst_payload,
