@@ -15,7 +15,9 @@ Start the DAW and request a VST3 rescan. Then insert any of them - **TR-808**,
 **Minimoog**, **Tape Delay** - and open its editor, or use the host's generic
 parameter editor. **MPVST Script Host** runs whatever script
 `MPVST_SCRIPT_PATH` points at, which is the loop for developing one that is
-not in the library yet.
+not in the library yet. With no script pointed at it, that slot is silent on
+purpose - an empty slot that made a sound would be indistinguishable from an
+instrument you meant to load.
 
 The plug-in has an editor of its own: a patch selector, a Reload button, a
 Bypass switch, an engine-status light, and a slider per macro, labelled with

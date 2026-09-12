@@ -231,10 +231,17 @@ bool stateRoundTrip(const PluginFactory& factory, const ClassInfo& classInfo,
 bool processLifecycle(const PluginFactory& factory, const ClassInfo& classInfo,
                       FUnknown* host)
 {
+    // The default instrument is silent unless asked, so that a project wired
+    // to a Script Host class ID instead of a named instrument's renders
+    // nothing rather than a plausible synth on every track. This test is the
+    // one that legitimately wants it audible: it proves a note-on reaches
+    // synthio and comes back as 220 Hz at the right sample.
 #if defined(_WIN32)
     (void)_putenv_s("MPVST_NATIVE_TEST_TONE", "");
+    (void)_putenv_s("MPVST_DEFAULT_INSTRUMENT_AUDIBLE", "1");
 #else
     (void)unsetenv("MPVST_NATIVE_TEST_TONE");
+    (void)setenv("MPVST_DEFAULT_INSTRUMENT_AUDIBLE", "1", 1);
 #endif
     auto component = createComponent(factory, classInfo, host);
     auto processor = getProcessor(component);
