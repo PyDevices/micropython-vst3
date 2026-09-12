@@ -6,9 +6,14 @@
 The Reaper backend writes a project for a host to play. This one plays it,
 through the same DSP: `audiorender` is audioif's offline renderer, and it
 drives the very `audioinstruments` and `audioeffects` packages the sidecar
-imports. Same notes, same components, same arithmetic, in about real time -
-sixteen voices over two and a half minutes of music take two and a half
-minutes here.
+imports. Same notes, same components, same arithmetic, on a machine with
+nothing installed on it.
+
+It is not the quick way. This runs at about the speed of the music - sixteen
+voices over two and a half minutes take two and a half minutes - where Reaper
+bounces the same project in twenty-six seconds, eighteen sidecar startups and
+all. What you get here is a render that needs no DAW and no plug-in, not a
+render that arrives sooner.
 
 It does not go through the vstaudio shim, because there is nothing left for
 the adapter to do: `audiorender.deliver` crosses the normalized-to-MIDI seam

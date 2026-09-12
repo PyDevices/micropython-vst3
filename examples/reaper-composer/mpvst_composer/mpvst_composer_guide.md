@@ -296,9 +296,11 @@ python from_yaml.py my_song.yaml my_song.wav
 ```
 
 The `.wav` picks `OfflineRenderer`, which plays the project through the same
-`audioinstruments` and `audioeffects` packages the sidecar imports. Sixteen
-voices over two and a half minutes take about two and a half minutes, against
-the several a scan-load-and-bounce costs. From Python it is the same seam:
+`audioinstruments` and `audioeffects` packages the sidecar imports. It runs at
+about the speed of the music - sixteen voices over two and a half minutes take
+two and a half minutes - which is slower than a bounce, not faster. What it
+buys you is that it works on a machine with no DAW and no plug-in on it.
+From Python it is the same seam:
 
 ```python
 from mpvst_composer.backends.offline import OfflineRenderer

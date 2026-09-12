@@ -13,11 +13,15 @@ reach for. How to run each lives with the tool.
 | Any `.RPP`, for real | `bounce.py song.rpp` | Reaper, installed MPVST |
 | A soundtrack piece, for real | `reaper.sh --render --piece NAME` | Reaper, installed MPVST |
 
-The two in the top half run in one CPython process and take roughly as long
-as the music does - sixteen voices over two and a half minutes cost two and a
-half minutes. The two in the bottom half load the plug-in, which starts a
-MicroPython sidecar per instrument and effect, so they pay a startup cost per
-slot before a note sounds.
+Offline is not the fast one. The two in the top half run in one CPython
+process at roughly the speed of the music; the two in the bottom half hand
+the work to Reaper, which renders far faster than real time and absorbs the
+plug-in's per-slot startup while it does. Sixteen-voice Canon, 150 s of
+music: 150 s offline, 26 s bounced, and the bounce is starting Reaper and
+eighteen MicroPython sidecars inside that.
+
+So reach for offline when you want it to work *anywhere* - no DAW, no
+install, no scan - not when you want it quickly.
 
 Details: [the composer guide](../examples/reaper-composer/mpvst_composer/mpvst_composer_guide.md#-rendering)
 for the first, [`tools/README.md`](../tools/README.md#composing-a-piece) for
