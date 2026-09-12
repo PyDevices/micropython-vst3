@@ -117,6 +117,21 @@ notch and band-pass sections instead. The factory configures the sample rate
 for each component before construction; scripts do not need to manage a
 process-wide rate.
 
+## Choosing the right class ID
+
+A generated project names the plug-in by class ID, and there are two kinds.
+Each named instrument and effect has **its own** ID; the two **Script Host**
+IDs are the generic ones that run a bare script. Reach for a Script Host only
+when the script is the point. Use it for a named instrument and every track
+gets `default_instrument.py` instead - which, since it is deliberately silent,
+now renders nothing rather than sounding like a plausible synth on every
+track. That is the intended alarm.
+
+The IDs live in `Contents/Resources/moduleinfo.json` inside the installed
+bundle: match on `Name` and take the `CID` beside it. Do not hardcode one from
+a document - including this one - because the file in the bundle is the only
+copy that cannot drift.
+
 ## Putting a script into a project file yourself
 
 If you generate project files rather than saving them from a DAW - a composer
