@@ -77,6 +77,11 @@ after you install.
 
 ## Going further
 
+- [**Getting started**](docs/getting-started.md) - what MPVST is, installing
+  it, and finding your first instrument in the FX browser.
+- [**Generating projects**](docs/generating-projects.md) - building `.RPP`
+  files programmatically: the state chunk, class IDs, and Reaper's routing
+  traps.
 - [**Writing your own instruments and effects**](docs/writing-scripts.md) -
   what a script declares, how macros and patches reach it, what the
   library gives you to build on. Needs nothing built.
