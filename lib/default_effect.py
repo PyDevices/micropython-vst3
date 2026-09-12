@@ -1,7 +1,17 @@
 """The effect the Fx script host runs when you have not given it one.
 
 It passes its input through unchanged, which is the right thing for an empty
-effect slot to do and the right thing to start from. Copy it somewhere of your
+effect slot to do and the right thing to start from.
+
+It does NOT mute, and that asymmetry with default_instrument.py is deliberate
+(Brad, 2026-09-12, asked directly). The instrument went silent because an
+empty *instrument* slot that sings is indistinguishable from the instrument
+you meant to load - a whole project can render plausibly and be wrong. An
+empty *effect* slot that passes audio is not that: the track sounds
+unprocessed, which is what it is, and the signal still reaches the master so
+nothing downstream is hidden. Muting it would take a wiring mistake and turn
+it into a silent track, which is a worse failure than an honest dry one.
+Do not "make these consistent". Copy it somewhere of your
 own, point MPVST_SCRIPT_PATH at the copy, and edit - the plug-in re-reads that
 file every time you toggle Reload Script.
 
