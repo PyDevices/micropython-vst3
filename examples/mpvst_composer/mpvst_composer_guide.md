@@ -274,17 +274,17 @@ To turn it into a Reaper project, you pass the `ReaperRenderer` class into the `
 Writing the project gives you an `.RPP`. To hear it, render it:
 
 ```bash
-python ../bounce.py my_song.rpp
+python bounce.py my_song.rpp
 ```
 
-`bounce.py` drives Reaper headless and comes back with the WAV your project
-names. It needs Reaper and a Python interpreter, nothing else.
+Run that from `examples/`. It drives Reaper headless and comes back with the
+WAV your project names, needing Reaper and a Python interpreter and nothing
+else.
 
-It does not check the result, on purpose. When you want to know how the render
-came out, that is a separate step:
+When you want to know how it came out:
 
 ```bash
-python ../../tools/audio_qc.py my_song.wav
+python ../tools/audio_qc.py my_song.wav
 ```
 
 That reports integrated loudness, true peak and any silence - a digitally

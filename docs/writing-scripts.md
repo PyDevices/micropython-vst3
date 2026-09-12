@@ -123,8 +123,7 @@ A generated project names the plug-in by class ID, and there are two kinds.
 Each named instrument and effect has **its own** ID; the two **Script Host**
 IDs are the generic ones that run a bare script. Reach for a Script Host only
 when the script is the point. Use it for a named instrument and every track
-gets `default_instrument.py` instead - which, since it is deliberately silent,
-now renders nothing rather than sounding like a plausible synth on every
+gets `default_instrument.py` instead - which, being silent, renders nothing rather than sounding like a plausible synth on every
 track. That is the intended alarm.
 
 Read them out of `Contents/Resources/catalog.json` in the installed bundle.

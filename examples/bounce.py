@@ -1,23 +1,17 @@
-"""Render a Reaper project to a WAV, and say whether the render is real.
+"""Render a Reaper project to a WAV.
 
-    python reaper/bounce.py build/Perihelion.RPP
-    python reaper/bounce.py piece.rpp --out /tmp/piece.wav --timeout 240
+    python bounce.py source/my_song.rpp
+    python bounce.py my_song.rpp --out /tmp/song.wav --timeout 240
 
-One job: drive Reaper headless and come back with a file. It checks nothing
-and imports nothing to do it, so rendering needs Reaper and a Python
-interpreter and that is all.
+Drives Reaper headless and comes back with a file. It checks nothing and
+imports nothing, so rendering needs Reaper and a Python interpreter.
 
-Checking is `tools/audio_qc.py`, a separate step. It will tell you whether the
-render is even real - digital black, a silent head or holes in the middle mean
-the plug-ins never came up - as well as how loud it is. That step arguably
-ought to happen every time, but forcing it here would drag numpy, soundfile,
-pyloudnorm and scipy into the act of pressing render.
+Checking is `tools/audio_qc.py`. It reports loudness and true peak, and it
+will tell you when a render is not a render at all - digital black, a silent
+head or holes in the middle usually mean a plug-in never loaded.
 
-Python rather than shell on purpose. Reaper is a Windows application here, so
-this runs natively on Windows; under WSL it translates paths and drives the
-same executable through the same command line. `reaper.sh` predates it, only
-runs from WSL, and additionally installs a startup ReaScript it has to
-remember to remove.
+Runs natively on Windows, where Reaper lives; under WSL it translates paths
+and drives the same executable.
 
 Rendering uses `-renderproject`, which takes its output path and format from
 the project itself. Projects that do not name one - ours do not - get a
@@ -157,8 +151,7 @@ def main() -> int:
     try:
         render(project, wav, reaper, args.timeout)
         print("wrote %s" % wav)
-        # Checking the result is a separate step on purpose, so rendering
-        # needs nothing but Reaper. The command is printed rather than run.
+        # Printed rather than run: rendering needs nothing but Reaper.
         checker = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                "..", "tools", "audio_qc.py")
         if os.path.isfile(checker):
