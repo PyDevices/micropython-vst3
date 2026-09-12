@@ -2,7 +2,7 @@ import json
 import os
 import random
 import uuid
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Mapping, Optional, Tuple
 
 from .theory import Note, Scale, TheoryEngine
 
@@ -252,32 +252,52 @@ class Project:
         self._load_catalog()
 
     def _load_catalog(self):
-        """Read catalog.json out of the installed bundle.
+        """Learn every component, and every class ID, from wherever each lives.
 
-        One file answers everything: class IDs, display names, macro labels
-        and ranges, and every patch with its MIDI values. It replaces two
-        older readers - a regex over moduleinfo.json's JSON5 comments, and a
-        patches_dump.json produced by running the plug-in's engine as a
-        subprocess. Both are gone.
+        Two sources, because the question has two halves. What a component
+        *is* - its macro labels and ranges, its patches, which key plays which
+        drum - belongs to audiocomponents, and the packages answer for
+        themselves when they are installed. What MPVST *calls* it - the VST3
+        class ID a project file has to name - is the plug-in's own assignment,
+        and only the installed bundle's catalog.json has it.
+
+        So the packages are asked first and the catalog fills in behind them:
+        every class ID, plus the components pip does not have. That is what
+        lets a project be written, and rendered by OfflineRenderer, on a
+        machine where MPVST was never installed.
+
+        This replaces two older readers - a regex over moduleinfo.json's JSON5
+        comments, and a patches_dump.json produced by running the plug-in's
+        engine as a subprocess. Both are gone.
         """
         self.patch_manifest = {"instruments": {}, "effects": {}}
         self._patches = self.patch_manifest
         self.catalog = {}
         # Reaper's own 32-bit id per CID, filled in by _load_reaper_numeric_ids
-        # below. Initialised here so both paths out of this method leave it set.
+        # below. Initialised here so every path out of this method leaves it set.
         self.vst_numeric = {}
+
+        from_packages = self._load_components()
 
         path = self._catalog_path()
         if path is None:
-            print("Warning: catalog.json not found in any VST3 folder. "
-                  "Named patches and class IDs are unavailable; install MPVST "
-                  "or set MPVST_BUNDLE.")
+            if from_packages:
+                print("Note: catalog.json not found, so class IDs are "
+                      "unavailable and only OfflineRenderer can run. Install "
+                      "MPVST or set MPVST_BUNDLE to write a Reaper project.")
+            else:
+                print("Warning: no catalog.json in any VST3 folder and no "
+                      "audiocomponents packages installed. Named patches and "
+                      "class IDs are unavailable; install MPVST, set "
+                      "MPVST_BUNDLE, or pip install pydevices-audioinstruments "
+                      "and pydevices-audioeffects.")
             self._load_reaper_numeric_ids()
             return
 
         with open(path, "r", encoding="utf-8") as handle:
             document = json.load(handle)
 
+        stale = []
         for item in document.get("classes", []):
             name = item["name"]
             record = (item["cid"].upper(), item.get("display_name", name))
@@ -285,19 +305,62 @@ class Project:
             self.vst_registry[name] = record
             self.vst_registry[record[1]] = record
             bucket = "effects" if item["kind"] == "effect" else "instruments"
-            # index -> [name, midi values]. Both halves are load-bearing:
-            # resolve_instrument_patch matches on the name, and patch_midi
-            # reads the values to seed the macro array. Keeping only the name
-            # left every instrument rendering at defaults instead of the patch
-            # it was designed with.
-            self.patch_manifest[bucket][name] = {
+            entry = {
+                # index -> [name, midi values]. Both halves are load-bearing:
+                # resolve_instrument_patch matches on the name, and patch_midi
+                # reads the values to seed the macro array. Keeping only the
+                # name left every instrument rendering at defaults instead of
+                # the patch it was designed with.
                 "patches": {str(p["index"]): [p["name"], list(p.get("macros", ()))]
                             for p in item.get("patches", ())},
                 "macros": item.get("macro_labels", []),
                 "ranges": item.get("macro_ranges", []),
                 "note_map": item.get("note_map"),
             }
+            installed = self.patch_manifest[bucket].get(name)
+            if installed is None:
+                self.patch_manifest[bucket][name] = entry
+            elif _describes_differently(installed, entry):
+                stale.append(name)
+
+        if stale:
+            # The bundle stages its own copy of the library, so it can be a
+            # different version than pip has. That is invisible until two
+            # renders of the same project disagree, which is exactly the
+            # comparison OfflineRenderer exists to make - so say it out loud.
+            print("Note: %d component(s) differ between the installed bundle "
+                  "and the audiocomponents packages (%s%s). Renders here "
+                  "follow the packages; a Reaper bounce follows the bundle. "
+                  "Reinstall MPVST to bring them back together."
+                  % (len(stale), ", ".join(sorted(stale)[:4]),
+                     ", ..." if len(stale) > 4 else ""))
         self._load_reaper_numeric_ids()
+
+    def _load_components(self):
+        """Component metadata from the audiocomponents packages, if installed.
+
+        Reads the same declared attributes `lib/mpvst_catalog.py` reads when
+        it builds catalog.json, because they are the source that file is
+        scraped from. Returns whether anything was found.
+        """
+        found = False
+        for package, bucket in (("audioinstruments", "instruments"),
+                                ("audioeffects", "effects")):
+            try:
+                module = __import__(package)
+            except ImportError:
+                continue
+            for name in getattr(module, "ALL", ()):
+                try:
+                    # Instruments are modules behind a lazy loader; effects are
+                    # classes on the package.
+                    component = (module.load(name) if hasattr(module, "load")
+                                 else getattr(module, name))
+                except Exception:                     # noqa: BLE001
+                    continue                          # one bad module is not fatal
+                self.patch_manifest[bucket][name] = _component_entry(component)
+                found = True
+        return found
 
     def _catalog_path(self):
         """The installed bundle's catalog, wherever this machine keeps VST3s."""
@@ -587,6 +650,49 @@ _DRUM_CANONICAL = {
 
 def _norm_hit(name: str) -> str:
     return name.lower().replace("-", " ").replace("_", " ").strip()
+
+
+def _declared(component, name, default):
+    value = getattr(component, name, default)
+    return default if value is None else value
+
+
+def _component_entry(component) -> Dict:
+    """One component's own description, in the shape the manifest carries.
+
+    The four attributes read here are what a component publishes about
+    itself, and `lib/mpvst_catalog.py` reads the same four to write
+    catalog.json. Keep them in step: a component that starts describing
+    something new has to be picked up in both places or the two paths drift.
+    """
+    patches = {}
+    for index in sorted(_declared(component, "PATCHES", {})):
+        entry = component.PATCHES[index]
+        label, values = ((entry[0], entry[1]) if isinstance(entry, tuple)
+                         else (str(entry), ()))
+        patches[str(index)] = [label, list(values)]
+
+    ranges = [list(span[:2]) if len(span) >= 2 else None
+              for span in _declared(component, "_MACRO_RANGES", ())]
+
+    note_map = [[int(note), str(label)]
+                for note, label in _declared(component, "NOTE_MAP", ())]
+
+    return {
+        "patches": patches,
+        "macros": list(_declared(component, "MACRO_LABELS", ())),
+        "ranges": ranges,
+        "note_map": note_map or None,
+    }
+
+
+def _describes_differently(installed: Mapping, catalogued: Mapping) -> bool:
+    """Whether two descriptions of one component disagree about anything."""
+    if list(installed.get("macros") or ()) != list(catalogued.get("macros") or ()):
+        return True
+    if (installed.get("note_map") or []) != (catalogued.get("note_map") or []):
+        return True
+    return (installed.get("patches") or {}) != (catalogued.get("patches") or {})
 
 
 def resolve_drum_note(hit_type: str, instrument: str = None, manifest: Dict = None) -> int:
