@@ -255,6 +255,11 @@ std::uint32_t Processor::collectParameterChanges (IParameterChanges* changes,
                     std::clamp (value, 0.0, 1.0));
                 macros_[macroIndex (id)].store (bounded,
                                                  std::memory_order_relaxed);
+                // The host has an opinion about this macro now, so the resync
+                // may speak for it from here on.
+                macrosKnown_.fetch_or (
+                    static_cast<Steinberg::uint32> (1U) << macroIndex (id),
+                    std::memory_order_relaxed);
                 if (frameCount <= 0 || count >= events_.size ())
                     continue;
                 mpvst_event event {};
@@ -472,11 +477,22 @@ std::uint32_t Processor::emitMacroResync (int32 frameCount,
     // current values as ordinary parameter events at the head of the block
     // makes an automated, restored, or reloaded instance sound the same as one
     // the user has just touched.
+    //
+    // Only for macros somebody actually knows a value for, though. A macro the
+    // plug-in merely constructed sits at 0.5, and replaying THAT overwrote
+    // whatever the script had just built: audioeffects.create("Limiter", ...,
+    // ceiling_db=-1, gain_db=6) became a -12 dB ceiling with +12 dB of gain
+    // before a sample was pulled, because 0.5 is the middle of both ranges.
+    // Silence on that macro leaves the script's own value standing, which is
+    // the only value in the system that anyone chose on purpose.
     if (frameCount <= 0)
         return count;
 
+    const auto known = macrosKnown_.load (std::memory_order_relaxed);
     for (std::size_t index = 0; index < macros_.size (); ++index)
     {
+        if ((known & (static_cast<Steinberg::uint32> (1U) << index)) == 0U)
+            continue;
         if (count >= events_.size ())
             break;
         mpvst_event event {};
@@ -702,6 +718,10 @@ tresult PLUGIN_API Processor::setState (IBStream* state)
     for (std::size_t index = 0; index < values.size (); ++index)
         macros_[index].store (std::clamp (values[index], 0.0f, 1.0f),
                               std::memory_order_relaxed);
+    // A restored chunk is authoritative for every macro: these are the values
+    // the project was saved with, and replaying them is the whole point.
+    macrosKnown_.store (~static_cast<Steinberg::uint32> (0),
+                        std::memory_order_relaxed);
     pipelineBlocks_ = pipelineBlocks;
     scriptSource_ = std::move (scriptSource);
     macroResyncPending_.store (1U, std::memory_order_relaxed);

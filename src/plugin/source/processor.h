@@ -85,6 +85,11 @@ private:
     std::atomic<Steinberg::uint32> reloadLatch_ {0};
     std::atomic<Steinberg::uint32> active_ {0};
     std::atomic<Steinberg::uint32> macroResyncPending_ {1};
+    // One bit per macro, set when a value arrives from somewhere that actually
+    // knows it: a host parameter change, or a restored state chunk. NOT set by
+    // construction. The resync replays only these, so a value the plug-in
+    // merely defaulted to never overwrites what the script built itself.
+    std::atomic<Steinberg::uint32> macrosKnown_ {0};
     std::array<std::atomic<float>, kMacroParameterCount> macros_ {};
     std::string scriptSource_;
     Steinberg::int32 pipelineBlocks_ {kDefaultPipelineBlocks};
