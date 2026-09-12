@@ -59,7 +59,7 @@ fi
 # pyloudnorm/soundfile/scipy are only for tools/audio_qc.py, which measures a
 # rendered WAV's loudness and true peak. Nothing in the ctest suite needs them.
 log ".venv ready - this is what gates the mpvst_lint, mpvst_instruments_library" \
-    "and mpvst_effects_library ctests, and where tools/render_preview.py and" \
+    "and mpvst_effects_library ctests, and where the soundtrack composer and" \
     "tools/test-*.py import audioinstruments and audioeffects from."
 
 log "configuring and building"

@@ -10,7 +10,7 @@ add_subdirectory(smoke_host)
 # usually externally managed and cannot have it installed into it.
 #
 # This used to fall to whatever python3 was on PATH, and worked only because
-# tools/harness.py put a sibling audioif checkout on sys.path itself. That
+# The composer's harness.py put a sibling audioif checkout on sys.path itself. That
 # hid which copy of audioif was under test -- it beat both the installed
 # package and PYTHONPATH -- so the scripts now just import it.
 find_program(MPVST_PYTHON
@@ -151,7 +151,13 @@ endif()
 if(MPVST_PYTHON)
     add_test(NAME mpvst_instruments_library COMMAND ${MPVST_PYTHON}
         ${CMAKE_SOURCE_DIR}/tools/test-instruments-lib.py)
-    set_tests_properties(mpvst_instruments_library PROPERTIES TIMEOUT 300)
+    # The sweep runs the soundtrack composer's offline harness, which loads the
+    # adapters from an installed bundle the way a user's would. Point it at the
+    # one this build just produced, so the test measures what was built rather
+    # than whatever happens to be installed on the machine.
+    set_tests_properties(mpvst_instruments_library PROPERTIES TIMEOUT 300
+        ENVIRONMENT
+        "MPVST_BUNDLE=$<TARGET_FILE_DIR:MPVST>/../..")
 
     # Defect linting for the Python half of the repository - the tools, the
     # instrument and effect scripts, the composition modules. Configured in

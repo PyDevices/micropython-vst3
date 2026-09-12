@@ -29,7 +29,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-soundtrack_dir=$(cd "$repo_dir/soundtrack" && pwd)
+soundtrack_dir=$(cd "$repo_dir/examples/soundtrack" && pwd)
 composition_dir="$repo_dir/tools"
 reaper_dir="$repo_dir/reaper"
 # verify_song.py needs numpy plus the audioif wheel - this repo's own
@@ -89,7 +89,7 @@ stop_reaper() {
 if [[ "$mode" == play ]]; then
     project_dir="$WIN_MUSIC/$title"
     mkdir -p "$project_dir"
-    python3 "$reaper_dir/generate_project.py" --piece "$piece" "$project_dir/$title.RPP"
+    (cd "$soundtrack_dir" && python3 -m composer.reaper --piece "$piece" "$project_dir/$title.RPP")
     project_native=$(wslpath -w "$project_dir/$title.RPP")
 
     echo "Stopping any running REAPER instance..."
@@ -135,7 +135,7 @@ rm -rf "$work_unix"
 mkdir -p "$work_unix"
 work_native=$(wslpath -w "$work_unix")
 
-python3 "$reaper_dir/generate_project.py" --piece "$piece" "$work_unix/$title.RPP"
+(cd "$soundtrack_dir" && python3 -m composer.reaper --piece "$piece" "$work_unix/$title.RPP")
 
 mkdir -p "$reaper_resource/Scripts"
 cp "$reaper_dir/scripts/verify.lua" "$reaper_resource/Scripts/__startup.lua"

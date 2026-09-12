@@ -11,12 +11,12 @@ To write instruments or effects *for* MPVST - which needs none of this - see
 | `src/` | the C++ that builds the plug-in: `plugin/` (VST3 classes), `protocol/` (the shared-memory wire format), `runtime/` (shared memory and child processes) |
 | `usermods/` | the MicroPython C modules the engine binds to: `vstaudio/` (the audio API scripts use) and `vstui/` (the editor's framebuffer, input and edit rings) |
 | `lib/` | everything staged into the bundle beside the engine: the bootstrap, the adapters, `mpvst_scan_plugins.py`, the default instrument, and the editor's Python half (`mpvst_editor.py`, `mpvst_board_config.py`, `mpvst_panel/`) |
-| `tools/` | developer tooling - `piece.py` and `render_preview.py` for compositions, the `harness.py` CPython sidecar stand-in, and the library test sweeps |
+| `tools/` | developer tooling - the library test sweeps, `audio_qc.py`, `derive_patches.py` |
 | `tests/` | the ctest suite and `smoke_host/`, a minimal VST3 host that loads the bundle with no DAW |
 | `scripts/` | build, packaging and setup automation |
 | `installer/` | what a user runs rather than builds: `windows.nsi` (the NSIS installer, cross-built from Linux) and `install-linux.sh`, which ships inside the tarball as `install.sh` |
 | `reaper/` + `reaper.sh` | everything that drives REAPER. Deletable as a unit; nothing outside it depends on it |
-| `soundtrack/` | example pieces, each with its own `composition.py` |
+| `examples/` | two composers with their songs, and `bounce.py`; nothing in here imports anything above it |
 
 The architecture is written down in
 [docs/architecture/phase-0.md](architecture/phase-0.md) (the system
@@ -177,7 +177,7 @@ SHA-256 - the platforms agree exactly, not within a tolerance.
 
 `./reaper.sh` renders and plays the example pieces; see
 [reaper/README.md](../reaper/README.md) and
-[soundtrack/README.md](../soundtrack/README.md).
+[examples/soundtrack/README.md](../examples/soundtrack/README.md).
 
 ## Workspace isolation
 

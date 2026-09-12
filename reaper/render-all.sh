@@ -12,8 +12,7 @@ set -euo pipefail
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo_dir=$(cd "$script_dir/.." && pwd)
-composition_dir="$repo_dir/tools"
-soundtrack_dir="$repo_dir/soundtrack"
+soundtrack_dir="$repo_dir/examples/soundtrack"
 # render_preview.py and verify_song.py need numpy plus the audioif
 # wheel - this repo's own .venv (pydevices-audioif from TestPyPI) if
 # it's been set up, else the sibling audioif checkout's.
@@ -40,14 +39,14 @@ if [[ ${#pieces[@]} -eq 0 ]]; then
     # Every directory under soundtrack/ holding a composition.py.
     while IFS= read -r name; do
         pieces+=("$name")
-    done < <("$venv_python" "$composition_dir/piece.py" --list)
+    done < <(cd "$soundtrack_dir" && "$venv_python" -m composer.pieces --list)
 fi
 
 for piece in "${pieces[@]}"; do
     echo
     echo "################ $piece ################"
     echo "--- offline preview ---"
-    "$venv_python" "$composition_dir/render_preview.py" --piece "$piece"
+    (cd "$soundtrack_dir" && "$venv_python" -m composer.preview --piece "$piece")
 
     echo "--- REAPER bounce + verification ---"
     "$repo_dir/reaper.sh" --render --piece "$piece"

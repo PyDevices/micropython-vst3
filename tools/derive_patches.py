@@ -94,8 +94,8 @@ TIE = 0.001
 #: Where the instruments that own patches live. The shims in
 #: lib/instruments declare none of their own - they load these.
 DIRS = [COMPONENTS_LIB / "audioinstruments",
-        REPO / "soundtrack" / "Automata" / "instruments",
-        REPO / "soundtrack" / "Perihelion" / "instruments"]
+        REPO / "examples" / "soundtrack" / "Automata" / "instruments",
+        REPO / "examples" / "soundtrack" / "Perihelion" / "instruments"]
 
 
 def load(path):

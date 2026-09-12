@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run every instrument script through the real synthio DSP.
 
-Uses tools/harness.py (the audioif CPython wheel, no compiled engine or
+Uses the soundtrack composer's harness (the audioif CPython wheel, no compiled engine or
 VST3 host needed) to catch exactly the class of bug that py_compile can't:
 API misuse that only raises once a note is actually played (e.g. an
 invalid kwarg to synthio.Note/Math), and macros that are read but never
@@ -45,18 +45,18 @@ import traceback
 from pathlib import Path
 
 REPO_DIR = Path(__file__).resolve().parent.parent
-SOUNDTRACK_DIR = REPO_DIR / "soundtrack"
+SOUNDTRACK_DIR = REPO_DIR / "examples" / "soundtrack"
 # The library instruments have no script files of their own any more: the
 # plug-in builds each one's two-line loader from the catalog when the class
 # is instantiated. This synthesises the same two lines so the sweep still
 # drives the real path - shim to mpvst_instrument_adapter to audioinstruments - rather
 # than reaching into the package and skipping the seam under test.
 _SYNTHESISED = None
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(REPO_DIR / "examples" / "soundtrack"))
 
-import harness  # noqa: E402  (also puts audioif and audioif/lib on the path)
-import vstaudio  # noqa: E402
-from piece import module_of  # noqa: E402
+from composer import harness  # noqa: E402  (also puts audioif and audioif/lib on the path)
+from composer import vstaudio  # noqa: E402
+from composer.pieces import module_of  # noqa: E402
 
 MACRO_SETTINGS = (0.0, 0.5, 1.0)
 MELODIC_CHORD = (48, 52, 55, 60)  # a triad plus root

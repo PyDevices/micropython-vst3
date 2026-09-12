@@ -37,8 +37,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-REPO_DIR = Path(__file__).resolve().parent.parent
-SOUNDTRACK_DIR = REPO_DIR / "soundtrack"
+#: The pieces sit beside this package: examples/soundtrack/<Piece>/.
+SOUNDTRACK_DIR = Path(__file__).resolve().parent.parent
 
 #: Where audioinstruments lives. Same workspace-sibling rule the engine
 #: build and the plug-in's staging step use; the environment variable is
@@ -49,12 +49,17 @@ SOUNDTRACK_DIR = REPO_DIR / "soundtrack"
 _COMPONENTS_LIB_ALIAS = os.environ.get("MPVST_AUDIOIF_LIB")
 if "MPVST_COMPONENTS_LIB" not in os.environ and _COMPONENTS_LIB_ALIAS:
     sys.stderr.write(
-        "piece.py: MPVST_AUDIOIF_LIB is deprecated (the packages moved to "
+        "composer: MPVST_AUDIOIF_LIB is deprecated (the packages moved to "
         "audiocomponents); using it as MPVST_COMPONENTS_LIB\n")
+#: Failing an override, the copy inside the installed plug-in, which is the
+#: one a user has. MPVST_BUNDLE moves the search.
+_BUNDLE = os.environ.get("MPVST_BUNDLE") or os.path.join(
+    os.environ.get("LOCALAPPDATA", os.path.expanduser("~/AppData/Local")),
+    "Programs", "Common", "VST3", "MPVST.vst3")
 COMPONENTS_LIB = Path(
     os.environ.get("MPVST_COMPONENTS_LIB")
     or _COMPONENTS_LIB_ALIAS
-    or str(REPO_DIR.parent / "audiocomponents" / "lib"))
+    or os.path.join(_BUNDLE, "Contents", "x86_64-win"))
 
 #: How a generated loader names the instrument module it runs. Anything
 #: holding a script path and needing the instrument behind it reads the call

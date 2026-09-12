@@ -19,14 +19,14 @@ import sys
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-SOUNDTRACK = SCRIPT_DIR.parent / "soundtrack"
+SOUNDTRACK = SCRIPT_DIR.parent
 # piece.py and harness.py are both siblings now, so one entry covers both.
 # harness puts audioif's lib/ on the path, which is where audiorender is.
-sys.path.insert(0, str(SCRIPT_DIR))
+sys.path.insert(0, str(SOUNDTRACK))
 
-from harness import EffectRun, InstrumentRun  # noqa: E402
-from piece import load_piece, patch_macros, piece_arg  # noqa: E402
-import vstaudio as shim  # noqa: E402
+from composer.harness import EffectRun, InstrumentRun  # noqa: E402
+from composer.pieces import load_piece, patch_macros, piece_arg  # noqa: E402
+from composer import vstaudio as shim  # noqa: E402
 
 import audiorender  # noqa: E402
 

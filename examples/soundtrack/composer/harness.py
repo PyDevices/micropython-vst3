@@ -15,12 +15,12 @@ authoritative for anything the script's audio behavior alone doesn't
 cover.
 """
 
+import os
 import struct
 import sys
 from pathlib import Path
 
-TOOLS_DIR = Path(__file__).resolve().parent
-REPO_DIR = TOOLS_DIR.parent
+COMPOSER_DIR = Path(__file__).resolve().parent
 
 # audioif is a dependency, imported from wherever it is installed --
 # pydevices-audioif, from TestPyPI or as an editable install of a sibling
@@ -28,11 +28,35 @@ REPO_DIR = TOOLS_DIR.parent
 # which silently won over the installed wheel and, because this ran at
 # sys.path[0], over PYTHONPATH as well: an A/B done by pointing PYTHONPATH at
 # another checkout rendered current code twice and came out bit-identical.
-sys.path.insert(0, str(TOOLS_DIR))
-sys.path.insert(0, str(REPO_DIR / "lib"))
+sys.path.insert(0, str(COMPOSER_DIR.parent))
+# The adapters a composition's instrument scripts import live in the
+# installed bundle, beside the engine. MPVST_BUNDLE moves the search.
+_bundles = [os.environ["MPVST_BUNDLE"]] if os.environ.get("MPVST_BUNDLE") else []
+_bundles += [
+    os.path.join(os.environ.get("LOCALAPPDATA",
+                                os.path.expanduser("~/AppData/Local")),
+                 "Programs", "Common", "VST3", "MPVST.vst3"),
+    os.path.expanduser("~/.vst3/MPVST.vst3"),
+    "/usr/lib/vst3/MPVST.vst3",
+]
+for _bundle in _bundles:
+    for _arch in ("x86_64-win", "x86_64-linux"):
+        _staged = os.path.join(_bundle, "Contents", _arch)
+        if os.path.isdir(_staged):
+            sys.path.insert(0, _staged)
+            break
+    else:
+        continue
+    break
 
 import audiocore  # noqa: E402
-import vstaudio  # noqa: E402
+from composer import vstaudio  # noqa: E402
+
+# Scripts written for the sidecar - the bundle's adapters, and every
+# composition's instrument script - say `import vstaudio`, because inside the
+# engine that is a built-in module. Register the CPython stand-in under that
+# name so those scripts run here unchanged.
+sys.modules.setdefault("vstaudio", vstaudio)
 
 
 class InstrumentRun:
