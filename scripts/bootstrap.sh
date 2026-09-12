@@ -54,7 +54,7 @@ fi
     --extra-index-url https://pypi.org/simple/ \
     pydevices-audioif pydevices-audioinstruments pydevices-audioeffects \
     numpy flake8 \
-    pyloudnorm soundfile scipy \
+    pyloudnorm soundfile scipy pyyaml \
     || die "installing the PyDevices audio packages/numpy/flake8 into .venv failed"
 # pyloudnorm/soundfile/scipy are only for tools/audio_qc.py, which measures a
 # rendered WAV's loudness and true peak. Nothing in the ctest suite needs them.

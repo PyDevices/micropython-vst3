@@ -208,7 +208,12 @@ def _labels_and_ranges(effect: str, entry: Mapping) -> Tuple[List[str], Tuple]:
     tables = effect_tables().get(effect) or {}
     if not labels:
         labels = list(tables.get("labels") or ())
-    ranges = tables.get("ranges") or ()
+    # The catalog's own ranges first. They come from the class itself, so they
+    # cannot drift; the table below is a hand-maintained fallback for anything
+    # the catalog does not describe. Without this a value like gain_db=11 has
+    # no span to map through and falls back to 11/127, which is how a limiter
+    # asked for 11 dB of drive ends up with two.
+    ranges = entry.get("ranges") or tables.get("ranges") or ()
     return labels, tuple(ranges)
 
 
