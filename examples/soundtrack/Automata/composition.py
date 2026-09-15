@@ -108,7 +108,11 @@ def P(name):
 
 KICK, SNARE, CLAP = 36, 38, 39
 HAT_C, HAT_O = 42, 46
-TOM_L, TOM_M, TOM_H = 43, 47, 50
+# The toms moved with the library's General MIDI pass (audiocomponents,
+# 2026-09-15): the TR-909 used to answer its hardware's accent key numbers
+# 43/47/50 as well, and now answers only GM's 41/45/48. Same three drums,
+# same sound, the numbers GM gives them.
+TOM_L, TOM_M, TOM_H = 41, 45, 48
 
 
 def hum(seed, i, amount=0.007):
@@ -279,37 +283,53 @@ def shaker_notes():
     return out
 
 
+# The SP-1200 glitch line. Its two tick notes were 65 and 50, which the
+# machine used to answer with a catch-all: before the library's General MIDI
+# pass (audiocomponents, 2026-09-15) an unmapped note got a generic noise
+# burst, and both of these got the identical one. That burst is gone - an
+# unmapped note is silent now - so the ticks are the SP's own clap, which is
+# what the burst was borrowing anyway: the same 3 kHz band, 101 ms of decay
+# against the burst's 80. This is the one place in the soundtrack where the
+# map change altered a sound rather than moving it, so it wants an ear.
+SP_KICK, SP_TICK = 36, 39
+
+
 def glitch_notes():
     out = []
     # II: ticks and crushes scattered on the odd eighths
     for bar in range(1, 33):
         if bar % 2 == 1:
-            out.append((b2(bar, 0.5), 0.1, 65, 0.5))
+            out.append((b2(bar, 0.5), 0.1, SP_TICK, 0.5))
         if bar % 4 == 2:
-            out.append((b2(bar, 2.5), 0.15, 50, 0.6))
+            out.append((b2(bar, 2.5), 0.15, SP_TICK, 0.6))
         if bar in (9, 17, 25):
-            out.append((b2(bar, 0.0), 0.4, 36, 0.7))
+            out.append((b2(bar, 0.0), 0.4, SP_KICK, 0.7))
     # III: fills at phrase ends
     for bar in (8, 12, 16, 20, 24):
-        out.append((b3(bar, 3.5), 0.1, 65, 0.55))
-        out.append((b3(bar, 3.75), 0.1, 50, 0.6))
+        out.append((b3(bar, 3.5), 0.1, SP_TICK, 0.55))
+        out.append((b3(bar, 3.75), 0.1, SP_TICK, 0.6))
     # IV: stutter accents through the peak
     for bar in range(25, 41):
         if bar % 2 == 1:
-            out.append((b4(bar, 1.75), 0.1, 65, 0.5))
+            out.append((b4(bar, 1.75), 0.1, SP_TICK, 0.5))
         if bar % 4 == 3:
-            out.append((b4(bar, 3.5), 0.15, 36, 0.55))
+            out.append((b4(bar, 3.5), 0.15, SP_KICK, 0.55))
     return out
 
 
 def impact_notes():
+    # Written as pitches, but the SDS-V reads a note number as "which drum",
+    # and what pitch that drum speaks at comes from the macros. A2 and B2
+    # were both its mid tom - the same hit twice under two names - and D3 was
+    # its high one. General MIDI put those two drums on A2 and C3, so B2 is
+    # A2 here and D3 is C3. Every impact lands on the drum it always did.
     return [
         (b2(1), 3.0, P("A2"), 0.6),
         (b2(17), 3.0, P("A2"), 0.6),
         (b3(1), 3.5, P("A2"), 0.85),
-        (b4(1), 3.5, P("B2"), 1.0),
-        (b4(25), 3.5, P("B2"), 0.9),
-        (b5(1), 3.0, P("D3"), 0.5),
+        (b4(1), 3.5, P("A2"), 1.0),
+        (b4(25), 3.5, P("A2"), 0.9),
+        (b5(1), 3.0, P("C3"), 0.5),
     ]
 
 

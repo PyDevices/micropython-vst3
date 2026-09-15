@@ -303,7 +303,9 @@ def fugue_subject_at(bar_function, start_bar, root, velocity):
 
 # Percussion -----------------------------------------------------------------
 
-KICK, TOM_L, TOM_M, TOM_H, CYMBAL = 36, 43, 47, 50, 49
+# TOM_L/M/H moved from 43/47/50 to GM's 41/45/48 with the library's General
+# MIDI pass (audiocomponents, 2026-09-15). The same three SDS-V drums.
+KICK, TOM_L, TOM_M, TOM_H, CYMBAL = 36, 41, 45, 48, 49
 
 
 def percussion_notes():

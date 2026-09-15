@@ -245,7 +245,9 @@ FX_TAPE = rack(
 
 KICK, RIM, SNARE, CLAP = 36, 37, 38, 39
 HAT_C, HAT_O, COWBELL, TAMBO, CABASA = 42, 46, 56, 54, 69
-TOM_L, TOM_M, TOM_H = 43, 47, 50
+# 43/47/50 before the library's General MIDI pass (audiocomponents,
+# 2026-09-15); GM puts the LinnDrum's three toms on 41/45/48.
+TOM_L, TOM_M, TOM_H = 41, 45, 48
 
 
 def drum_notes():
