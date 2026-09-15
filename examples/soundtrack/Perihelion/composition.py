@@ -381,6 +381,19 @@ def arp_notes():
 
 # --- Timpani -----------------------------------------------------------------
 
+# The timpani is a LinnDrum, and a LinnDrum reads a note number as "which
+# drum", not as a pitch. This line was written in pitches: D2 and F2 landed
+# on its snare and low floor tom, which is what you have been hearing, but
+# Bb1 and A1 are notes 34 and 33, which the machine maps to nothing. They
+# have been silent since the piece was written - the and-of-4 pickup the
+# comment below promises has never played once. They are the two toms the
+# line was not already using: the alternate root on the low tom, the pickup
+# on the tighter hi-mid one. Sixteen pickups a phrase that were not there
+# before, so this one wants an ear.
+TIMP_SNARE, TIMP_TOM_FLOOR = 38, 41       # what D2 and F2 already played
+TIMP_TOM_LOW, TIMP_TOM_HI = 45, 48        # where Bb1 and A1 go
+
+
 def timpani_notes():
     out = []
     # C second half: quarter pulses, growing (the roll takes over the back
@@ -389,18 +402,19 @@ def timpani_notes():
         for q in range(4):
             if b == 7 and q >= 2:
                 continue
-            out.append((bar(37 + b) + q, 0.8, D2, 0.42 + 0.04 * b))
+            out.append((bar(37 + b) + q, 0.8, TIMP_SNARE, 0.42 + 0.04 * b))
     # roll into the climax across the last half of bar 44
     for i in range(8):
-        out.append((bar(44, 2.0) + i * 0.25, 0.2, D2, 0.5 + 0.06 * i))
+        out.append((bar(44, 2.0) + i * 0.25, 0.2, TIMP_SNARE, 0.5 + 0.06 * i))
     # D: strong pattern - 1, 3, and the and-of-4 pickup
     for b in range(16):
-        root = D2 if b % 4 in (0, 3) else (Bb1 if b % 4 == 1 else F2)
+        root = (TIMP_SNARE if b % 4 in (0, 3)
+                else (TIMP_TOM_LOW if b % 4 == 1 else TIMP_TOM_FLOOR))
         out.append((bar(45 + b), 0.9, root, 0.9))
         out.append((bar(45 + b) + 2.0, 0.9, root, 0.7))
-        out.append((bar(45 + b) + 3.5, 0.4, A1, 0.6))
+        out.append((bar(45 + b) + 3.5, 0.4, TIMP_TOM_HI, 0.6))
     # final resolution stroke
-    out.append((bar(72), 3.0, D2, 0.7))
+    out.append((bar(72), 3.0, TIMP_SNARE, 0.7))
     return out
 
 

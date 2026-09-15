@@ -610,6 +610,11 @@ DRUM_MAP = {
     "closed_hat": 42,
     "hat": 42,
     "ch": 42,
+    # 44 is General MIDI's pedal hi-hat, and no drum machine in
+    # audioinstruments has one: a part asking for it is silent on every kit.
+    # Left here rather than pointed at the closed hat, because a composer
+    # quietly playing a different drum than the one you asked for is the
+    # behaviour the library itself just stopped doing.
     "pedal_hihat": 44,
     "mid_tom": 45,
     "mt": 45,
