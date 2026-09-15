@@ -51,7 +51,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO / "tools"))
+sys.path.insert(0, str(REPO / "examples" / "soundtrack" / "composer"))
 # The generated shims in soundtrack/*/instruments/ are three lines that
 # delegate to the library through `mpvst_instrument_adapter`, which lives in this repo's
 # lib/. Without it on the path the first shim this tool reaches raises
@@ -60,7 +60,7 @@ sys.path.insert(0, str(REPO / "tools"))
 # the two tools load the same scripts, so they need the same path.
 sys.path.insert(0, str(REPO / "lib"))
 
-from piece import COMPONENTS_LIB  # noqa: E402
+from pieces import COMPONENTS_LIB  # noqa: E402
 
 # The packages, from the same checkout whose files this tool measures and
 # writes into - ahead of any installed copy, or the audit would read one

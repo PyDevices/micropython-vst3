@@ -15,8 +15,8 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
-from piece import load_piece  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "composer"))
+from pieces import load_piece  # noqa: E402
 
 C, _ = load_piece("automata")
 SR = C.SAMPLE_RATE

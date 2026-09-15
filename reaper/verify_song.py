@@ -16,8 +16,12 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
-from piece import load_piece, piece_arg  # noqa: E402
+# The piece loader moved into the soundtrack composer with ef0bed5; this
+# still pointed at tools/, so the verification half of reaper.sh --render
+# died on "No module named piece" after the bounce had already been made.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent
+                       / "examples" / "soundtrack" / "composer"))
+from pieces import load_piece, piece_arg  # noqa: E402
 
 PIECE, ARGV = piece_arg(sys.argv[1:])
 C, _INSTRUMENTS = load_piece(PIECE)
