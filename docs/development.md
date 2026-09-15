@@ -34,6 +34,23 @@ what ships today. The canonical structure sizes and offsets live in
 ## Prerequisites
 
 - A C++17 toolchain: MSVC on Windows, GCC or Clang on Linux.
+  **The Windows plug-in binary is the one thing here that needs MSVC**, and
+  the full Visual Studio IDE is not required - **Visual Studio Build Tools**
+  with the Desktop C++ workload and a Windows SDK is enough, and is about
+  half the disk:
+
+  ```powershell
+  winget install --id Microsoft.VisualStudio.BuildTools --override ^
+    "--quiet --wait --norestart --add Microsoft.VisualStudio.Workload.VCTools ^
+     --add Microsoft.VisualStudio.Component.Windows11SDK.26100 --includeRecommended"
+  ```
+
+  The generator the install script names is `Visual Studio 18 2026`, so it
+  wants the 2026 Build Tools (`18.x`); the winget id above has no year in it
+  and resolves to that. Nothing else in the repository needs it: the Windows
+  *sidecar engine* is cross-compiled from WSL with MinGW, the Linux build
+  uses GCC, and a Python-only change to the instrument or effect library
+  never touches a compiler at all (see [the staging note](#building-and-testing)).
 - CMake 3.25+ and Ninja (`cmake -S . -B .build-linux -G Ninja` is the
   documented invocation below).
 - On Linux, X11 development headers (`src/plugin/CMakeLists.txt` runs
@@ -104,6 +121,45 @@ DAW scans:
 
 ```bash
 ./scripts/install-plugin-windows.sh
+```
+
+### A Python-only change needs no compiler
+
+Adding an instrument to audiocomponents, editing a script, or changing what
+the catalog says does not touch the plug-in binary. If the Windows build
+directory is gone - it lives under `%LOCALAPPDATA%\Temp`, which Windows
+cleans - you do not have to reconfigure MSVC to get the change into a DAW.
+Stage the packages into the installed bundle and rewrite the two metadata
+files with the bundle's own engine:
+
+```bash
+B="$WIN_LOCALAPPDATA/Programs/Common/VST3/MPVST.vst3/Contents/x86_64-win"
+for pkg in audioinstruments audioeffects; do
+    rm -rf "$B/$pkg" && mkdir -p "$B/$pkg"
+    (cd ../audiocomponents/lib/$pkg && tar -cf - --exclude=__pycache__ \
+        --exclude='*.egg-info' --exclude=pyproject.toml .) | (cd "$B/$pkg" && tar -xf -)
+done
+(cd "$B" && ./mpvst-engine.exe -X heapsize=64M mpvst_scan_plugins.py \
+         && ./mpvst-engine.exe -X heapsize=64M mpvst_catalog.py)
+```
+
+That is what `cmake --build` does for these two directories, minus the
+compiler: the excludes match `src/plugin/stage_lib.cmake`, and the two
+scripts rewrite `moduleinfo.json` and `catalog.json`. A new instrument does
+not need a REAPER rescan either - the soundtrack composer's projects load
+the generic "MPVST Script Host" class with the script embedded in state, so
+the only thing REAPER has to find is the staged package the sidecar imports.
+
+### Reconfiguring the Windows build
+
+`install-plugin-windows.sh` refuses to run without a configured build, which
+is what you see after the Temp directory is cleaned or MSVC is reinstalled:
+
+```bash
+source scripts/windows-paths.sh && mpvst_load_windows_paths
+'.deps/cmake-4.4.2-windows-x86_64/bin/cmake.exe' \
+    -S "$(wslpath -w .)" -B "$(wslpath -w "$WIN_TEMP/mpvst-build")" \
+    -G 'Visual Studio 18 2026'
 ```
 
 The Linux CMake cache remembers the engine path. After switching engines,
