@@ -30,7 +30,10 @@ done
 
 repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 soundtrack_dir=$(cd "$repo_dir/examples/soundtrack" && pwd)
-composition_dir="$repo_dir/tools"
+# The piece loader moved with the composers in ef0bed5; this still
+# said tools/, where it used to live, so every run died on
+# "No module named piece" before REAPER was even launched.
+composition_dir="$soundtrack_dir/composer"
 reaper_dir="$repo_dir/reaper"
 # verify_song.py needs numpy plus the audioif wheel - this repo's own
 # .venv (pydevices-audioif from TestPyPI) if set up, else the sibling
@@ -68,7 +71,7 @@ test -d "$bundle" || { echo "error: MPVST.vst3 not installed at $bundle" >&2; ex
 read -r title render_seconds n_tracks n_instances n_envs <<< "$(python3 - <<PYEOF
 import sys
 sys.path.insert(0, "$composition_dir")
-from piece import load_piece
+from pieces import load_piece
 C, _ = load_piece("$piece")
 units = [unit for track in C.TRACKS
          for unit in (track,) + tuple(track.get("effects", ())) ]
